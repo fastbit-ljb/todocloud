@@ -36,8 +36,11 @@ D:\L\Study\TodoList
 ### 本地项目
 
 - 已创建 Android 和 FastAPI 两个项目骨架。
-- Android 已包含 Compose 应用入口、Material 3 主题和底部导航占位页面。
-- 服务端已包含 FastAPI 应用入口、健康检查接口、配置、数据库会话和 Celery 基础结构。
+- Android 已包含 Compose 应用入口、Material 3 主题、登录/注册界面、任务列表和任务编辑操作。
+- Android 已接入 OkHttp API 客户端和本地登录 token 保存，支持创建、完成、删除和刷新任务。
+- 服务端已实现用户注册、登录、当前用户和任务 CRUD API。
+- 服务端使用 PBKDF2-SHA256 保存密码哈希，使用 HMAC 签名 token 做当前阶段认证。
+- 服务启动时会自动创建当前 MVP 的 `users` 和 `tasks` 表。
 - 已编写以下文档：
   - `docs/architecture.md`
   - `docs/api-contract.md`
@@ -47,33 +50,34 @@ D:\L\Study\TodoList
 - Python 服务端代码已通过编译检查。
 - Android Debug APK 已成功构建：
   `mobile/app/build/outputs/apk/debug/app-debug.apk`
+- 已完成认证与任务 API 的服务器集成测试，测试数据已清理。
 - Docker Compose 配置已通过配置检查。
 
 ### Git 状态
 
 - 当前分支：`main`
 - 当前工作区在本次记录前是干净的。
-- 最近提交：
-  - `7142874 fix: make Android project build with AGP 9`
-  - `a186964 chore: initialize TodoCloud Android and server projects`
+- 最近提交包括 Android 构建修复、生产 Compose 配置、交接文档和测试 APK。
 - 本机 GitHub SSH 身份验证已成功。
-- 目标 GitHub 仓库 `fastbit-ljb/todocloud` 当时尚未创建，因此项目尚未成功推送到 GitHub。
-- 创建空的 GitHub 仓库后，再添加远程地址并推送；不要把密钥写入项目。
+- GitHub 仓库为 `git@github.com:fastbit-ljb/todocloud.git`，当前 `main` 已推送。
+- `server/.env` 被 `.gitignore` 忽略，不得提交；不要把密钥写入项目。
 
 ### 服务器连接
 
 - ECS SSH 免密连接已验证成功：`root@dnsgo.xyz:22`
 - 服务器 Docker 版本：`29.1.3`
 - 服务器系统运行状态检查成功。
-- 目前只做过 SSH 连通性和只读状态检查，TodoCloud 尚未部署到服务器。
+- TodoCloud 已部署到 `/opt/todocloud`，使用 Docker 内部网络运行 server、worker、PostgreSQL、Redis 和 MinIO。
+- API 容器没有发布主机端口，未修改阿里云安全组、Nginx 或现有 `traffic-detection` 服务。
+- 服务器内部健康检查、认证和任务 CRUD 集成测试已通过。
 - 本机 SSH 私钥已存在并由 OpenSSH 使用；不要读取、显示、复制或上传私钥内容。
 
 ## 未完成事项
 
 ### 产品与服务端
 
-- 注册、登录、刷新令牌和用户资料。
-- 任务 CRUD、任务状态、排序及云端同步。
+- refresh token、设备会话和更细的权限控制。
+- 数据库 Alembic 迁移、分页、筛选和冲突处理。
 - 日历查询接口和 Android 日历视图。
 - 自定义提醒规则及服务端同步。
 - Android 本地通知调度和通知权限处理。
@@ -84,15 +88,14 @@ D:\L\Study\TodoList
 
 ### 部署与运维
 
-- 创建 GitHub 仓库并推送当前代码。
-- 为服务器创建生产环境配置，不使用 Compose 中的开发默认密码。
-- 在服务器部署 `/opt/todocloud`，配置 Docker Compose、数据卷、日志和健康检查。
-- 配置域名、HTTPS、反向代理和必要的阿里云安全组规则。
+- 为服务器补充备份、日志轮转和监控告警。
+- 在不修改安全组端口的前提下，评估使用现有 HTTPS 反向代理提供移动端 API。
+- 配置移动端生产 API 地址和发布签名版本。
 - 暂未决定是否使用独立部署用户替代 root 进行日常发布。
 
 ## 风险与注意事项
 
-- `docker-compose.yml` 当前包含开发环境占位密码，禁止直接用于公网生产环境。
+- `docker-compose.yml` 仍包含开发环境占位密码，生产部署必须使用服务器上的独立 `.env` 和生产覆盖文件。
 - PostgreSQL、Redis、MinIO 和 API 的端口不能未经评估就直接暴露到公网，生产环境应使用内网、反向代理或防火墙限制。
 - 当前认证、权限、速率限制、审计日志和数据备份尚未实现。
 - AI 解析结果必须先让用户确认，再写入正式任务；不能默认自动创建不可撤销的数据。
@@ -102,13 +105,11 @@ D:\L\Study\TodoList
 
 ## 建议下一步
 
-1. 创建空的 GitHub 仓库 `fastbit-ljb/todocloud` 并推送当前代码。
-2. 先完成 FastAPI 的认证、用户和任务 CRUD，以及数据库模型和迁移。
-3. 在本地通过 Docker Compose 联调 PostgreSQL、Redis、MinIO 和 API。
-4. 完成 Android 登录、任务列表、任务编辑和同步。
-5. 加入日历和本地系统通知，再实现自定义提前提醒。
-6. 最后接入截图上传、OCR/视觉模型和聊天时间解析，并增加用户确认流程。
-7. 通过独立生产配置部署到服务器，部署前先备份并确认域名、HTTPS 和安全组策略。
+1. 把当前 API 地址配置抽离为构建变量，区分模拟器、本地真机和生产环境。
+2. 完成 refresh token、Alembic 迁移和 API 自动化测试。
+3. 加入日历和本地系统通知，再实现自定义提前提醒。
+4. 最后接入截图上传、OCR/视觉模型和聊天时间解析，并增加用户确认流程。
+5. 在不改动现有安全组端口的前提下，通过现有 HTTPS 入口提供移动端 API。
 
 ## 新会话启动提示词
 

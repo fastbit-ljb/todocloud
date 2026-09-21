@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     minio_secret_key: str = "change-me-in-development"
     minio_bucket: str = "attachments"
     jwt_secret: str = "replace-this-before-deployment"
+    access_token_expire_minutes: int = 60 * 24 * 30
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -27,4 +28,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

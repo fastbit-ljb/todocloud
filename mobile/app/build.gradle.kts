@@ -13,6 +13,7 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8000/api/v1\"")
     }
 
     buildTypes {
@@ -44,4 +45,6 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.okhttp)
 }
