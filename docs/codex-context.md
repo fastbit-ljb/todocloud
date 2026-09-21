@@ -68,7 +68,8 @@ D:\L\Study\TodoList
 - 服务器 Docker 版本：`29.1.3`
 - 服务器系统运行状态检查成功。
 - TodoCloud 已部署到 `/opt/todocloud`，使用 Docker 内部网络运行 server、worker、PostgreSQL、Redis 和 MinIO。
-- API 容器没有发布主机端口，未修改阿里云安全组、Nginx 或现有 `traffic-detection` 服务。
+- API 容器现在发布 `18000 -> 8000`，用于真机 Debug；原有 `traffic-detection` 的 `127.0.0.1:8000` 未修改。
+- 真机测试需要在阿里云安全组放行 TCP 18000；未修改 Nginx 或其他项目。
 - 服务器内部健康检查、认证和任务 CRUD 集成测试已通过。
 - 本机 SSH 私钥已存在并由 OpenSSH 使用；不要读取、显示、复制或上传私钥内容。
 
@@ -96,6 +97,7 @@ D:\L\Study\TodoList
 ## 风险与注意事项
 
 - `docker-compose.yml` 仍包含开发环境占位密码，生产部署必须使用服务器上的独立 `.env` 和生产覆盖文件。
+- 当前 Android Debug 使用 HTTP 公网地址，仅用于测试；正式发布必须使用 HTTPS 域名和 release 配置。
 - PostgreSQL、Redis、MinIO 和 API 的端口不能未经评估就直接暴露到公网，生产环境应使用内网、反向代理或防火墙限制。
 - 当前认证、权限、速率限制、审计日志和数据备份尚未实现。
 - AI 解析结果必须先让用户确认，再写入正式任务；不能默认自动创建不可撤销的数据。
