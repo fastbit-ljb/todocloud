@@ -1,4 +1,3 @@
 <resources>
-    <style name="Theme.TodoCloud" parent="android:style/Theme.DeviceDefault.DayNight.NoActionBar" />
+    <style name="Theme.TodoCloud" parent="android:style/Theme.Material.Light.NoActionBar" />
 </resources>
-
