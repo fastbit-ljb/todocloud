@@ -22,7 +22,7 @@ services:
       - todocloud-redis:/data
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: todocloud-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
