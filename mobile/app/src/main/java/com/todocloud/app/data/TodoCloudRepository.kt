@@ -55,7 +55,7 @@ class TodoCloudRepository(context: Context) {
         return Session(
             token = response.getString("access_token"),
             email = user.getString("email"),
-            displayName = user.optString("display_name").ifBlank { null },
+            displayName = user.optNullableString("display_name"),
         )
     }
 
@@ -122,10 +122,15 @@ class TodoCloudRepository(context: Context) {
     private fun parseTask(json: JSONObject): TaskItem = TaskItem(
         id = json.getInt("id"),
         title = json.getString("title"),
-        description = json.optString("description").ifBlank { null },
-        dueAt = json.optString("due_at").ifBlank { null },
+        description = json.optNullableString("description"),
+        dueAt = json.optNullableString("due_at"),
         completed = json.optBoolean("completed"),
     )
+
+    private fun JSONObject.optNullableString(name: String): String? {
+        if (!has(name) || isNull(name)) return null
+        return optString(name).takeIf { it.isNotBlank() && it != "null" }
+    }
 
     private fun JSONArray.toTaskItems(): List<TaskItem> = buildList {
         for (index in 0 until length()) add(parseTask(getJSONObject(index)))
