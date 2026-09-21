@@ -44,11 +44,14 @@ DELETE /tasks/{task_id}
 {
   "title": "完成接口设计",
   "description": "可选备注",
-  "due_at": "2026-09-30T12:00:00Z"
+  "due_at": "2026-09-30T12:00:00Z",
+  "reminder_offset_minutes": 30
 }
 ```
 
-任务当前字段：`id`、`title`、`description`、`due_at`、`completed`、`created_at`、`updated_at`。所有任务查询和修改都按当前登录用户隔离。
+`reminder_offset_minutes` 表示在截止时间前多少分钟提醒，允许 `0` 到 `10080`；传 `null` 表示不设置提醒。任务当前字段：`id`、`title`、`description`、`due_at`、`reminder_offset_minutes`、`completed`、`created_at`、`updated_at`。所有任务查询和修改都按当前登录用户隔离。
+
+Android 客户端会根据任务的截止时间和提醒偏移量设置本地 AlarmManager，并通过系统通知渠道提醒用户；已完成任务或已过期提醒不会重复调度。
 
 ## 规划中的接口
 

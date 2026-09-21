@@ -17,12 +17,14 @@ class TaskCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=10_000)
     due_at: datetime | None = None
+    reminder_offset_minutes: int | None = Field(default=None, ge=0, le=10_080)
 
 
 class TaskUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=10_000)
     due_at: datetime | None = None
+    reminder_offset_minutes: int | None = Field(default=None, ge=0, le=10_080)
     completed: bool | None = None
 
 
@@ -33,6 +35,7 @@ class TaskResponse(BaseModel):
     title: str
     description: str | None
     due_at: datetime | None
+    reminder_offset_minutes: int | None
     completed: bool
     created_at: datetime
     updated_at: datetime
@@ -61,6 +64,7 @@ async def create_task(
         title=payload.title.strip(),
         description=payload.description,
         due_at=payload.due_at,
+        reminder_offset_minutes=payload.reminder_offset_minutes,
     )
     db.add(task)
     await db.commit()

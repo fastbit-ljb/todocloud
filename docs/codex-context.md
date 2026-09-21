@@ -38,7 +38,10 @@ D:\L\Study\TodoList
 - 已创建 Android 和 FastAPI 两个项目骨架。
 - Android 已包含 Compose 应用入口、Material 3 主题、登录/注册界面、任务列表和任务编辑操作。
 - Android 已接入 OkHttp API 客户端和本地登录 token 保存，支持创建、完成、删除和刷新任务。
+- Android 已支持设置截止日期/时间、提前分钟数提醒，并通过 AlarmManager 唤醒系统通知。
+- Android 已加入日历页（按截止时间展示即将到期任务）、通知渠道和 Android 13 通知权限请求。
 - 服务端已实现用户注册、登录、当前用户和任务 CRUD API。
+- 任务 API 已保存 `reminder_offset_minutes`，服务启动时会自动补齐该字段。
 - 服务端使用 PBKDF2-SHA256 保存密码哈希，使用 HMAC 签名 token 做当前阶段认证。
 - 服务启动时会自动创建当前 MVP 的 `users` 和 `tasks` 表。
 - 已编写以下文档：
@@ -51,6 +54,8 @@ D:\L\Study\TodoList
 - Android Debug APK 已成功构建：
   `mobile/app/build/outputs/apk/debug/app-debug.apk`
 - 已完成认证与任务 API 的服务器集成测试，测试数据已清理。
+- 已完成提醒字段的服务器远程集成测试，包含创建、读取、清除和删除流程。
+- 已完成服务器增量部署，TodoCloud API 健康检查通过。
 - Docker Compose 配置已通过配置检查。
 
 ### Git 状态
@@ -79,9 +84,8 @@ D:\L\Study\TodoList
 
 - refresh token、设备会话和更细的权限控制。
 - 数据库 Alembic 迁移、分页、筛选和冲突处理。
-- 日历查询接口和 Android 日历视图。
-- 自定义提醒规则及服务端同步。
-- Android 本地通知调度和通知权限处理。
+- 月视图日历、按日期查询接口和更完整的日历交互。
+- 多条提醒规则、推送提醒和服务端提醒任务。
 - MinIO 附件上传、预签名 URL 和附件记录。
 - OCR/视觉模型接入，以及聊天记录时间解析。
 - Celery 异步任务、重试、幂等和失败状态处理。
@@ -109,8 +113,8 @@ D:\L\Study\TodoList
 
 1. 把当前 API 地址配置抽离为构建变量，区分模拟器、本地真机和生产环境。
 2. 完成 refresh token、Alembic 迁移和 API 自动化测试。
-3. 加入日历和本地系统通知，再实现自定义提前提醒。
-4. 最后接入截图上传、OCR/视觉模型和聊天时间解析，并增加用户确认流程。
+3. 实现 MinIO 附件上传、截图解析和 AI 候选任务确认流程。
+4. 增加月视图日历、推送提醒和多设备同步冲突处理。
 5. 在不改动现有安全组端口的前提下，通过现有 HTTPS 入口提供移动端 API。
 
 ## 新会话启动提示词

@@ -66,9 +66,19 @@ class TodoCloudRepository(context: Context) {
         return (response as JSONArray).toTaskItems()
     }
 
-    suspend fun createTask(token: String, title: String, description: String?): TaskItem {
+    suspend fun createTask(
+        token: String,
+        title: String,
+        description: String?,
+        dueAt: String?,
+        reminderOffsetMinutes: Int?,
+    ): TaskItem {
         val payload = JSONObject().put("title", title)
         if (!description.isNullOrBlank()) payload.put("description", description)
+        if (dueAt != null) payload.put("due_at", dueAt)
+        if (reminderOffsetMinutes != null) {
+            payload.put("reminder_offset_minutes", reminderOffsetMinutes)
+        }
         val response = request(
             Request.Builder()
                 .url(baseUrl + "/tasks")
@@ -79,8 +89,20 @@ class TodoCloudRepository(context: Context) {
         return parseTask(response as JSONObject)
     }
 
-    suspend fun updateTask(token: String, id: Int, completed: Boolean): TaskItem {
-        val payload = JSONObject().put("completed", completed)
+    suspend fun updateTask(
+        token: String,
+        id: Int,
+        completed: Boolean? = null,
+        dueAt: String? = null,
+        reminderOffsetMinutes: Int? = null,
+        includeSchedule: Boolean = false,
+    ): TaskItem {
+        val payload = JSONObject()
+        completed?.let { payload.put("completed", it) }
+        if (includeSchedule) {
+            payload.put("due_at", dueAt ?: JSONObject.NULL)
+            payload.put("reminder_offset_minutes", reminderOffsetMinutes ?: JSONObject.NULL)
+        }
         val response = request(
             Request.Builder()
                 .url("$baseUrl/tasks/$id")
@@ -124,12 +146,18 @@ class TodoCloudRepository(context: Context) {
         title = json.getString("title"),
         description = json.optNullableString("description"),
         dueAt = json.optNullableString("due_at"),
+        reminderOffsetMinutes = json.optNullableInt("reminder_offset_minutes"),
         completed = json.optBoolean("completed"),
     )
 
     private fun JSONObject.optNullableString(name: String): String? {
         if (!has(name) || isNull(name)) return null
         return optString(name).takeIf { it.isNotBlank() && it != "null" }
+    }
+
+    private fun JSONObject.optNullableInt(name: String): Int? {
+        if (!has(name) || isNull(name)) return null
+        return optInt(name)
     }
 
     private fun JSONArray.toTaskItems(): List<TaskItem> = buildList {

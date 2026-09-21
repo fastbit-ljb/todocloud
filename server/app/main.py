@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.api.router import api_router
 from app.core.config import settings
@@ -13,6 +14,12 @@ from app.db.session import engine
 async def lifespan(_: FastAPI):
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await connection.execute(
+            text(
+                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "
+                "reminder_offset_minutes INTEGER"
+            )
+        )
     yield
     await engine.dispose()
 

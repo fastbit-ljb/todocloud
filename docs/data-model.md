@@ -18,17 +18,18 @@ created_at     TIMESTAMPTZ
 ### tasks
 
 ```text
-id          INTEGER primary key
-user_id     INTEGER -> users.id
-title       VARCHAR(200)
-description TEXT nullable
-due_at      TIMESTAMPTZ nullable
-completed   BOOLEAN
-created_at  TIMESTAMPTZ
-updated_at  TIMESTAMPTZ
+id                       INTEGER primary key
+user_id                  INTEGER -> users.id
+title                    VARCHAR(200)
+description              TEXT nullable
+due_at                   TIMESTAMPTZ nullable
+reminder_offset_minutes  INTEGER nullable
+completed                BOOLEAN
+created_at               TIMESTAMPTZ
+updated_at               TIMESTAMPTZ
 ```
 
-服务启动时会为当前 MVP 自动创建缺失表。生产环境正式发布前需要切换到 Alembic 迁移，避免仅依赖 `create_all`。
+服务启动时会为当前 MVP 自动创建缺失表，并为已有数据库补齐提醒字段。生产环境正式发布前需要切换到 Alembic 迁移，避免仅依赖启动时迁移。
 
 ## 规划中的模型
 

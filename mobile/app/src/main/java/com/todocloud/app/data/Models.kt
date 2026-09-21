@@ -11,6 +11,7 @@ data class TaskItem(
     val title: String,
     val description: String?,
     val dueAt: String?,
+    val reminderOffsetMinutes: Int?,
     val completed: Boolean,
 )
 

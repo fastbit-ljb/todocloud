@@ -1,5 +1,8 @@
 package com.todocloud.app.ui
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Logout
@@ -58,7 +60,13 @@ import com.todocloud.app.data.ApiException
 import com.todocloud.app.data.Session
 import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TodoCloudRepository
+import com.todocloud.app.notification.ReminderScheduler
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 private data class TabItem(
     val label: String,
@@ -94,6 +102,10 @@ fun TodoCloudApp() {
         }
     }
 
+    fun scheduleTasks(items: List<TaskItem>) {
+        items.forEach { ReminderScheduler.schedule(context, it) }
+    }
+
     LaunchedEffect(session?.token) {
         val currentSession = session
         if (currentSession == null) {
@@ -102,7 +114,7 @@ fun TodoCloudApp() {
             loading = true
             error = null
             try {
-                tasks = repository.listTasks(currentSession.token)
+                tasks = repository.listTasks(currentSession.token).also(::scheduleTasks)
             } catch (exception: ApiException) {
                 error = exception.message
             } catch (_: Exception) {
@@ -166,22 +178,32 @@ fun TodoCloudApp() {
                 tasks = tasks,
                 loading = loading,
                 error = error,
-                onRefresh = { runRequest { tasks = repository.listTasks(currentSession.token) } },
+                onRefresh = {
+                    runRequest {
+                        tasks = repository.listTasks(currentSession.token).also(::scheduleTasks)
+                    }
+                },
                 onToggle = { task ->
                     runRequest {
-                        val updated = repository.updateTask(currentSession.token, task.id, !task.completed)
+                        val updated = repository.updateTask(
+                            currentSession.token,
+                            task.id,
+                            completed = !task.completed,
+                        )
+                        ReminderScheduler.schedule(context, updated)
                         tasks = tasks.map { if (it.id == updated.id) updated else it }
                     }
                 },
                 onDelete = { task ->
                     runRequest {
                         repository.deleteTask(currentSession.token, task.id)
+                        ReminderScheduler.cancel(context, task.id)
                         tasks = tasks.filterNot { it.id == task.id }
                     }
                 },
             )
 
-            1 -> PlaceholderScreen(paddingValues, "日历功能即将上线")
+            1 -> CalendarScreen(paddingValues, tasks)
             else -> SettingsScreen(
                 paddingValues = paddingValues,
                 session = currentSession,
@@ -195,11 +217,19 @@ fun TodoCloudApp() {
 
     if (showComposer) {
         CreateTaskDialog(
+            context = context,
             loading = loading,
             onDismiss = { if (!loading) showComposer = false },
-            onCreate = { title, description ->
+            onCreate = { title, description, dueAt, reminderOffsetMinutes ->
                 runRequest {
-                    val created = repository.createTask(currentSession.token, title, description)
+                    val created = repository.createTask(
+                        currentSession.token,
+                        title,
+                        description,
+                        dueAt,
+                        reminderOffsetMinutes,
+                    )
+                    ReminderScheduler.schedule(context, created)
                     tasks = listOf(created) + tasks
                     showComposer = false
                 }
@@ -350,12 +380,37 @@ private fun TaskCard(task: TaskItem, onToggle: () -> Unit, onDelete: () -> Unit)
 
 @Composable
 private fun CreateTaskDialog(
+    context: Context,
     loading: Boolean,
     onDismiss: () -> Unit,
-    onCreate: (String, String?) -> Unit,
+    onCreate: (String, String?, String?, Int?) -> Unit,
 ) {
     var title by rememberSaveable { mutableStateOf("") }
     var description by rememberSaveable { mutableStateOf("") }
+    var reminderText by rememberSaveable { mutableStateOf("10") }
+    var selectedDateTime by remember { mutableStateOf<LocalDateTime?>(null) }
+    val dateFormatter = remember { DateTimeFormatter.ofPattern("yyyy年M月d日 HH:mm") }
+
+    fun chooseDueDate() {
+        val initial = selectedDateTime ?: LocalDateTime.now().plusHours(1)
+        DatePickerDialog(
+            context,
+            { _, year, month, day ->
+                val date = LocalDate.of(year, month + 1, day)
+                TimePickerDialog(
+                    context,
+                    { _, hour, minute -> selectedDateTime = date.atTime(hour, minute) },
+                    initial.hour,
+                    initial.minute,
+                    true,
+                ).show()
+            },
+            initial.year,
+            initial.monthValue - 1,
+            initial.dayOfMonth,
+        ).show()
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("新建任务") },
@@ -363,16 +418,81 @@ private fun CreateTaskDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("任务内容") }, singleLine = true)
                 OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("备注（可选）") })
+                OutlinedButton(onClick = ::chooseDueDate, modifier = Modifier.fillMaxWidth()) {
+                    Text(selectedDateTime?.format(dateFormatter) ?: "设置截止时间（可选）")
+                }
+                if (selectedDateTime != null) {
+                    OutlinedTextField(
+                        value = reminderText,
+                        onValueChange = { reminderText = it.filter(Char::isDigit).take(5) },
+                        label = { Text("提前提醒分钟数") },
+                        supportingText = { Text("例如 10 表示提前 10 分钟提醒") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    TextButton(onClick = { selectedDateTime = null }) { Text("清除截止时间") }
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onCreate(title.trim(), description.trim().ifBlank { null }) },
+                onClick = {
+                    val dueAt = selectedDateTime
+                        ?.atZone(ZoneId.systemDefault())
+                        ?.toInstant()
+                        ?.toString()
+                    val reminder = if (dueAt == null) null else reminderText.toIntOrNull()?.coerceIn(0, 10_080)
+                    onCreate(title.trim(), description.trim().ifBlank { null }, dueAt, reminder)
+                },
                 enabled = !loading && title.isNotBlank(),
             ) { Text("保存") }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("取消") } },
     )
+}
+
+@Composable
+private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) {
+    val upcoming = tasks
+        .filter { it.dueAt != null }
+        .sortedBy { it.dueAt }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(paddingValues),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Text("近期安排", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "带截止时间的任务会显示在这里，并按时间排序。",
+                modifier = Modifier.padding(top = 4.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (upcoming.isEmpty()) {
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text("还没有安排日期的任务", modifier = Modifier.padding(18.dp))
+                }
+            }
+        }
+        items(upcoming, key = { it.id }) { task ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(task.title, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        formatDueAt(task.dueAt.orEmpty()),
+                        modifier = Modifier.padding(top = 6.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    task.reminderOffsetMinutes?.let {
+                        Text("提前 $it 分钟提醒", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -391,16 +511,8 @@ private fun SettingsScreen(paddingValues: PaddingValues, session: Session, onLog
     }
 }
 
-@Composable
-private fun PlaceholderScreen(paddingValues: PaddingValues, title: String) {
-    Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Outlined.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(8.dp))
-            Text(title, style = MaterialTheme.typography.headlineSmall)
-            Text("下一阶段接入", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-private fun formatDueAt(value: String): String = value.replace("T", " ").removeSuffix("Z")
+private fun formatDueAt(value: String): String = runCatching {
+    OffsetDateTime.parse(value)
+        .atZoneSameInstant(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("yyyy年M月d日 HH:mm"))
+}.getOrElse { value.replace("T", " ").removeSuffix("Z") }
