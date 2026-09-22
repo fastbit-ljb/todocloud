@@ -1,6 +1,7 @@
 # Android / Gradle
 .gradle/
 **/build/
+**/gradle/gradle-daemon-jvm.properties
 local.properties
 .idea/
 *.iml
@@ -25,4 +26,3 @@ server/.env
 .DS_Store
 Thumbs.db
 *.log
-
