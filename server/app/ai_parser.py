@@ -43,7 +43,6 @@ def _call_model(image_bytes: bytes, content_type: str, reference_at: str, timezo
         {
             "model": settings.ai_model,
             "temperature": 0,
-            "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": "你是可靠的待办事项抽取助手。"},
                 {

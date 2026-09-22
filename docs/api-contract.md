@@ -67,7 +67,7 @@ POST /ai/parse-screenshot
 
 服务端会先把原图保存到 MinIO，再调用 OpenAI 兼容的视觉模型，返回待确认候选任务。模型提示会要求把“明天、下周一、今晚”等相对时间按照 `reference_at` 和用户时区换算成绝对时间。客户端确认后才调用 `/tasks` 正式创建任务。
 
-服务端需要在 `.env` 配置 `AI_API_KEY`、`AI_API_BASE_URL` 和 `AI_MODEL`；密钥只保存在服务器，不提交到 GitHub。
+服务端默认使用 Google AI Studio 的 Gemini OpenAI 兼容接口和 `gemini-2.5-flash-lite`，只需在 `.env` 配置 `AI_API_KEY` 即可；也可以通过 `AI_API_BASE_URL` 和 `AI_MODEL` 切换到其他兼容平台。密钥只保存在服务器，不提交到 GitHub。
 
 返回示例：
 
