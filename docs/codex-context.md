@@ -39,7 +39,7 @@ D:\L\Study\TodoList
 - Android 已包含 Compose 应用入口、Material 3 主题、登录/注册界面、任务列表和任务编辑操作。
 - Android 已接入 OkHttp API 客户端和本地登录 token 保存，支持创建、完成、删除和刷新任务。
 - Android 已支持设置截止日期/时间、提前分钟数提醒，并通过 AlarmManager 唤醒系统通知。
-- Android 已加入日历页（按截止时间展示即将到期任务）、通知渠道和 Android 13 通知权限请求。
+- Android 已加入可切换月份的日历页，支持按日期查看任务、通知渠道和 Android 13 通知权限请求。
 - 服务端已实现用户注册、登录、当前用户和任务 CRUD API。
 - 任务 API 已保存 `reminder_offset_minutes`，服务启动时会自动补齐该字段。
 - 服务端使用 PBKDF2-SHA256 保存密码哈希，使用 HMAC 签名 token 做当前阶段认证。
@@ -84,7 +84,6 @@ D:\L\Study\TodoList
 
 - refresh token、设备会话和更细的权限控制。
 - 数据库 Alembic 迁移、分页、筛选和冲突处理。
-- 月视图日历、按日期查询接口和更完整的日历交互。
 - 多条提醒规则、推送提醒和服务端提醒任务。
 - MinIO 附件上传、预签名 URL 和附件记录。
 - OCR/视觉模型接入，以及聊天记录时间解析。

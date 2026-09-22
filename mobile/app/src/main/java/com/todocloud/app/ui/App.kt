@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -66,6 +70,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 
 private data class TabItem(
@@ -331,7 +336,7 @@ private fun TaskHomeScreen(
                     Column(Modifier.padding(18.dp)) {
                         Text("从一个小任务开始", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "任务会自动保存到云端，之后可以继续加入日期、提醒和 AI 创建。",
+                            "任务会自动保存到云端，之后可以继续加入 AI 创建和截图解析。",
                             modifier = Modifier.padding(top = 6.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -453,9 +458,22 @@ private fun CreateTaskDialog(
 
 @Composable
 private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) {
-    val upcoming = tasks
-        .filter { it.dueAt != null }
-        .sortedBy { it.dueAt }
+    var visibleMonthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
+    var selectedDateText by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
+    val visibleMonth = remember(visibleMonthText) { YearMonth.parse(visibleMonthText) }
+    val selectedDate = remember(selectedDateText) { LocalDate.parse(selectedDateText) }
+    val tasksByDate = tasks.mapNotNull { task ->
+        task.dueAt?.let { dueAt -> parseDueDate(dueAt)?.let { date -> date to task } }
+    }.groupBy({ it.first }, { it.second })
+    val firstDayOffset = visibleMonth.atDay(1).dayOfWeek.value - 1
+    val cellCount = ((firstDayOffset + visibleMonth.lengthOfMonth() + 6) / 7) * 7
+    val selectedTasks = tasksByDate[selectedDate].orEmpty().sortedBy { it.dueAt }
+
+    fun moveMonth(delta: Long) {
+        val nextMonth = visibleMonth.plusMonths(delta)
+        visibleMonthText = nextMonth.toString()
+        selectedDateText = nextMonth.atDay(1).toString()
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(paddingValues),
@@ -463,29 +481,108 @@ private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) 
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("近期安排", style = MaterialTheme.typography.headlineSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                TextButton(onClick = { moveMonth(-1) }) { Text("‹") }
+                Text(
+                    "${visibleMonth.year}年${visibleMonth.monthValue}月",
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                TextButton(onClick = { moveMonth(1) }) { Text("›") }
+            }
             Text(
-                "带截止时间的任务会显示在这里，并按时间排序。",
+                "点击日期查看当天任务，带提醒的任务会在到期前通知。",
                 modifier = Modifier.padding(top = 4.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (upcoming.isEmpty()) {
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Text("还没有安排日期的任务", modifier = Modifier.padding(18.dp))
+        item {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                listOf("一", "二", "三", "四", "五", "六", "日").forEach { label ->
+                    Text(
+                        label,
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
                 }
             }
         }
-        items(upcoming, key = { it.id }) { task ->
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                (0 until cellCount).chunked(7).forEach { week ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        week.forEach { index ->
+                            val day = index - firstDayOffset + 1
+                            if (day in 1..visibleMonth.lengthOfMonth()) {
+                                val date = visibleMonth.atDay(day)
+                                val selected = date == selectedDate
+                                val hasTasks = tasksByDate[date].orEmpty().isNotEmpty()
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(54.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(
+                                            if (selected) MaterialTheme.colorScheme.primaryContainer
+                                            else MaterialTheme.colorScheme.surfaceVariant,
+                                        )
+                                        .clickable { selectedDateText = date.toString() },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            day.toString(),
+                                            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        if (hasTasks) {
+                                            Text(
+                                                "•",
+                                                color = MaterialTheme.colorScheme.primary,
+                                                style = MaterialTheme.typography.titleMedium,
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                Spacer(Modifier.weight(1f).height(54.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Text(
+                "${selectedDate.monthValue}月${selectedDate.dayOfMonth}日",
+                style = MaterialTheme.typography.titleLarge,
+            )
+        }
+        if (selectedTasks.isEmpty()) {
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text("这一天没有安排任务", modifier = Modifier.padding(18.dp))
+                }
+            }
+        }
+        items(selectedTasks, key = { it.id }) { task ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text(task.title, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        formatDueAt(task.dueAt.orEmpty()),
-                        modifier = Modifier.padding(top = 6.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                    task.dueAt?.let {
+                        Text(
+                            formatDueAt(it),
+                            modifier = Modifier.padding(top = 6.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     task.reminderOffsetMinutes?.let {
                         Text("提前 $it 分钟提醒", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -516,3 +613,9 @@ private fun formatDueAt(value: String): String = runCatching {
         .atZoneSameInstant(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("yyyy年M月d日 HH:mm"))
 }.getOrElse { value.replace("T", " ").removeSuffix("Z") }
+
+private fun parseDueDate(value: String): LocalDate? = runCatching {
+    OffsetDateTime.parse(value)
+        .atZoneSameInstant(ZoneId.systemDefault())
+        .toLocalDate()
+}.getOrNull()
