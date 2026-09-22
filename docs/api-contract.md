@@ -53,6 +53,41 @@ DELETE /tasks/{task_id}
 
 Android 客户端会根据任务的截止时间和提醒偏移量设置本地 AlarmManager，并通过系统通知渠道提醒用户；已完成任务或已过期提醒不会重复调度。
 
+## 当前已实现：截图 AI 候选
+
+```text
+POST /ai/parse-screenshot
+```
+
+请求使用 `multipart/form-data`，字段如下：
+
+- `file`：JPG、PNG 或 WebP 图片，最大 10 MB。
+- `reference_at`：可选，截图对应的参考时间，ISO-8601 格式。
+- `timezone_name`：可选，默认 `Asia/Shanghai`。
+
+服务端会先把原图保存到 MinIO，再调用 OpenAI 兼容的视觉模型，返回待确认候选任务。模型提示会要求把“明天、下周一、今晚”等相对时间按照 `reference_at` 和用户时区换算成绝对时间。客户端确认后才调用 `/tasks` 正式创建任务。
+
+服务端需要在 `.env` 配置 `AI_API_KEY`、`AI_API_BASE_URL` 和 `AI_MODEL`；密钥只保存在服务器，不提交到 GitHub。
+
+返回示例：
+
+```json
+{
+  "attachment_id": 1,
+  "parse_id": 1,
+  "candidates": [
+    {
+      "title": "周五前提交报告",
+      "description": null,
+      "due_at": "2026-09-25T18:00:00+08:00",
+      "reminder_offset_minutes": null,
+      "confidence": 0.92,
+      "source_text": "周五前把报告发我"
+    }
+  ]
+}
+```
+
 ## 规划中的接口
 
 ### 日历与提醒
@@ -67,11 +102,10 @@ DELETE /reminders/{reminder_id}
 
 提醒使用 `offset_minutes` 表示相对截止时间的提前量，也支持直接指定 `remind_at`。
 
-### 截图和 AI
+### 截图和 AI 扩展
 
 ```text
 POST /uploads/presign
-POST /ai/parse-screenshot
 GET  /ai/jobs/{job_id}
 POST /ai/jobs/{job_id}/confirm
 ```

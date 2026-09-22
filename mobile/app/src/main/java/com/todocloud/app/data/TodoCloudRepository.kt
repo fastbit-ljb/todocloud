@@ -1,17 +1,22 @@
 package com.todocloud.app.data
 
 import android.content.Context
+import android.net.Uri
 import com.todocloud.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
 
 class TodoCloudRepository(context: Context) {
+    private val appContext = context.applicationContext
     private val client = OkHttpClient()
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
@@ -120,6 +125,53 @@ class TodoCloudRepository(context: Context) {
                 .authorized(token)
                 .delete()
                 .build(),
+        )
+    }
+
+    suspend fun parseScreenshot(token: String, imageUri: Uri): AiParseResult {
+        val contentResolver = appContext.contentResolver
+        val imageBytes = contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+            ?: throw ApiException("无法读取图片")
+        val contentType = contentResolver.getType(imageUri) ?: "image/jpeg"
+        val extension = contentType.substringAfter('/', "jpg")
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "file",
+                "screenshot.$extension",
+                imageBytes.toRequestBody(contentType.toMediaTypeOrNull() ?: "image/jpeg".toMediaType()),
+            )
+            .addFormDataPart("reference_at", Instant.now().toString())
+            .addFormDataPart("timezone_name", java.time.ZoneId.systemDefault().id)
+            .build()
+        val response = request(
+            Request.Builder()
+                .url(baseUrl + "/ai/parse-screenshot")
+                .authorized(token)
+                .post(body)
+                .build(),
+        ) as JSONObject
+        val candidates = response.getJSONArray("candidates").let { array ->
+            buildList {
+                for (index in 0 until array.length()) {
+                    val item = array.getJSONObject(index)
+                    add(
+                        AiTaskCandidate(
+                            title = item.getString("title"),
+                            description = item.optNullableString("description"),
+                            dueAt = item.optNullableString("due_at"),
+                            reminderOffsetMinutes = item.optNullableInt("reminder_offset_minutes"),
+                            confidence = item.optDouble("confidence", 0.0),
+                            sourceText = item.optNullableString("source_text"),
+                        ),
+                    )
+                }
+            }
+        }
+        return AiParseResult(
+            attachmentId = response.getInt("attachment_id"),
+            parseId = response.getInt("parse_id"),
+            candidates = candidates,
         )
     }
 

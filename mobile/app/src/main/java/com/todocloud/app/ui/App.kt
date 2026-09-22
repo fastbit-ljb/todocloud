@@ -3,6 +3,8 @@ package com.todocloud.app.ui
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
@@ -61,6 +64,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.todocloud.app.data.ApiException
+import com.todocloud.app.data.AiParseResult
 import com.todocloud.app.data.Session
 import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TodoCloudRepository
@@ -90,6 +94,7 @@ fun TodoCloudApp() {
     var error by remember { mutableStateOf<String?>(null) }
     var selectedTab by rememberSaveable { mutableStateOf(0) }
     var showComposer by rememberSaveable { mutableStateOf(false) }
+    var aiResult by remember { mutableStateOf<AiParseResult?>(null) }
 
     fun runRequest(action: suspend () -> Unit) {
         scope.launch {
@@ -109,6 +114,17 @@ fun TodoCloudApp() {
 
     fun scheduleTasks(items: List<TaskItem>) {
         items.forEach { ReminderScheduler.schedule(context, it) }
+    }
+
+    val screenshotLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri ->
+        val token = session?.token
+        if (uri != null && token != null) {
+            runRequest {
+                aiResult = repository.parseScreenshot(token, uri)
+            }
+        }
     }
 
     LaunchedEffect(session?.token) {
@@ -183,6 +199,7 @@ fun TodoCloudApp() {
                 tasks = tasks,
                 loading = loading,
                 error = error,
+                onImportScreenshot = { screenshotLauncher.launch("image/*") },
                 onRefresh = {
                     runRequest {
                         tasks = repository.listTasks(currentSession.token).also(::scheduleTasks)
@@ -237,6 +254,30 @@ fun TodoCloudApp() {
                     ReminderScheduler.schedule(context, created)
                     tasks = listOf(created) + tasks
                     showComposer = false
+                }
+            },
+        )
+    }
+
+    aiResult?.let { result ->
+        AiCandidatesDialog(
+            result = result,
+            loading = loading,
+            onDismiss = { if (!loading) aiResult = null },
+            onConfirm = {
+                runRequest {
+                    val created = result.candidates.map { candidate ->
+                        repository.createTask(
+                            currentSession.token,
+                            candidate.title,
+                            candidate.description,
+                            candidate.dueAt,
+                            candidate.reminderOffsetMinutes,
+                        )
+                    }
+                    scheduleTasks(created)
+                    tasks = created + tasks
+                    aiResult = null
                 }
             },
         )
@@ -304,6 +345,7 @@ private fun TaskHomeScreen(
     tasks: List<TaskItem>,
     loading: Boolean,
     error: String?,
+    onImportScreenshot: () -> Unit,
     onRefresh: () -> Unit,
     onToggle: (TaskItem) -> Unit,
     onDelete: (TaskItem) -> Unit,
@@ -323,6 +365,13 @@ private fun TaskHomeScreen(
                 modifier = Modifier.padding(top = 4.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            OutlinedButton(
+                onClick = onImportScreenshot,
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            ) {
+                Text("从截图识别任务")
+            }
         }
         error?.let { message ->
             item { Text(message, color = MaterialTheme.colorScheme.error) }
@@ -451,6 +500,59 @@ private fun CreateTaskDialog(
                 },
                 enabled = !loading && title.isNotBlank(),
             ) { Text("保存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun AiCandidatesDialog(
+    result: AiParseResult,
+    loading: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("AI 识别结果") },
+        text = {
+            if (result.candidates.isEmpty()) {
+                Text("没有识别到明确的待办事项")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "请确认后写入云端任务：",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(result.candidates) { candidate ->
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Text(candidate.title, style = MaterialTheme.typography.titleMedium)
+                                    candidate.dueAt?.let {
+                                        Text(formatDueAt(it), color = MaterialTheme.colorScheme.primary)
+                                    }
+                                    candidate.description?.let {
+                                        Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    candidate.sourceText?.let {
+                                        Text("原文：$it", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = !loading && result.candidates.isNotEmpty(),
+            ) { Text(if (loading) "创建中…" else "确认创建") }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("取消") } },
     )

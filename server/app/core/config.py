@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     minio_access_key: str = "todocloud"
     minio_secret_key: str = "change-me-in-development"
     minio_bucket: str = "attachments"
+    minio_secure: bool = False
+    ai_api_base_url: str = "https://api.openai.com/v1"
+    ai_api_key: str = ""
+    ai_model: str = "gpt-4o-mini"
     jwt_secret: str = "replace-this-before-deployment"
     access_token_expire_minutes: int = 60 * 24 * 30
 
