@@ -382,7 +382,7 @@ private fun FloatingUnderlineTextField(
 ) {
     var focused by remember { mutableStateOf(false) }
     val active = focused || value.isNotEmpty()
-    val activeColor = Color(0xFF9ADCF7)
+    val activeColor = MaterialTheme.colorScheme.primary
     val idleColor = MaterialTheme.colorScheme.outline
     val textColor = MaterialTheme.colorScheme.onSurface
     val labelColor by animateColorAsState(
@@ -399,9 +399,9 @@ private fun FloatingUnderlineTextField(
 
     Column(modifier = modifier) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(if (singleLine) 72.dp else 104.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (singleLine) 56.dp else 80.dp),
         ) {
             BasicTextField(
                 value = value,
@@ -409,8 +409,8 @@ private fun FloatingUnderlineTextField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .heightIn(min = if (singleLine) 54.dp else 88.dp)
-                    .padding(top = 15.dp, bottom = 12.dp)
+                    .heightIn(min = if (singleLine) 40.dp else 64.dp)
+                    .padding(top = 8.dp, bottom = 8.dp)
                     .onFocusChanged { focused = it.isFocused }
                     .semantics { contentDescription = label },
                 textStyle = TextStyle(
@@ -426,12 +426,12 @@ private fun FloatingUnderlineTextField(
             Row(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(top = 15.dp),
+                    .padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 label.forEachIndexed { index, character ->
                     val characterOffset by animateDpAsState(
-                        targetValue = if (active) (-30).dp else 0.dp,
+                        targetValue = if (active) (-18).dp else 0.dp,
                         animationSpec = tween(
                             durationMillis = 300,
                             delayMillis = index * 50,
