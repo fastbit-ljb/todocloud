@@ -5,6 +5,9 @@ import android.app.TimePickerDialog
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -25,6 +28,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
@@ -47,7 +51,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -64,19 +67,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
 import com.todocloud.app.data.ApiException
 import com.todocloud.app.data.AiParseResult
 import com.todocloud.app.data.Session
@@ -325,19 +335,19 @@ private fun LoginScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
+            FloatingUnderlineTextField(
                 value = email,
                 onValueChange = { email = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("邮箱") },
+                label = "邮箱",
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             )
-            OutlinedTextField(
+            FloatingUnderlineTextField(
                 value = password,
                 onValueChange = { password = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("密码") },
+                label = "密码",
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -353,6 +363,107 @@ private fun LoginScreen(
             TextButton(onClick = { registerMode = !registerMode }) {
                 Text(if (registerMode) "已有账号？返回登录" else "没有账号？立即注册")
             }
+        }
+    }
+}
+
+// Adapted from liyaxu123's Uiverse input (MIT License):
+// https://uiverse.io/liyaxu123/warm-eel-62
+@Composable
+private fun FloatingUnderlineTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = true,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    supportingText: String? = null,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val active = focused || value.isNotEmpty()
+    val activeColor = Color(0xFF9ADCF7)
+    val idleColor = MaterialTheme.colorScheme.outline
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val labelColor by animateColorAsState(
+        targetValue = if (active) activeColor else MaterialTheme.colorScheme.onSurface,
+        animationSpec = tween(300),
+        label = "input label color",
+    )
+    val underlineColor by animateColorAsState(
+        targetValue = if (active) activeColor else idleColor,
+        animationSpec = tween(300),
+        label = "input underline color",
+    )
+    val labelEasing = remember { CubicBezierEasing(0.68f, -0.55f, 0.265f, 1.55f) }
+
+    Column(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (singleLine) 72.dp else 104.dp),
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .heightIn(min = if (singleLine) 54.dp else 88.dp)
+                    .padding(top = 15.dp, bottom = 12.dp)
+                    .onFocusChanged { focused = it.isFocused }
+                    .semantics { contentDescription = label },
+                textStyle = TextStyle(
+                    color = textColor,
+                    fontSize = 18.sp,
+                ),
+                cursorBrush = SolidColor(activeColor),
+                singleLine = singleLine,
+                maxLines = if (singleLine) 1 else 4,
+                visualTransformation = visualTransformation,
+                keyboardOptions = keyboardOptions,
+            )
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 15.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                label.forEachIndexed { index, character ->
+                    val characterOffset by animateDpAsState(
+                        targetValue = if (active) (-30).dp else 0.dp,
+                        animationSpec = tween(
+                            durationMillis = 300,
+                            delayMillis = index * 50,
+                            easing = labelEasing,
+                        ),
+                        label = "input label position $index",
+                    )
+                    Text(
+                        text = character.toString(),
+                        color = labelColor,
+                        fontSize = 18.sp,
+                        modifier = Modifier
+                            .widthIn(min = 5.dp)
+                            .offset(y = characterOffset),
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(underlineColor),
+            )
+        }
+        supportingText?.let {
+            Text(
+                text = it,
+                modifier = Modifier.padding(top = 2.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }
@@ -566,17 +677,30 @@ private fun CreateTaskDialog(
         title = { Text("新建任务") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("任务内容") }, singleLine = true)
-                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("备注（可选）") })
+                FloatingUnderlineTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = "任务内容",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                FloatingUnderlineTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = "备注（可选）",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                )
                 OutlinedButton(onClick = ::chooseDueDate, modifier = Modifier.fillMaxWidth()) {
                     Text(selectedDateTime?.format(dateFormatter) ?: "设置截止时间（可选）")
                 }
                 if (selectedDateTime != null) {
-                    OutlinedTextField(
+                    FloatingUnderlineTextField(
                         value = reminderText,
                         onValueChange = { reminderText = it.filter(Char::isDigit).take(5) },
-                        label = { Text("提前提醒分钟数") },
-                        supportingText = { Text("例如 10 表示提前 10 分钟提醒") },
+                        label = "提前提醒分钟数",
+                        modifier = Modifier.fillMaxWidth(),
+                        supportingText = "例如 10 表示提前 10 分钟提醒",
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                     )
