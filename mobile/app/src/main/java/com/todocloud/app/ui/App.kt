@@ -5,8 +5,8 @@ import android.app.TimePickerDialog
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,12 +22,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -64,11 +62,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -455,23 +455,23 @@ private fun TaskCard(task: TaskItem, onToggle: () -> Unit, onDelete: () -> Unit)
 }
 
 @Composable
+// Adapted from SelfMadeSystem's Uiverse checkbox (MIT License):
+// https://uiverse.io/SelfMadeSystem/green-bobcat-29
 private fun GreenTaskCheckbox(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    val checkboxShape = RoundedCornerShape(8.dp)
-    val borderColor by animateColorAsState(
-        targetValue = if (checked) Color(0xFF49C96B) else MaterialTheme.colorScheme.outline,
-        label = "task checkbox border",
+    val dashLength by animateFloatAsState(
+        targetValue = if (checked) 70.509666f else 241f,
+        animationSpec = tween(durationMillis = 500),
+        label = "task checkbox dash length",
     )
-    val fillColor by animateColorAsState(
-        targetValue = if (checked) Color(0xFF49C96B) else Color.Transparent,
-        label = "task checkbox fill",
+    val dashOffset by animateFloatAsState(
+        targetValue = if (checked) -262.27234f else 0f,
+        animationSpec = tween(durationMillis = 500),
+        label = "task checkbox dash offset",
     )
-    val checkScale by animateFloatAsState(
-        targetValue = if (checked) 1f else 0.72f,
-        label = "task checkbox check",
-    )
+    val strokeColor = if (checked) Color(0xFF49C96B) else MaterialTheme.colorScheme.onSurfaceVariant
 
     Box(
         modifier = Modifier
@@ -486,39 +486,44 @@ private fun GreenTaskCheckbox(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(27.dp)
-                .clip(checkboxShape)
-                .background(fillColor, checkboxShape)
-                .border(2.dp, borderColor, checkboxShape),
-        ) {
-            if (checked) {
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(5.dp)
-                        .graphicsLayer {
-                            scaleX = checkScale
-                            scaleY = checkScale
-                        },
-                ) {
-                    val tick = Path().apply {
-                        moveTo(size.width * 0.12f, size.height * 0.52f)
-                        lineTo(size.width * 0.40f, size.height * 0.80f)
-                        lineTo(size.width * 0.88f, size.height * 0.20f)
-                    }
-                    drawPath(
-                        path = tick,
-                        color = Color.White,
-                        style = Stroke(
-                            width = 2.6.dp.toPx(),
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round,
-                        ),
-                    )
-                }
+        Canvas(modifier = Modifier.size(32.dp).padding(2.dp)) {
+            val scale = minOf(size.width, size.height) / 64f
+            val checkboxPath = Path().apply {
+                moveTo(0f, 16f * scale)
+                lineTo(0f, 56f * scale)
+                arcTo(Rect(0f, 48f * scale, 16f * scale, 64f * scale), 180f, -90f, false)
+                lineTo(56f * scale, 64f * scale)
+                arcTo(Rect(48f * scale, 48f * scale, 64f * scale, 64f * scale), 90f, -90f, false)
+                lineTo(64f * scale, 8f * scale)
+                arcTo(Rect(48f * scale, 0f, 64f * scale, 16f * scale), 0f, -90f, false)
+                lineTo(8f * scale, 0f)
+                arcTo(Rect(0f, 0f, 16f * scale, 16f * scale), 270f, -90f, false)
+                lineTo(0f, 16f * scale)
+                lineTo(32f * scale, 48f * scale)
+                lineTo(64f * scale, 16f * scale)
+                lineTo(64f * scale, 8f * scale)
+                arcTo(Rect(48f * scale, 0f, 64f * scale, 16f * scale), 0f, -90f, false)
+                lineTo(8f * scale, 0f)
+                arcTo(Rect(0f, 0f, 16f * scale, 16f * scale), 270f, -90f, false)
+                lineTo(0f, 56f * scale)
+                arcTo(Rect(0f, 48f * scale, 16f * scale, 64f * scale), 180f, -90f, false)
+                lineTo(56f * scale, 64f * scale)
+                arcTo(Rect(48f * scale, 48f * scale, 64f * scale, 64f * scale), 90f, -90f, false)
+                lineTo(64f * scale, 16f * scale)
             }
+            drawPath(
+                path = checkboxPath,
+                color = strokeColor,
+                style = Stroke(
+                    width = 6f * scale,
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round,
+                    pathEffect = PathEffect.dashPathEffect(
+                        intervals = floatArrayOf(dashLength * scale, 9_999_999f),
+                        phase = dashOffset * scale,
+                    ),
+                ),
+            )
         }
     }
 }
