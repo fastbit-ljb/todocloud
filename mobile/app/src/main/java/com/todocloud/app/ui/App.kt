@@ -76,6 +76,8 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.math.abs
 
 private data class TabItem(
     val label: String,
@@ -260,13 +262,16 @@ fun TodoCloudApp() {
     }
 
     aiResult?.let { result ->
+        val importPlan = buildAiImportPlan(tasks, result.candidates)
         AiCandidatesDialog(
-            result = result,
+            candidates = importPlan.candidatesToCreate,
+            skippedCount = importPlan.skippedCount,
             loading = loading,
             onDismiss = { if (!loading) aiResult = null },
             onConfirm = {
                 runRequest {
-                    val created = result.candidates.map { candidate ->
+                    val plan = buildAiImportPlan(tasks, result.candidates)
+                    val created = plan.candidatesToCreate.map { candidate ->
                         repository.createTask(
                             currentSession.token,
                             candidate.title,
@@ -507,7 +512,8 @@ private fun CreateTaskDialog(
 
 @Composable
 private fun AiCandidatesDialog(
-    result: AiParseResult,
+    candidates: List<com.todocloud.app.data.AiTaskCandidate>,
+    skippedCount: Int,
     loading: Boolean,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
@@ -516,10 +522,16 @@ private fun AiCandidatesDialog(
         onDismissRequest = onDismiss,
         title = { Text("AI 识别结果") },
         text = {
-            if (result.candidates.isEmpty()) {
-                Text("没有识别到明确的待办事项")
+            if (candidates.isEmpty()) {
+                Text(if (skippedCount > 0) "识别到的任务都已经存在，无需重复创建" else "没有识别到明确的待办事项")
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (skippedCount > 0) {
+                        Text(
+                            "已跳过 $skippedCount 条重复任务",
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     Text(
                         "请确认后写入云端任务：",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -528,7 +540,7 @@ private fun AiCandidatesDialog(
                         modifier = Modifier.heightIn(max = 320.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(result.candidates) { candidate ->
+                        items(candidates) { candidate ->
                             Card(modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(12.dp)) {
                                     Text(candidate.title, style = MaterialTheme.typography.titleMedium)
@@ -551,12 +563,67 @@ private fun AiCandidatesDialog(
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                enabled = !loading && result.candidates.isNotEmpty(),
+                enabled = !loading && candidates.isNotEmpty(),
             ) { Text(if (loading) "创建中…" else "确认创建") }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("取消") } },
     )
 }
+
+private data class AiImportPlan(
+    val candidatesToCreate: List<com.todocloud.app.data.AiTaskCandidate>,
+    val skippedCount: Int,
+)
+
+private fun buildAiImportPlan(
+    existingTasks: List<TaskItem>,
+    candidates: List<com.todocloud.app.data.AiTaskCandidate>,
+): AiImportPlan {
+    val uniqueCandidates = candidates.filterIndexed { index, candidate ->
+        candidates.indexOfFirst { other -> sameCandidate(other, candidate) } == index
+    }
+    val candidatesToCreate = uniqueCandidates.filterNot { candidate ->
+        existingTasks.any { task -> taskMatchesCandidate(task, candidate) }
+    }
+    return AiImportPlan(
+        candidatesToCreate = candidatesToCreate,
+        skippedCount = candidates.size - candidatesToCreate.size,
+    )
+}
+
+private fun sameCandidate(
+    first: com.todocloud.app.data.AiTaskCandidate,
+    second: com.todocloud.app.data.AiTaskCandidate,
+): Boolean {
+    if (first.title.trim().lowercase(Locale.ROOT) != second.title.trim().lowercase(Locale.ROOT)) return false
+    val firstDue = first.dueAt?.let(::parseInstant)
+    val secondDue = second.dueAt?.let(::parseInstant)
+    return if (firstDue != null && secondDue != null) {
+        abs(firstDue.epochSecond - secondDue.epochSecond) <= 60
+    } else {
+        first.dueAt == second.dueAt
+    }
+}
+
+private fun taskMatchesCandidate(
+    task: TaskItem,
+    candidate: com.todocloud.app.data.AiTaskCandidate,
+): Boolean {
+    if (task.title.trim().lowercase(Locale.ROOT) != candidate.title.trim().lowercase(Locale.ROOT)) return false
+    val candidateDue = candidate.dueAt ?: return true
+    val taskDue = task.dueAt ?: return false
+    val candidateInstant = parseInstant(candidateDue)
+    val taskInstant = parseInstant(taskDue)
+    return if (candidateInstant != null && taskInstant != null) {
+        abs(candidateInstant.epochSecond - taskInstant.epochSecond) <= 60
+    } else {
+        candidateDue == taskDue
+    }
+}
+
+private fun parseInstant(value: String): java.time.Instant? = runCatching {
+    OffsetDateTime.parse(value).toInstant()
+}.getOrNull()
 
 @Composable
 private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) {
