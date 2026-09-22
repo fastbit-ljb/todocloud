@@ -1,8 +1,14 @@
 package com.todocloud.app.ui
 
+import android.app.AlarmManager
 import android.app.DatePickerDialog
+import android.app.NotificationManager
 import android.app.TimePickerDialog
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -92,6 +98,7 @@ import com.todocloud.app.data.AiParseResult
 import com.todocloud.app.data.Session
 import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TodoCloudRepository
+import com.todocloud.app.notification.ReminderReceiver
 import com.todocloud.app.notification.ReminderScheduler
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -253,6 +260,7 @@ fun TodoCloudApp() {
 
             1 -> CalendarScreen(paddingValues, tasks)
             else -> SettingsScreen(
+                context = context,
                 paddingValues = paddingValues,
                 session = currentSession,
                 onLogout = {
@@ -582,7 +590,7 @@ private fun GreenTaskCheckbox(
         animationSpec = tween(durationMillis = 500),
         label = "task checkbox dash offset",
     )
-    val strokeColor = if (checked) Color(0xFF49C96B) else MaterialTheme.colorScheme.onSurfaceVariant
+    val strokeColor = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
 
     Box(
         modifier = Modifier
@@ -977,13 +985,77 @@ private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) 
 }
 
 @Composable
-private fun SettingsScreen(paddingValues: PaddingValues, session: Session, onLogout: () -> Unit) {
+private fun SettingsScreen(
+    context: Context,
+    paddingValues: PaddingValues,
+    session: Session,
+    onLogout: () -> Unit,
+) {
+    val notificationManager = remember(context) {
+        context.getSystemService(NotificationManager::class.java)
+    }
+    val alarmManager = remember(context) {
+        context.getSystemService(AlarmManager::class.java)
+    }
+    val notificationsEnabled = notificationManager.areNotificationsEnabled()
+    val exactAlarmsEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+
     Column(
         modifier = Modifier.fillMaxSize().padding(paddingValues).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("账号", style = MaterialTheme.typography.titleLarge)
         Text(session.email, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("提醒", style = MaterialTheme.typography.titleLarge)
+        Text(
+            if (notificationsEnabled) "系统通知已开启" else "系统通知已关闭，请在系统设置中允许 TodoCloud 通知",
+            color = if (notificationsEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        )
+        if (!notificationsEnabled) {
+            OutlinedButton(
+                onClick = {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        },
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("打开通知设置")
+            }
+        }
+        if (!exactAlarmsEnabled) {
+            Text(
+                "精确闹钟权限未开启，提醒可能延迟。",
+                color = MaterialTheme.colorScheme.error,
+            )
+            OutlinedButton(
+                onClick = {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:${context.packageName}"),
+                        ),
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("开启精确提醒权限")
+            }
+        }
+        OutlinedButton(
+            onClick = {
+                ReminderReceiver.showNotification(
+                    context = context,
+                    taskId = Int.MAX_VALUE,
+                    title = "这是一条 TodoCloud 系统通知测试",
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("发送测试通知")
+        }
         OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Outlined.Logout, contentDescription = null)
             Spacer(Modifier.width(8.dp))

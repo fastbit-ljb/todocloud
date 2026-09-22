@@ -50,7 +50,7 @@ private val TodoDarkColors = darkColorScheme(
 @Composable
 fun TodoCloudTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -58,8 +58,8 @@ fun TodoCloudTheme(
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        darkTheme -> darkColorScheme()
-        else -> lightColorScheme()
+        darkTheme -> TodoDarkColors
+        else -> TodoLightColors
     }
 
     MaterialTheme(
