@@ -5,6 +5,9 @@ import android.app.TimePickerDialog
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,11 +19,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,7 +42,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,7 +64,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
@@ -416,7 +430,10 @@ private fun TaskCard(task: TaskItem, onToggle: () -> Unit, onDelete: () -> Unit)
             modifier = Modifier.fillMaxWidth().padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Checkbox(checked = task.completed, onCheckedChange = { onToggle() })
+            GreenTaskCheckbox(
+                checked = task.completed,
+                onCheckedChange = { onToggle() },
+            )
             Column(modifier = Modifier.weight(1f).padding(horizontal = 6.dp)) {
                 Text(
                     task.title,
@@ -432,6 +449,75 @@ private fun TaskCard(task: TaskItem, onToggle: () -> Unit, onDelete: () -> Unit)
             }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Outlined.DeleteOutline, contentDescription = "删除任务")
+            }
+        }
+    }
+}
+
+@Composable
+private fun GreenTaskCheckbox(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val checkboxShape = RoundedCornerShape(8.dp)
+    val borderColor by animateColorAsState(
+        targetValue = if (checked) Color(0xFF49C96B) else MaterialTheme.colorScheme.outline,
+        label = "task checkbox border",
+    )
+    val fillColor by animateColorAsState(
+        targetValue = if (checked) Color(0xFF49C96B) else Color.Transparent,
+        label = "task checkbox fill",
+    )
+    val checkScale by animateFloatAsState(
+        targetValue = if (checked) 1f else 0.72f,
+        label = "task checkbox check",
+    )
+
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .semantics {
+                contentDescription = if (checked) "标记为未完成" else "标记为完成"
+            }
+            .toggleable(
+                value = checked,
+                role = Role.Checkbox,
+                onValueChange = onCheckedChange,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(27.dp)
+                .clip(checkboxShape)
+                .background(fillColor, checkboxShape)
+                .border(2.dp, borderColor, checkboxShape),
+        ) {
+            if (checked) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(5.dp)
+                        .graphicsLayer {
+                            scaleX = checkScale
+                            scaleY = checkScale
+                        },
+                ) {
+                    val tick = Path().apply {
+                        moveTo(size.width * 0.12f, size.height * 0.52f)
+                        lineTo(size.width * 0.40f, size.height * 0.80f)
+                        lineTo(size.width * 0.88f, size.height * 0.20f)
+                    }
+                    drawPath(
+                        path = tick,
+                        color = Color.White,
+                        style = Stroke(
+                            width = 2.6.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round,
+                        ),
+                    )
+                }
             }
         }
     }
