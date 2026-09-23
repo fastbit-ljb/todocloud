@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai_parser import AiNotConfiguredError, AiParseError, parse_screenshot
 from app.api.dependencies import get_current_user
 from app.core.config import settings
+from app.core.rate_limit import enforce_rate_limit
 from app.db.models import AiParseRecord, Attachment, User
 from app.db.session import get_db
 from app.storage import store_image
@@ -41,6 +42,7 @@ async def parse_screenshot_endpoint(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AiParseResponse:
+    await enforce_rate_limit("ai-user", str(user.id), settings.ai_rate_limit_per_minute)
     if file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="只支持 JPG、PNG 或 WebP 图片")
     if not settings.ai_api_key:

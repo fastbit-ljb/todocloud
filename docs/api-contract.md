@@ -7,6 +7,8 @@ API 前缀为 `/api/v1`，请求和响应使用 JSON，除文件上传接口外�
 ```text
 POST /auth/register
 POST /auth/login
+POST /auth/refresh
+POST /auth/logout
 GET  /auth/me
 ```
 
@@ -21,13 +23,13 @@ GET  /auth/me
 }
 ```
 
-登录或注册成功后返回 `access_token`、`token_type` 和 `user`。受保护接口使用：
+登录或注册成功后返回 `access_token`、`refresh_token`、`token_type` 和 `user`。受保护接口使用：
 
 ```text
 Authorization: Bearer <access_token>
 ```
 
-当前密码使用 PBKDF2-SHA256 哈希保存，令牌为带过期时间的 HMAC 签名 token。正式版本仍需补充 refresh token、撤销和设备会话管理。
+当前密码使用 PBKDF2-SHA256 哈希保存。短期 `access_token` 使用带过期时间的 HMAC 签名 token；`refresh_token` 只在服务端保存哈希并且每次刷新后轮换。客户端退出登录时调用 `/auth/logout` 撤销刷新令牌。
 
 ## 当前已实现：任务
 

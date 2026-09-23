@@ -8,6 +8,7 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
+from app.core.rate_limit import close_rate_limit
 
 
 @asynccontextmanager
@@ -21,6 +22,7 @@ async def lifespan(_: FastAPI):
             )
         )
     yield
+    await close_rate_limit()
     await engine.dispose()
 
 

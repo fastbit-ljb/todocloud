@@ -264,8 +264,10 @@ fun TodoCloudApp() {
                 paddingValues = paddingValues,
                 session = currentSession,
                 onLogout = {
-                    repository.clearSession()
-                    session = null
+                    scope.launch {
+                        repository.logout(currentSession)
+                        session = null
+                    }
                 },
             )
         }

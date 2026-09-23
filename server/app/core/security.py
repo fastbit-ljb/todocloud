@@ -55,6 +55,14 @@ def create_access_token(subject: int) -> str:
     return f"{unsigned}.{_encode_bytes(signature)}"
 
 
+def create_refresh_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def decode_access_token(token: str) -> int:
     header, payload, signature = token.split(".", 2)
     unsigned = f"{header}.{payload}"

@@ -17,7 +17,10 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_model: str = "gemini-3.5-flash-lite"
     jwt_secret: str = "replace-this-before-deployment"
-    access_token_expire_minutes: int = 60 * 24 * 30
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 30
+    login_rate_limit_per_minute: int = 10
+    ai_rate_limit_per_minute: int = 5
 
     model_config = SettingsConfigDict(
         env_file=".env",

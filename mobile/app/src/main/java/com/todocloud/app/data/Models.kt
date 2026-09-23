@@ -2,6 +2,7 @@ package com.todocloud.app.data
 
 data class Session(
     val token: String,
+    val refreshToken: String,
     val email: String,
     val displayName: String?,
 )
@@ -30,4 +31,4 @@ data class AiParseResult(
     val candidates: List<AiTaskCandidate>,
 )
 
-class ApiException(message: String) : Exception(message)
+class ApiException(message: String, val statusCode: Int? = null) : Exception(message)
