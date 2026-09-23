@@ -498,7 +498,7 @@ private fun FloatingUnderlineTextField(
             ) {
                 label.forEachIndexed { index, character ->
                     val characterOffset by animateDpAsState(
-                        targetValue = if (active) (-18).dp else 0.dp,
+                        targetValue = if (active) (-8).dp else 0.dp,
                         animationSpec = tween(
                             durationMillis = 300,
                             delayMillis = index * 50,
