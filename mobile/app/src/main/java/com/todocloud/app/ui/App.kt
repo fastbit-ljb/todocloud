@@ -161,14 +161,12 @@ private fun visibleCalendarTasks(tasks: List<TaskItem>): List<TaskItem> = tasks.
 private data class InputStyleValues(
     val labelFloatOffsetDp: Float = 10f,
     val textBottomPaddingDp: Float = 2f,
-    val multilineTopPaddingDp: Float = 20f,
 ) {
     fun save(context: Context) {
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
             .edit()
             .putFloat(KEY_LABEL_FLOAT_OFFSET, labelFloatOffsetDp)
             .putFloat(KEY_TEXT_BOTTOM_PADDING, textBottomPaddingDp)
-            .putFloat(KEY_MULTILINE_TOP_PADDING, multilineTopPaddingDp)
             .apply()
     }
 
@@ -176,14 +174,12 @@ private data class InputStyleValues(
         private const val PREFERENCES_NAME = "input_style_debug"
         private const val KEY_LABEL_FLOAT_OFFSET = "label_float_offset_dp"
         private const val KEY_TEXT_BOTTOM_PADDING = "text_bottom_padding_dp"
-        private const val KEY_MULTILINE_TOP_PADDING = "multiline_top_padding_dp"
 
         fun load(context: Context): InputStyleValues {
             val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
             return InputStyleValues(
                 labelFloatOffsetDp = preferences.getFloat(KEY_LABEL_FLOAT_OFFSET, 10f),
                 textBottomPaddingDp = preferences.getFloat(KEY_TEXT_BOTTOM_PADDING, 2f),
-                multilineTopPaddingDp = preferences.getFloat(KEY_MULTILINE_TOP_PADDING, 20f),
             )
         }
     }
@@ -533,7 +529,7 @@ private fun FloatingUnderlineTextField(
                     .heightIn(min = if (singleLine) 40.dp else 64.dp)
                     // Keep the caret close to the shared underline on every form.
                     .padding(
-                        top = if (singleLine) 8.dp else inputStyle.multilineTopPaddingDp.dp,
+                        top = 8.dp,
                         bottom = inputStyle.textBottomPaddingDp.dp,
                     )
                     .onFocusChanged { focused = it.isFocused }
@@ -804,13 +800,6 @@ private fun InputStyleDebugDialog(
                     onValueChange = { onValuesChange(values.copy(textBottomPaddingDp = it)) },
                     valueRange = 0f..12f,
                     steps = 11,
-                )
-                Text("多行输入顶部内距：${values.multilineTopPaddingDp.toInt()}dp")
-                Slider(
-                    value = values.multilineTopPaddingDp,
-                    onValueChange = { onValuesChange(values.copy(multilineTopPaddingDp = it)) },
-                    valueRange = 8f..32f,
-                    steps = 23,
                 )
                 FloatingUnderlineTextField(
                     value = previewText,
