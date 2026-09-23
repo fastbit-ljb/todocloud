@@ -1,6 +1,7 @@
 package com.todocloud.app.ui
 
 import android.Manifest
+import android.app.Activity
 import android.app.AlarmManager
 import android.app.DatePickerDialog
 import android.app.NotificationManager
@@ -392,14 +393,14 @@ private fun LoginScreen(
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             Text("TodoCloud", style = MaterialTheme.typography.displaySmall)
             Text(
                 if (registerMode) "创建账号，开始管理你的任务" else "登录后在云端同步你的任务",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             FloatingUnderlineTextField(
                 value = email,
                 onValueChange = { email = it },
@@ -475,7 +476,8 @@ private fun FloatingUnderlineTextField(
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
                     .heightIn(min = if (singleLine) 40.dp else 64.dp)
-                    .padding(top = 8.dp, bottom = 8.dp)
+                    // Keep the caret close to the shared underline on every form.
+                    .padding(top = 8.dp, bottom = 2.dp)
                     .onFocusChanged { focused = it.isFocused }
                     .semantics { contentDescription = label },
                 textStyle = TextStyle(
@@ -739,6 +741,17 @@ private fun AiTextDialog(
         speechError = null
     }
 
+    val externalRecognizerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+                ?.let(::applyTranscript)
+        }
+    }
+
     DisposableEffect(recognizer) {
         if (recognizer != null) {
             recognizer.setRecognitionListener(object : RecognitionListener {
@@ -785,20 +798,22 @@ private fun AiTextDialog(
     }
 
     fun startListening() {
-        val speechRecognizer = recognizer ?: run {
-            speechError = "此设备没有可用的系统语音识别服务"
-            return
-        }
         speechBaseText = text.trimEnd()
         speechError = null
-        speechRecognizer.cancel()
-        speechRecognizer.startListening(
-            Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-            },
-        )
+        val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+        }
+        val speechRecognizer = recognizer
+        if (speechRecognizer != null) {
+            speechRecognizer.cancel()
+            speechRecognizer.startListening(speechIntent)
+        } else if (speechIntent.resolveActivity(context.packageManager) != null) {
+            externalRecognizerLauncher.launch(speechIntent)
+        } else {
+            speechError = "此设备没有可用的语音识别服务，请直接输入文字或使用键盘语音"
+        }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
