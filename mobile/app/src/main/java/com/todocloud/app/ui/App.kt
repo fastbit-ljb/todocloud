@@ -433,8 +433,8 @@ private fun FloatingUnderlineTextField(
             )
             Row(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(top = 8.dp),
+                    .align(Alignment.BottomStart)
+                    .padding(bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 label.forEachIndexed { index, character ->
