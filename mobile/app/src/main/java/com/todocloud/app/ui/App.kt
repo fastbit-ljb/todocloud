@@ -1302,7 +1302,7 @@ private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) 
                                 val selected = date == selectedDate
                                 val taskCount = tasksByDate[date].orEmpty().size
                                 val isToday = date == LocalDate.now()
-                                val taskColorFraction = (0.14f + (taskCount - 1).coerceAtLeast(0) * 0.12f)
+                                val taskColorFraction = (0.22f + (taskCount - 1).coerceAtLeast(0) * 0.12f)
                                     .coerceAtMost(0.62f)
                                 val dayColor = if (taskCount == 0) {
                                     MaterialTheme.colorScheme.surfaceVariant
