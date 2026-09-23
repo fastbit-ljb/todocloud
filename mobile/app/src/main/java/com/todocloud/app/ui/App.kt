@@ -1203,7 +1203,7 @@ private fun sameCandidate(
     first: com.todocloud.app.data.AiTaskCandidate,
     second: com.todocloud.app.data.AiTaskCandidate,
 ): Boolean {
-    if (first.title.trim().lowercase(Locale.ROOT) != second.title.trim().lowercase(Locale.ROOT)) return false
+    if (!titlesLikelySame(first.title, second.title)) return false
     val firstDue = first.dueAt?.let(::parseInstant)
     val secondDue = second.dueAt?.let(::parseInstant)
     return if (firstDue != null && secondDue != null) {
@@ -1213,11 +1213,41 @@ private fun sameCandidate(
     }
 }
 
+private fun titlesLikelySame(first: String, second: String): Boolean {
+    val firstNormalized = normalizeTaskTitle(first)
+    val secondNormalized = normalizeTaskTitle(second)
+    if (firstNormalized.isBlank() || secondNormalized.isBlank()) return false
+    if (firstNormalized == secondNormalized) return true
+    if (firstNormalized.length < 3 || secondNormalized.length < 3) return false
+    if (firstNormalized.contains(secondNormalized) || secondNormalized.contains(firstNormalized)) return true
+
+    val firstCharacters = firstNormalized.toSet()
+    val secondCharacters = secondNormalized.toSet()
+    val intersection = firstCharacters.intersect(secondCharacters).size.toFloat()
+    val union = firstCharacters.union(secondCharacters).size.toFloat()
+    return union > 0 && intersection / union >= 0.68f
+}
+
+private fun normalizeTaskTitle(value: String): String = value
+    .trim()
+    .lowercase(Locale.ROOT)
+    .replace(Regex("[\\p{Punct}\\s，。！？、：；（）【】‘’“”]+"), "")
+    .replace("请", "")
+    .replace("帮我", "")
+    .replace("一下", "")
+    .replace("去", "")
+    .replace("把", "")
+    .replace("给我", "")
+    .replace("发送", "")
+    .replace("发", "")
+    .replace("文件", "")
+    .replace("文档", "")
+
 private fun taskMatchesCandidate(
     task: TaskItem,
     candidate: com.todocloud.app.data.AiTaskCandidate,
 ): Boolean {
-    if (task.title.trim().lowercase(Locale.ROOT) != candidate.title.trim().lowercase(Locale.ROOT)) return false
+    if (!titlesLikelySame(task.title, candidate.title)) return false
     val candidateDue = candidate.dueAt ?: return true
     val taskDue = task.dueAt ?: return false
     val candidateInstant = parseInstant(candidateDue)
