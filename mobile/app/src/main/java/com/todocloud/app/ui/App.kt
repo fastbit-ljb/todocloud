@@ -498,7 +498,9 @@ private fun FloatingUnderlineTextField(
             ) {
                 label.forEachIndexed { index, character ->
                     val characterOffset by animateDpAsState(
-                        targetValue = if (active) (-8).dp else 0.dp,
+                        // Keep the floating label-to-underline distance identical
+                        // for focused, unfocused, empty, and filled fields.
+                        targetValue = (-10).dp,
                         animationSpec = tween(
                             durationMillis = 300,
                             delayMillis = index * 50,
