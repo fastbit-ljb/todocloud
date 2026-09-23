@@ -477,7 +477,7 @@ private fun FloatingUnderlineTextField(
                     .align(Alignment.BottomCenter)
                     .heightIn(min = if (singleLine) 40.dp else 64.dp)
                     // Keep the caret close to the shared underline on every form.
-                    .padding(top = 8.dp, bottom = 2.dp)
+                    .padding(top = if (singleLine) 8.dp else 20.dp, bottom = 2.dp)
                     .onFocusChanged { focused = it.isFocused }
                     .semantics { contentDescription = label },
                 textStyle = TextStyle(
@@ -498,9 +498,9 @@ private fun FloatingUnderlineTextField(
             ) {
                 label.forEachIndexed { index, character ->
                     val characterOffset by animateDpAsState(
-                        // Keep the floating label-to-underline distance identical
-                        // for focused, unfocused, empty, and filled fields.
-                        targetValue = (-10).dp,
+                        // Restore the Uiverse-style float animation while keeping
+                        // the focused label close to the underline.
+                        targetValue = if (active) (-10).dp else 0.dp,
                         animationSpec = tween(
                             durationMillis = 300,
                             delayMillis = index * 50,
