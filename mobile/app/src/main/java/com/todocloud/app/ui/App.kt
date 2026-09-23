@@ -64,12 +64,15 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -155,6 +158,39 @@ private fun visibleCalendarTasks(tasks: List<TaskItem>): List<TaskItem> = tasks.
     isVisibleWithinCompletedDays(it, 365)
 }
 
+private data class InputStyleValues(
+    val labelFloatOffsetDp: Float = 10f,
+    val textBottomPaddingDp: Float = 2f,
+    val multilineTopPaddingDp: Float = 20f,
+) {
+    fun save(context: Context) {
+        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_LABEL_FLOAT_OFFSET, labelFloatOffsetDp)
+            .putFloat(KEY_TEXT_BOTTOM_PADDING, textBottomPaddingDp)
+            .putFloat(KEY_MULTILINE_TOP_PADDING, multilineTopPaddingDp)
+            .apply()
+    }
+
+    companion object {
+        private const val PREFERENCES_NAME = "input_style_debug"
+        private const val KEY_LABEL_FLOAT_OFFSET = "label_float_offset_dp"
+        private const val KEY_TEXT_BOTTOM_PADDING = "text_bottom_padding_dp"
+        private const val KEY_MULTILINE_TOP_PADDING = "multiline_top_padding_dp"
+
+        fun load(context: Context): InputStyleValues {
+            val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            return InputStyleValues(
+                labelFloatOffsetDp = preferences.getFloat(KEY_LABEL_FLOAT_OFFSET, 10f),
+                textBottomPaddingDp = preferences.getFloat(KEY_TEXT_BOTTOM_PADDING, 2f),
+                multilineTopPaddingDp = preferences.getFloat(KEY_MULTILINE_TOP_PADDING, 20f),
+            )
+        }
+    }
+}
+
+private val LocalInputStyleValues = compositionLocalOf { InputStyleValues() }
+
 @Composable
 @androidx.compose.material3.ExperimentalMaterial3Api
 fun TodoCloudApp() {
@@ -168,6 +204,8 @@ fun TodoCloudApp() {
     var selectedTab by rememberSaveable { mutableStateOf(0) }
     var showComposer by rememberSaveable { mutableStateOf(false) }
     var showAiTextComposer by rememberSaveable { mutableStateOf(false) }
+    var showInputStyleDebug by rememberSaveable { mutableStateOf(false) }
+    var inputStyleValues by remember(context) { mutableStateOf(InputStyleValues.load(context)) }
     var aiResult by remember { mutableStateOf<AiParseResult?>(null) }
 
     fun runRequest(action: suspend () -> Unit) {
@@ -221,17 +259,19 @@ fun TodoCloudApp() {
     }
 
     if (session == null) {
-        LoginScreen(
-            loading = loading,
-            error = error,
-            onSubmit = { email, password, register ->
-                runRequest {
-                    val newSession = repository.authenticate(email, password, register)
-                    repository.saveSession(newSession)
-                    session = newSession
-                }
-            },
-        )
+        CompositionLocalProvider(LocalInputStyleValues provides inputStyleValues) {
+            LoginScreen(
+                loading = loading,
+                error = error,
+                onSubmit = { email, password, register ->
+                    runRequest {
+                        val newSession = repository.authenticate(email, password, register)
+                        repository.saveSession(newSession)
+                        session = newSession
+                    }
+                },
+            )
+        }
         return
     }
 
@@ -242,7 +282,8 @@ fun TodoCloudApp() {
         TabItem("设置") { Icon(Icons.Outlined.Settings, contentDescription = "设置") },
     )
 
-    Scaffold(
+    CompositionLocalProvider(LocalInputStyleValues provides inputStyleValues) {
+        Scaffold(
         topBar = {
             TopAppBar(title = { Text(if (selectedTab == 0) "我的任务" else tabs[selectedTab].label) })
         },
@@ -305,6 +346,7 @@ fun TodoCloudApp() {
                 context = context,
                 paddingValues = paddingValues,
                 session = currentSession,
+                onOpenInputStyleDebug = { showInputStyleDebug = true },
                 onLogout = {
                     scope.launch {
                         repository.logout(currentSession)
@@ -313,9 +355,9 @@ fun TodoCloudApp() {
                 },
             )
         }
-    }
+        }
 
-    if (showComposer) {
+        if (showComposer) {
         CreateTaskDialog(
             context = context,
             loading = loading,
@@ -335,9 +377,9 @@ fun TodoCloudApp() {
                 }
             },
         )
-    }
+        }
 
-    if (showAiTextComposer) {
+        if (showAiTextComposer) {
         AiTextDialog(
             loading = loading,
             error = error,
@@ -349,6 +391,18 @@ fun TodoCloudApp() {
                 }
             },
         )
+        }
+
+        if (showInputStyleDebug) {
+            InputStyleDebugDialog(
+                values = inputStyleValues,
+                onValuesChange = {
+                    inputStyleValues = it
+                    it.save(context)
+                },
+                onDismiss = { showInputStyleDebug = false },
+            )
+        }
     }
 
     aiResult?.let { result ->
@@ -446,6 +500,7 @@ private fun FloatingUnderlineTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     supportingText: String? = null,
 ) {
+    val inputStyle = LocalInputStyleValues.current
     var focused by remember { mutableStateOf(false) }
     val active = focused || value.isNotEmpty()
     val activeColor = MaterialTheme.colorScheme.primary
@@ -477,7 +532,10 @@ private fun FloatingUnderlineTextField(
                     .align(Alignment.BottomCenter)
                     .heightIn(min = if (singleLine) 40.dp else 64.dp)
                     // Keep the caret close to the shared underline on every form.
-                    .padding(top = if (singleLine) 8.dp else 20.dp, bottom = 2.dp)
+                    .padding(
+                        top = if (singleLine) 8.dp else inputStyle.multilineTopPaddingDp.dp,
+                        bottom = inputStyle.textBottomPaddingDp.dp,
+                    )
                     .onFocusChanged { focused = it.isFocused }
                     .semantics { contentDescription = label },
                 textStyle = TextStyle(
@@ -500,7 +558,7 @@ private fun FloatingUnderlineTextField(
                     val characterOffset by animateDpAsState(
                         // Restore the Uiverse-style float animation while keeping
                         // the focused label close to the underline.
-                        targetValue = if (active) (-10).dp else 0.dp,
+                        targetValue = if (active) (-inputStyle.labelFloatOffsetDp).dp else 0.dp,
                         animationSpec = tween(
                             durationMillis = 300,
                             delayMillis = index * 50,
@@ -715,6 +773,61 @@ private fun GreenTaskCheckbox(
             )
         }
     }
+}
+
+@Composable
+private fun InputStyleDebugDialog(
+    values: InputStyleValues,
+    onValuesChange: (InputStyleValues) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var previewText by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("输入框样式调试") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "以下调整会实时应用到登录、AI 提取和新建任务的所有输入框，并自动保存到本机。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text("浮动标签上移：${values.labelFloatOffsetDp.toInt()}dp")
+                Slider(
+                    value = values.labelFloatOffsetDp,
+                    onValueChange = { onValuesChange(values.copy(labelFloatOffsetDp = it)) },
+                    valueRange = 0f..24f,
+                    steps = 23,
+                )
+                Text("文字到底部横线内距：${values.textBottomPaddingDp.toInt()}dp")
+                Slider(
+                    value = values.textBottomPaddingDp,
+                    onValueChange = { onValuesChange(values.copy(textBottomPaddingDp = it)) },
+                    valueRange = 0f..12f,
+                    steps = 11,
+                )
+                Text("多行输入顶部内距：${values.multilineTopPaddingDp.toInt()}dp")
+                Slider(
+                    value = values.multilineTopPaddingDp,
+                    onValueChange = { onValuesChange(values.copy(multilineTopPaddingDp = it)) },
+                    valueRange = 8f..32f,
+                    steps = 23,
+                )
+                FloatingUnderlineTextField(
+                    value = previewText,
+                    onValueChange = { previewText = it },
+                    label = "示例输入",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                Text(
+                    "调好后告诉我，我会删除这个调试入口和相关代码，只保留最终样式。",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("保存并关闭") } },
+    )
 }
 
 @Composable
@@ -1214,6 +1327,7 @@ private fun SettingsScreen(
     context: Context,
     paddingValues: PaddingValues,
     session: Session,
+    onOpenInputStyleDebug: () -> Unit,
     onLogout: () -> Unit,
 ) {
     val notificationManager = remember(context) {
@@ -1231,6 +1345,12 @@ private fun SettingsScreen(
     ) {
         Text("账号", style = MaterialTheme.typography.titleLarge)
         Text(session.email, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(
+            onClick = onOpenInputStyleDebug,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("调试输入框样式")
+        }
         Text("提醒", style = MaterialTheme.typography.titleLarge)
         Text(
             if (notificationsEnabled) "系统通知已开启" else "系统通知已关闭，请在系统设置中允许 TodoCloud 通知",
