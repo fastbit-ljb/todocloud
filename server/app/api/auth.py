@@ -86,7 +86,10 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> To
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()
     if user is None or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="邮箱或密码错误")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="邮箱错误或密码错误，请检查后重试",
+        )
     return _token_response(user)
 
 
