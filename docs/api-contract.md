@@ -51,7 +51,7 @@ DELETE /tasks/{task_id}
 }
 ```
 
-`reminder_offset_minutes` 表示在截止时间前多少分钟提醒，允许 `0` 到 `10080`；传 `null` 表示不设置提醒。任务当前字段：`id`、`title`、`description`、`due_at`、`reminder_offset_minutes`、`completed`、`completed_at`、`created_at`、`updated_at`。完成时间用于控制主页保留 3 天、日历保留 1 年；任务数据本身不会因此自动删除。所有任务查询和修改都按当前登录用户隔离。
+`reminder_offset_minutes` 表示在截止时间前多少分钟提醒，允许 `0` 到 `10080`；传 `null` 表示不设置提醒。任务当前字段：`id`、`title`、`description`、`due_at`、`reminder_offset_minutes`、`completed`、`completed_at`、`created_at`、`updated_at`。未完成任务按截止时间排列，已完成任务按完成时间倒序排列，因此刚完成的任务紧跟在未完成任务之后。完成时间用于控制主页保留 3 天、日历保留 1 年；任务数据本身不会因此自动删除。所有任务查询和修改都按当前登录用户隔离。
 
 Android 客户端会根据任务的截止时间和提醒偏移量设置本地 AlarmManager，并通过系统通知渠道提醒用户；已完成任务或已过期提醒不会重复调度。
 

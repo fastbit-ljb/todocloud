@@ -51,7 +51,8 @@ async def list_tasks(
         .where(Task.user_id == user.id)
         .order_by(
             case((Task.completed.is_(False), 0), else_=1),
-            Task.due_at.asc().nulls_last(),
+            case((Task.completed.is_(False), Task.due_at), else_=None).asc().nulls_last(),
+            case((Task.completed.is_(True), Task.completed_at), else_=None).desc().nulls_last(),
             Task.created_at.desc(),
         )
     )

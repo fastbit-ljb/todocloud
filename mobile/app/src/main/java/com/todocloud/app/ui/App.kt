@@ -117,11 +117,22 @@ private data class TabItem(
     val icon: @Composable () -> Unit,
 )
 
-private fun sortTasks(tasks: List<TaskItem>): List<TaskItem> = tasks.sortedWith(
-    compareBy<TaskItem> { it.completed }
-        .thenBy { it.dueAt == null }
-        .thenBy { it.dueAt ?: "" },
-)
+private fun sortTasks(tasks: List<TaskItem>): List<TaskItem> = tasks.sortedWith { left, right ->
+    if (left.completed != right.completed) {
+        return@sortedWith left.completed.compareTo(right.completed)
+    }
+    if (!left.completed) {
+        return@sortedWith compareNullableStrings(left.dueAt, right.dueAt)
+    }
+    compareNullableStrings(right.completedAt, left.completedAt)
+}
+
+private fun compareNullableStrings(left: String?, right: String?): Int {
+    if (left == null && right == null) return 0
+    if (left == null) return 1
+    if (right == null) return -1
+    return left.compareTo(right)
+}
 
 private fun isVisibleWithinCompletedDays(task: TaskItem, days: Long): Boolean {
     if (!task.completed) return true
