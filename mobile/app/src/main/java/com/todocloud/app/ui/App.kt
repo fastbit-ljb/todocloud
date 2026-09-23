@@ -23,6 +23,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,6 +56,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -820,6 +822,61 @@ private fun InputStyleDebugDialog(
 }
 
 @Composable
+private fun ThemeCardTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val containerColor = MaterialTheme.colorScheme.primaryContainer
+    val contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+    val activeColor = MaterialTheme.colorScheme.primary
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(
+            width = if (focused) 2.dp else 1.dp,
+            color = if (focused) activeColor else contentColor.copy(alpha = 0.28f),
+        ),
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Text(
+                label,
+                color = contentColor,
+                style = MaterialTheme.typography.titleSmall,
+            )
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 112.dp)
+                    .padding(top = 8.dp)
+                    .onFocusChanged { focused = it.isFocused }
+                    .semantics { contentDescription = label },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = contentColor),
+                cursorBrush = SolidColor(activeColor),
+                singleLine = false,
+                maxLines = 6,
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (value.isBlank()) {
+                            Text(
+                                "请输入聊天内容，或点击下方按钮转成文字",
+                                color = contentColor.copy(alpha = 0.62f),
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+            )
+        }
+    }
+}
+
+@Composable
 private fun AiTextDialog(
     loading: Boolean,
     error: String?,
@@ -935,12 +992,11 @@ private fun AiTextDialog(
                     "先把语音转成文字，再由 AI 根据聊天时间提取任务。不会上传录音。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                FloatingUnderlineTextField(
+                ThemeCardTextField(
                     value = text,
                     onValueChange = { text = it },
                     label = "聊天内容",
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = false,
                 )
                 OutlinedButton(
                     onClick = {
