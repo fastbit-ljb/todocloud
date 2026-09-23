@@ -101,12 +101,14 @@ import com.todocloud.app.data.TodoCloudRepository
 import com.todocloud.app.notification.ReminderReceiver
 import com.todocloud.app.notification.ReminderScheduler
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.abs
 
@@ -114,6 +116,26 @@ private data class TabItem(
     val label: String,
     val icon: @Composable () -> Unit,
 )
+
+private fun sortTasks(tasks: List<TaskItem>): List<TaskItem> = tasks.sortedWith(
+    compareBy<TaskItem> { it.completed }
+        .thenBy { it.dueAt == null }
+        .thenBy { it.dueAt ?: "" },
+)
+
+private fun isVisibleWithinCompletedDays(task: TaskItem, days: Long): Boolean {
+    if (!task.completed) return true
+    val completedAt = task.completedAt?.let(::parseInstant) ?: return true
+    return completedAt.isAfter(Instant.now().minus(days, ChronoUnit.DAYS))
+}
+
+private fun visibleHomeTasks(tasks: List<TaskItem>): List<TaskItem> = sortTasks(
+    tasks.filter { isVisibleWithinCompletedDays(it, 3) },
+)
+
+private fun visibleCalendarTasks(tasks: List<TaskItem>): List<TaskItem> = tasks.filter {
+    isVisibleWithinCompletedDays(it, 365)
+}
 
 @Composable
 @androidx.compose.material3.ExperimentalMaterial3Api
@@ -168,7 +190,7 @@ fun TodoCloudApp() {
             loading = true
             error = null
             try {
-                tasks = repository.listTasks(currentSession.token).also(::scheduleTasks)
+                tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
             } catch (exception: ApiException) {
                 error = exception.message
             } catch (_: Exception) {
@@ -235,7 +257,7 @@ fun TodoCloudApp() {
                 onImportScreenshot = { screenshotLauncher.launch("image/*") },
                 onRefresh = {
                     runRequest {
-                        tasks = repository.listTasks(currentSession.token).also(::scheduleTasks)
+                        tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
                     }
                 },
                 onToggle = { task ->
@@ -246,7 +268,7 @@ fun TodoCloudApp() {
                             completed = !task.completed,
                         )
                         ReminderScheduler.schedule(context, updated)
-                        tasks = tasks.map { if (it.id == updated.id) updated else it }
+                        tasks = sortTasks(tasks.map { if (it.id == updated.id) updated else it })
                     }
                 },
                 onDelete = { task ->
@@ -288,7 +310,7 @@ fun TodoCloudApp() {
                         reminderOffsetMinutes,
                     )
                     ReminderScheduler.schedule(context, created)
-                    tasks = listOf(created) + tasks
+                    tasks = sortTasks(listOf(created) + tasks)
                     showComposer = false
                 }
             },
@@ -315,7 +337,7 @@ fun TodoCloudApp() {
                         )
                     }
                     scheduleTasks(created)
-                    tasks = created + tasks
+                    tasks = sortTasks(created + tasks)
                     aiResult = null
                 }
             },
@@ -490,6 +512,7 @@ private fun TaskHomeScreen(
     onToggle: (TaskItem) -> Unit,
     onDelete: (TaskItem) -> Unit,
 ) {
+    val homeTasks = remember(tasks) { visibleHomeTasks(tasks) }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(paddingValues),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
@@ -501,7 +524,7 @@ private fun TaskHomeScreen(
                 style = MaterialTheme.typography.headlineSmall,
             )
             Text(
-                text = if (tasks.isEmpty()) "还没有任务，点击右下角创建第一个任务" else "今天也向目标前进一点",
+                text = if (homeTasks.isEmpty()) "还没有任务，点击右下角创建第一个任务" else "今天也向目标前进一点",
                 modifier = Modifier.padding(top = 4.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -516,10 +539,10 @@ private fun TaskHomeScreen(
         error?.let { message ->
             item { Text(message, color = MaterialTheme.colorScheme.error) }
         }
-        if (loading && tasks.isEmpty()) {
+        if (loading && homeTasks.isEmpty()) {
             item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
         }
-        if (tasks.isEmpty() && !loading) {
+        if (homeTasks.isEmpty() && !loading) {
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(18.dp)) {
@@ -533,7 +556,7 @@ private fun TaskHomeScreen(
                 }
             }
         }
-        items(tasks, key = { it.id }) { task ->
+        items(homeTasks, key = { it.id }) { task ->
             TaskCard(task = task, onToggle = { onToggle(task) }, onDelete = { onDelete(task) })
         }
         item {
@@ -856,7 +879,7 @@ private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) 
     var selectedDateText by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     val visibleMonth = remember(visibleMonthText) { YearMonth.parse(visibleMonthText) }
     val selectedDate = remember(selectedDateText) { LocalDate.parse(selectedDateText) }
-    val tasksByDate = tasks.mapNotNull { task ->
+    val tasksByDate = visibleCalendarTasks(tasks).mapNotNull { task ->
         task.dueAt?.let { dueAt -> parseDueDate(dueAt)?.let { date -> date to task } }
     }.groupBy({ it.first }, { it.second })
     val firstDayOffset = visibleMonth.atDay(1).dayOfWeek.value - 1

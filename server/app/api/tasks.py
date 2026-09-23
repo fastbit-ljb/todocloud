@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
@@ -37,6 +37,7 @@ class TaskResponse(BaseModel):
     due_at: datetime | None
     reminder_offset_minutes: int | None
     completed: bool
+    completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -48,7 +49,11 @@ async def list_tasks(
     result = await db.execute(
         select(Task)
         .where(Task.user_id == user.id)
-        .order_by(Task.completed.asc(), Task.due_at.asc().nulls_last(), Task.created_at.desc())
+        .order_by(
+            case((Task.completed.is_(False), 0), else_=1),
+            Task.due_at.asc().nulls_last(),
+            Task.created_at.desc(),
+        )
     )
     return list(result.scalars().all())
 
@@ -85,6 +90,12 @@ async def update_task(
     for field, value in payload.model_dump(exclude_unset=True).items():
         if field == "title" and value is not None:
             value = value.strip()
+        if field == "completed":
+            value = bool(value)
+            if value and not task.completed:
+                task.completed_at = datetime.now(timezone.utc)
+            elif not value:
+                task.completed_at = None
         setattr(task, field, value)
     await db.commit()
     await db.refresh(task)

@@ -21,6 +21,18 @@ async def lifespan(_: FastAPI):
                 "reminder_offset_minutes INTEGER"
             )
         )
+        await connection.execute(
+            text(
+                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "
+                "completed_at TIMESTAMPTZ"
+            )
+        )
+        await connection.execute(
+            text(
+                "UPDATE tasks SET completed_at = updated_at "
+                "WHERE completed = TRUE AND completed_at IS NULL"
+            )
+        )
     yield
     await close_rate_limit()
     await engine.dispose()

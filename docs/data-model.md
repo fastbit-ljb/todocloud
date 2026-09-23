@@ -25,6 +25,7 @@ description              TEXT nullable
 due_at                   TIMESTAMPTZ nullable
 reminder_offset_minutes  INTEGER nullable
 completed                BOOLEAN
+completed_at             TIMESTAMPTZ nullable
 created_at               TIMESTAMPTZ
 updated_at               TIMESTAMPTZ
 ```

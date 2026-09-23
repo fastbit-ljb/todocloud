@@ -14,6 +14,7 @@ data class TaskItem(
     val dueAt: String?,
     val reminderOffsetMinutes: Int?,
     val completed: Boolean,
+    val completedAt: String?,
 )
 
 data class AiTaskCandidate(

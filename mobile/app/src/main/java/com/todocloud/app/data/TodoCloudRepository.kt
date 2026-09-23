@@ -261,6 +261,7 @@ class TodoCloudRepository(context: Context) {
         dueAt = json.optNullableString("due_at"),
         reminderOffsetMinutes = json.optNullableInt("reminder_offset_minutes"),
         completed = json.optBoolean("completed"),
+        completedAt = json.optNullableString("completed_at"),
     )
 
     private fun JSONObject.optNullableString(name: String): String? {
