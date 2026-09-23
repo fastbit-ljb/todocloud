@@ -20,6 +20,8 @@ https://dnsgo.xyz/todocloud-api/api/v1
 
 服务器通过 Nginx HTTPS 入口转发 TodoCloud API。容器端口 `18000 -> 8000` 现在只监听服务器本机，公网不能直连；现有 traffic-detection 的 API 路由和端口未修改。
 
+Android 任务页同时提供“从截图识别任务”和“语音/文字提取任务”。后者先使用设备系统语音识别生成可编辑文字，再调用 `/ai/parse-text`；设备没有语音服务或用户不授予录音权限时，可直接输入文字。
+
 ## 服务端
 
 服务端要求 Python 3.12。首次运行：

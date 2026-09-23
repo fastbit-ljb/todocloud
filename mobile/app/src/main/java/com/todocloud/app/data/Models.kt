@@ -27,8 +27,8 @@ data class AiTaskCandidate(
 )
 
 data class AiParseResult(
-    val attachmentId: Int,
-    val parseId: Int,
+    val attachmentId: Int?,
+    val parseId: Int?,
     val candidates: List<AiTaskCandidate>,
 )
 

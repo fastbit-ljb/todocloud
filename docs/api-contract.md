@@ -90,6 +90,24 @@ POST /ai/parse-screenshot
 }
 ```
 
+## 当前已实现：文字/语音转文字 AI 候选
+
+```text
+POST /ai/parse-text
+```
+
+请求使用 JSON：
+
+```json
+{
+  "text": "明天6点把 Word 发给我",
+  "reference_at": "2026-09-23T10:00:00Z",
+  "timezone_name": "Asia/Shanghai"
+}
+```
+
+`text` 最大 20,000 个字符。Android 端使用系统 `SpeechRecognizer` 将语音转换为可编辑文字，然后调用此接口；录音不会上传服务器，也不需要额外的付费语音 API。接口返回格式与截图解析相同，但 `attachment_id` 和 `parse_id` 为 `null`。客户端仍会先展示候选结果，确认后才创建任务，并按标题和截止时间跳过重复任务。
+
 ## 规划中的接口
 
 ### 日历与提醒

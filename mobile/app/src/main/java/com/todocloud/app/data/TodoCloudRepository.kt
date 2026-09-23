@@ -193,8 +193,49 @@ class TodoCloudRepository(context: Context) {
             }
         }
         return AiParseResult(
-            attachmentId = response.getInt("attachment_id"),
-            parseId = response.getInt("parse_id"),
+            attachmentId = response.optNullableInt("attachment_id"),
+            parseId = response.optNullableInt("parse_id"),
+            candidates = candidates,
+        )
+    }
+
+    suspend fun parseText(token: String, text: String): AiParseResult {
+        val payload = JSONObject().apply {
+            put("text", text)
+            put("reference_at", Instant.now().toString())
+            put("timezone_name", java.time.ZoneId.systemDefault().id)
+        }
+        val response = authorizedRequest(token) { authToken ->
+            Request.Builder()
+                .url(baseUrl + "/ai/parse-text")
+                .authorized(authToken)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+        } as JSONObject
+        return parseAiResult(response)
+    }
+
+    private fun parseAiResult(response: JSONObject): AiParseResult {
+        val candidates = response.getJSONArray("candidates").let { array ->
+            buildList {
+                for (index in 0 until array.length()) {
+                    val item = array.getJSONObject(index)
+                    add(
+                        AiTaskCandidate(
+                            title = item.getString("title"),
+                            description = item.optNullableString("description"),
+                            dueAt = item.optNullableString("due_at"),
+                            reminderOffsetMinutes = item.optNullableInt("reminder_offset_minutes"),
+                            confidence = item.optDouble("confidence", 0.0),
+                            sourceText = item.optNullableString("source_text"),
+                        ),
+                    )
+                }
+            }
+        }
+        return AiParseResult(
+            attachmentId = response.optNullableInt("attachment_id"),
+            parseId = response.optNullableInt("parse_id"),
             candidates = candidates,
         )
     }

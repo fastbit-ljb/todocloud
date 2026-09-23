@@ -49,13 +49,10 @@ def _normalize_tasks(result: dict) -> dict:
     return result
 
 
-def _call_model(image_bytes: bytes, content_type: str, reference_at: str, timezone_name: str) -> dict:
-    if not settings.ai_api_key:
-        raise AiNotConfiguredError("服务端尚未配置 AI_API_KEY")
-
-    image_data = base64.b64encode(image_bytes).decode("ascii")
-    prompt = (
-        "请从这张聊天截图中提取需要完成的待办事项。只返回 JSON，不要解释。"
+def _build_prompt(reference_at: str, timezone_name: str, source_type: str) -> str:
+    source = "聊天截图" if source_type == "image" else "聊天文字"
+    return (
+        f"请从这份{source}中提取需要完成的待办事项。只返回 JSON，不要解释。"
         "格式必须是 {\"tasks\":[{\"title\":\"...\",\"description\":null,"
         "\"due_at\":\"ISO-8601 或 null\",\"reminder_offset_minutes\":null,"
         "\"confidence\":0.0,\"source_text\":\"原文片段\"}]}。"
@@ -65,6 +62,12 @@ def _call_model(image_bytes: bytes, content_type: str, reference_at: str, timezo
         "例如‘明天6点把word给我’必须是次日 06:00，不得擅自解释成 18:00；只有‘下午6点’或‘晚上6点’才是 18:00。"
         "没有明确时间就填 null。标题要简短可执行，不要把聊天寒暄当成任务。"
     )
+
+
+def _call_model(content: object, reference_at: str, timezone_name: str) -> dict:
+    if not settings.ai_api_key:
+        raise AiNotConfiguredError("服务端尚未配置 AI_API_KEY")
+
     payload = json.dumps(
         {
             "model": settings.ai_model,
@@ -72,15 +75,14 @@ def _call_model(image_bytes: bytes, content_type: str, reference_at: str, timezo
                 {"role": "system", "content": "你是可靠的待办事项抽取助手。"},
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{content_type};base64,{image_data}",
-                            },
-                        },
-                    ],
+                    "content": (
+                        [
+                            {"type": "text", "text": _build_prompt(reference_at, timezone_name, "image")},
+                            content,
+                        ]
+                        if isinstance(content, dict)
+                        else f"{_build_prompt(reference_at, timezone_name, 'text')}\n\n聊天文字：\n{content}"
+                    ),
                 },
             ],
         }
@@ -119,8 +121,26 @@ async def parse_screenshot(
     reference = reference_at or datetime.now(timezone.utc).isoformat()
     return await asyncio.to_thread(
         _call_model,
-        image_bytes,
-        content_type,
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{content_type};base64,{base64.b64encode(image_bytes).decode('ascii')}",
+            },
+        },
+        reference,
+        timezone_name,
+    )
+
+
+async def parse_text(
+    text: str,
+    reference_at: str | None,
+    timezone_name: str,
+) -> dict:
+    reference = reference_at or datetime.now(timezone.utc).isoformat()
+    return await asyncio.to_thread(
+        _call_model,
+        text,
         reference,
         timezone_name,
     )

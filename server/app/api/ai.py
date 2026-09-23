@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai_parser import AiNotConfiguredError, AiParseError, parse_screenshot
+from app.ai_parser import AiNotConfiguredError, AiParseError, parse_screenshot, parse_text
 from app.api.dependencies import get_current_user
 from app.core.config import settings
 from app.core.rate_limit import enforce_rate_limit
@@ -29,9 +29,15 @@ class AiTaskCandidate(BaseModel):
 
 
 class AiParseResponse(BaseModel):
-    attachment_id: int
-    parse_id: int
+    attachment_id: int | None = None
+    parse_id: int | None = None
     candidates: list[AiTaskCandidate]
+
+
+class AiTextParseRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=20_000)
+    reference_at: str | None = None
+    timezone_name: str = Field(default="Asia/Shanghai", max_length=64)
 
 
 @router.post("/parse-screenshot", response_model=AiParseResponse)
@@ -105,3 +111,26 @@ async def parse_screenshot_endpoint(
         parse_id=record.id,
         candidates=candidates,
     )
+
+
+@router.post("/parse-text", response_model=AiParseResponse)
+async def parse_text_endpoint(
+    payload: AiTextParseRequest,
+    user: User = Depends(get_current_user),
+) -> AiParseResponse:
+    await enforce_rate_limit("ai-user", str(user.id), settings.ai_rate_limit_per_minute)
+    if not settings.ai_api_key:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="服务端尚未配置 AI_API_KEY")
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="聊天文字不能为空")
+
+    try:
+        raw = await parse_text(text, payload.reference_at, payload.timezone_name)
+        candidates = [AiTaskCandidate.model_validate(item) for item in raw.get("tasks", [])]
+    except AiNotConfiguredError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except (AiParseError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    return AiParseResponse(candidates=candidates)

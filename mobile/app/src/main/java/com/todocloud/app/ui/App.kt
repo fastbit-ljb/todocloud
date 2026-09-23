@@ -1,14 +1,19 @@
 package com.todocloud.app.ui
 
+import android.Manifest
 import android.app.AlarmManager
 import android.app.DatePickerDialog
 import android.app.NotificationManager
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -62,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -160,6 +166,7 @@ fun TodoCloudApp() {
     var error by remember { mutableStateOf<String?>(null) }
     var selectedTab by rememberSaveable { mutableStateOf(0) }
     var showComposer by rememberSaveable { mutableStateOf(false) }
+    var showAiTextComposer by rememberSaveable { mutableStateOf(false) }
     var aiResult by remember { mutableStateOf<AiParseResult?>(null) }
 
     fun runRequest(action: suspend () -> Unit) {
@@ -266,6 +273,7 @@ fun TodoCloudApp() {
                 loading = loading,
                 error = error,
                 onImportScreenshot = { screenshotLauncher.launch("image/*") },
+                onImportText = { showAiTextComposer = true },
                 onRefresh = {
                     runRequest {
                         tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
@@ -323,6 +331,20 @@ fun TodoCloudApp() {
                     ReminderScheduler.schedule(context, created)
                     tasks = sortTasks(listOf(created) + tasks)
                     showComposer = false
+                }
+            },
+        )
+    }
+
+    if (showAiTextComposer) {
+        AiTextDialog(
+            loading = loading,
+            error = error,
+            onDismiss = { if (!loading) showAiTextComposer = false },
+            onParse = { text ->
+                runRequest {
+                    aiResult = repository.parseText(currentSession.token, text)
+                    showAiTextComposer = false
                 }
             },
         )
@@ -519,6 +541,7 @@ private fun TaskHomeScreen(
     loading: Boolean,
     error: String?,
     onImportScreenshot: () -> Unit,
+    onImportText: () -> Unit,
     onRefresh: () -> Unit,
     onToggle: (TaskItem) -> Unit,
     onDelete: (TaskItem) -> Unit,
@@ -545,6 +568,13 @@ private fun TaskHomeScreen(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             ) {
                 Text("从截图识别任务")
+            }
+            OutlinedButton(
+                onClick = onImportText,
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("语音/文字提取任务")
             }
         }
         error?.let { message ->
@@ -681,6 +711,148 @@ private fun GreenTaskCheckbox(
             )
         }
     }
+}
+
+@Composable
+private fun AiTextDialog(
+    loading: Boolean,
+    error: String?,
+    onDismiss: () -> Unit,
+    onParse: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    var text by rememberSaveable { mutableStateOf("") }
+    var listening by remember { mutableStateOf(false) }
+    var speechError by remember { mutableStateOf<String?>(null) }
+    var speechBaseText by remember { mutableStateOf("") }
+    val recognizer = remember(context) {
+        if (SpeechRecognizer.isRecognitionAvailable(context)) {
+            SpeechRecognizer.createSpeechRecognizer(context)
+        } else {
+            null
+        }
+    }
+
+    fun applyTranscript(transcript: String) {
+        if (transcript.isBlank()) return
+        text = if (speechBaseText.isBlank()) transcript else "$speechBaseText $transcript"
+        speechError = null
+    }
+
+    DisposableEffect(recognizer) {
+        if (recognizer != null) {
+            recognizer.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: android.os.Bundle?) {
+                    listening = true
+                    speechError = null
+                }
+
+                override fun onBeginningOfSpeech() = Unit
+
+                override fun onRmsChanged(rmsdB: Float) = Unit
+
+                override fun onBufferReceived(buffer: ByteArray?) = Unit
+
+                override fun onEndOfSpeech() {
+                    listening = false
+                }
+
+                override fun onError(error: Int) {
+                    listening = false
+                    speechError = when (error) {
+                        SpeechRecognizer.ERROR_NO_MATCH -> "没有听清内容，请再试一次"
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "没有录音权限"
+                        else -> "语音识别失败，请检查系统语音服务或改用文字"
+                    }
+                }
+
+                override fun onResults(results: android.os.Bundle?) {
+                    listening = false
+                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()
+                        ?.let(::applyTranscript)
+                }
+
+                override fun onPartialResults(partialResults: android.os.Bundle?) = Unit
+
+                override fun onEvent(eventType: Int, params: android.os.Bundle?) = Unit
+            })
+        }
+        onDispose {
+            recognizer?.cancel()
+            recognizer?.destroy()
+        }
+    }
+
+    fun startListening() {
+        val speechRecognizer = recognizer ?: run {
+            speechError = "此设备没有可用的系统语音识别服务"
+            return
+        }
+        speechBaseText = text.trimEnd()
+        speechError = null
+        speechRecognizer.cancel()
+        speechRecognizer.startListening(
+            Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            },
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) startListening() else speechError = "需要录音权限才能使用语音转文字"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("AI 提取任务") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "先把语音转成文字，再由 AI 根据聊天时间提取任务。不会上传录音。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FloatingUnderlineTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = "聊天内容",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                )
+                OutlinedButton(
+                    onClick = {
+                        if (listening) {
+                            recognizer?.stopListening()
+                            listening = false
+                        } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            startListening()
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (listening) "停止录音" else "开始语音转文字")
+                }
+                speechError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (error != null && !loading) {
+                    Text(error, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onParse(text.trim()) },
+                enabled = !loading && text.isNotBlank(),
+            ) { Text(if (loading) "提取中…" else "开始提取") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("取消") } },
+    )
 }
 
 @Composable
