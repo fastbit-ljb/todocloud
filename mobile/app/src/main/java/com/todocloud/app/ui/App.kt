@@ -24,6 +24,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -89,6 +90,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.focus.onFocusChanged
@@ -1269,7 +1271,7 @@ private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) 
                 TextButton(onClick = { moveMonth(1) }) { Text("›") }
             }
             Text(
-                "点击日期查看当天任务，带提醒的任务会在到期前通知。",
+                "颜色越深表示当天任务越多，小圆点表示今天。带提醒的任务会在到期前通知。",
                 modifier = Modifier.padding(top = 4.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1298,15 +1300,30 @@ private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) 
                             if (day in 1..visibleMonth.lengthOfMonth()) {
                                 val date = visibleMonth.atDay(day)
                                 val selected = date == selectedDate
-                                val hasTasks = tasksByDate[date].orEmpty().isNotEmpty()
+                                val taskCount = tasksByDate[date].orEmpty().size
+                                val isToday = date == LocalDate.now()
+                                val taskColorFraction = (0.14f + (taskCount - 1).coerceAtLeast(0) * 0.12f)
+                                    .coerceAtMost(0.62f)
+                                val dayColor = if (taskCount == 0) {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                } else {
+                                    lerp(
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                        MaterialTheme.colorScheme.primary,
+                                        taskColorFraction,
+                                    )
+                                }
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(54.dp)
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(
-                                            if (selected) MaterialTheme.colorScheme.primaryContainer
-                                            else MaterialTheme.colorScheme.surfaceVariant,
+                                        .background(dayColor)
+                                        .border(
+                                            width = if (selected) 2.dp else 0.dp,
+                                            color = if (selected) MaterialTheme.colorScheme.primary
+                                            else Color.Transparent,
+                                            shape = RoundedCornerShape(12.dp),
                                         )
                                         .clickable { selectedDateText = date.toString() },
                                     contentAlignment = Alignment.Center,
@@ -1317,7 +1334,7 @@ private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) 
                                             color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
                                             else MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
-                                        if (hasTasks) {
+                                        if (isToday) {
                                             Text(
                                                 "•",
                                                 color = MaterialTheme.colorScheme.primary,
