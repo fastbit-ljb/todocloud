@@ -16,10 +16,16 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
+import java.util.concurrent.TimeUnit
 
 class TodoCloudRepository(context: Context) {
     private val appContext = context.applicationContext
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .callTimeout(120, TimeUnit.SECONDS)
+        .build()
     private val sessionStore = SecureSessionStore(context)
     private val refreshMutex = Mutex()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
