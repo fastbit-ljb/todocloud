@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -53,6 +53,7 @@ class Task(Base):
     reminder_offset_minutes: Mapped[int | None] = mapped_column(nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    steps: Mapped[list] = mapped_column(JSON, default=list, server_default=text("'[]'"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -13,11 +13,17 @@ from app.db.session import get_db
 router = APIRouter(prefix="/tasks")
 
 
+class TaskStep(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    completed: bool = False
+
+
 class TaskCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=10_000)
     due_at: datetime | None = None
     reminder_offset_minutes: int | None = Field(default=None, ge=0, le=10_080)
+    steps: list[TaskStep] = Field(default_factory=list, max_length=30)
 
 
 class TaskUpdateRequest(BaseModel):
@@ -26,6 +32,7 @@ class TaskUpdateRequest(BaseModel):
     due_at: datetime | None = None
     reminder_offset_minutes: int | None = Field(default=None, ge=0, le=10_080)
     completed: bool | None = None
+    steps: list[TaskStep] | None = Field(default=None, max_length=30)
 
 
 class TaskResponse(BaseModel):
@@ -40,6 +47,7 @@ class TaskResponse(BaseModel):
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    steps: list[TaskStep] = Field(default_factory=list)
 
 
 @router.get("", response_model=list[TaskResponse])
@@ -71,6 +79,7 @@ async def create_task(
         description=payload.description,
         due_at=payload.due_at,
         reminder_offset_minutes=payload.reminder_offset_minutes,
+        steps=[step.model_dump() for step in payload.steps],
     )
     db.add(task)
     await db.commit()

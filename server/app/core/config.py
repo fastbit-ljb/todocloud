@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     minio_secure: bool = False
     ai_api_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
     ai_api_key: str = ""
-    ai_model: str = "gemini-3.5-flash-lite"
+    ai_model: str = "gemini-3-flash-preview"
+    ai_fallback_model: str = "gemini-3.6-flash"
     jwt_secret: str = "replace-this-before-deployment"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30

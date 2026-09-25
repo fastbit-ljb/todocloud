@@ -19,6 +19,10 @@ router = APIRouter(prefix="/ai")
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
+class AiTaskStep(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+
+
 class AiTaskCandidate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=10_000)
@@ -26,6 +30,7 @@ class AiTaskCandidate(BaseModel):
     reminder_offset_minutes: int | None = Field(default=None, ge=0, le=10_080)
     confidence: float = Field(default=0, ge=0, le=1)
     source_text: str | None = None
+    steps: list[AiTaskStep] = Field(default_factory=list, max_length=30)
 
 
 class AiParseResponse(BaseModel):

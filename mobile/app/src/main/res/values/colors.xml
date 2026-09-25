@@ -1,0 +1,8 @@
+<resources>
+    <color name="icon_background">#CBEBCB</color>
+    <color name="icon_background_deep">#A5D5A7</color>
+    <color name="icon_primary">#27833A</color>
+    <color name="icon_primary_dark">#0F5422</color>
+    <color name="icon_paper">#F3FBEF</color>
+    <color name="icon_line">#7AAE7D</color>
+</resources>

@@ -1,0 +1,44 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="-7">
+
+        <!-- Back note, offset like a second sheet in the reference icon. -->
+        <path
+            android:fillColor="@color/icon_primary_dark"
+            android:fillAlpha="0.28"
+            android:pathData="M22,31 C22,27 25,24 29,24 L75,24 C79,24 82,27 82,31 L82,79 C82,83 79,86 75,86 L29,86 C25,86 22,83 22,79 Z" />
+        <path
+            android:fillColor="@color/icon_primary"
+            android:pathData="M18,27 C18,23 21,20 25,20 L71,20 C75,20 78,23 78,27 L78,75 C78,79 75,82 71,82 L25,82 C21,82 18,79 18,75 Z" />
+
+        <!-- Front sheet with a soft lower-right curled corner. -->
+        <path
+            android:fillColor="@color/icon_paper"
+            android:pathData="M27,13 L68,13 C72,13 75,16 76,20 L87,64 C88,69 86,73 82,75 L74,78 C70,79 68,82 66,89 L37,95 C31,96 27,92 26,86 L15,27 C14,22 17,18 22,17 Z" />
+        <path
+            android:fillColor="@color/icon_background"
+            android:pathData="M82,75 C77,77 73,78 70,82 C68,84 67,87 66,89 L65,78 C65,74 68,71 73,70 Z" />
+        <path
+            android:fillColor="@color/icon_primary"
+            android:fillAlpha="0.7"
+            android:pathData="M82,75 C78,76 74,78 71,81 C69,83 67,87 66,89 L73,86 C76,83 79,79 82,75 Z" />
+
+        <!-- Three simple writing lines. -->
+        <path
+            android:fillColor="@color/icon_line"
+            android:pathData="M28,42 C27,39 29,37 32,37 L65,37 C68,37 70,39 70,42 C70,44 68,46 65,46 L32,46 C30,46 28,44 28,42 Z" />
+        <path
+            android:fillColor="@color/icon_line"
+            android:pathData="M30,55 C29,52 31,50 34,50 L69,50 C72,50 74,52 74,55 C74,57 72,59 69,59 L34,59 C32,59 30,57 30,55 Z" />
+        <path
+            android:fillColor="@color/icon_line"
+            android:pathData="M33,68 C32,65 34,63 37,63 L59,63 C62,63 64,65 64,68 C64,70 62,72 59,72 L37,72 C35,72 33,70 33,68 Z" />
+    </group>
+</vector>

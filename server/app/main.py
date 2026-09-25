@@ -29,6 +29,12 @@ async def lifespan(_: FastAPI):
         )
         await connection.execute(
             text(
+                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "
+                "steps JSONB NOT NULL DEFAULT '[]'::jsonb"
+            )
+        )
+        await connection.execute(
+            text(
                 "UPDATE tasks SET completed_at = updated_at "
                 "WHERE completed = TRUE AND completed_at IS NULL"
             )
