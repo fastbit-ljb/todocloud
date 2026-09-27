@@ -76,11 +76,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Logout
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -96,6 +98,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -150,6 +153,7 @@ import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TaskStep
 import com.todocloud.app.data.TodoCloudRepository
 import com.todocloud.app.notification.ReminderScheduler
+import com.todocloud.app.notification.ReminderScheduler.ReminderMode
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -242,6 +246,62 @@ private fun saveDefaultReminderOffset(context: Context, offsetMinutes: Int?) {
         .apply()
 }
 
+private fun requestAlarmPermissions(context: Context) {
+    if (!Settings.canDrawOverlays(context)) {
+        android.app.AlertDialog.Builder(context)
+            .setTitle("开启闹钟提醒")
+            .setMessage("允许 TodoCloud 显示在其他应用上层，闹钟才能在后台或锁屏时及时显示。")
+            .setNegativeButton("稍后", null)
+            .setPositiveButton("去开启") { _, _ ->
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:${context.packageName}"),
+                    ),
+                )
+            }
+            .show()
+        return
+    }
+
+    val alarmManager = context.getSystemService(AlarmManager::class.java)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+        android.app.AlertDialog.Builder(context)
+            .setTitle("开启精确闹钟")
+            .setMessage("允许 TodoCloud 在设定的时间准确响铃。")
+            .setNegativeButton("稍后", null)
+            .setPositiveButton("去开启") { _, _ ->
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                        Uri.parse("package:${context.packageName}"),
+                    ),
+                )
+            }
+            .show()
+        return
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        if (!notificationManager.canUseFullScreenIntent()) {
+            android.app.AlertDialog.Builder(context)
+                .setTitle("允许全屏闹钟")
+                .setMessage("允许闹钟在锁屏或使用其他应用时显示停止界面。")
+                .setNegativeButton("稍后", null)
+                .setPositiveButton("去开启") { _, _ ->
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                            Uri.parse("package:${context.packageName}"),
+                        ),
+                    )
+                }
+                .show()
+        }
+    }
+}
+
 @Composable
 @androidx.compose.material3.ExperimentalMaterial3Api
 fun TodoCloudApp() {
@@ -259,6 +319,9 @@ fun TodoCloudApp() {
     var aiResult by remember { mutableStateOf<AiParseResult?>(null) }
     var defaultReminderOffsetMinutes by remember(context) {
         mutableStateOf(loadDefaultReminderOffset(context))
+    }
+    var reminderMode by remember(context) {
+        mutableStateOf(ReminderScheduler.loadReminderMode(context))
     }
 
     fun handleApiError(exception: ApiException) {
@@ -470,10 +533,16 @@ fun TodoCloudApp() {
                 context = context,
                 paddingValues = paddingValues,
                 session = currentSession,
+                reminderMode = reminderMode,
                 defaultReminderOffsetMinutes = defaultReminderOffsetMinutes,
                 onDefaultReminderChange = { offsetMinutes ->
                     defaultReminderOffsetMinutes = offsetMinutes
                     saveDefaultReminderOffset(context, offsetMinutes)
+                },
+                onReminderModeChange = { mode ->
+                    reminderMode = mode
+                    ReminderScheduler.saveReminderMode(context, mode)
+                    scheduleTasks(tasks)
                 },
                 onLogout = {
                     scope.launch {
@@ -2210,7 +2279,7 @@ private fun TaskDateTimePickerDialog(
     onConfirm: (LocalDateTime) -> Unit,
 ) {
     val initial = remember(initialDateTime) {
-        (initialDateTime ?: LocalDateTime.now().plusHours(1))
+        (initialDateTime ?: LocalDateTime.now())
             .withSecond(0)
             .withNano(0)
     }
@@ -2936,8 +3005,10 @@ private fun SettingsScreen(
     context: Context,
     paddingValues: PaddingValues,
     session: Session,
+    reminderMode: ReminderMode,
     defaultReminderOffsetMinutes: Int?,
     onDefaultReminderChange: (Int?) -> Unit,
+    onReminderModeChange: (ReminderMode) -> Unit,
     onLogout: () -> Unit,
 ) {
     val notificationManager = remember(context) {
@@ -2948,6 +3019,9 @@ private fun SettingsScreen(
     }
     val notificationsEnabled = notificationManager.areNotificationsEnabled()
     val exactAlarmsEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+    val overlayEnabled = Settings.canDrawOverlays(context)
+    val fullScreenIntentEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+        notificationManager.canUseFullScreenIntent()
     var showDefaultReminderPicker by rememberSaveable { mutableStateOf(false) }
     var showDonationQr by rememberSaveable { mutableStateOf(false) }
 
@@ -2962,6 +3036,61 @@ private fun SettingsScreen(
         Text("账号", style = MaterialTheme.typography.titleLarge)
         Text(session.email, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("提醒", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "选择任务到点后的提醒方式",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        ReminderModeCard(
+            title = "通知栏提醒",
+            description = "沿用原来的通知栏提醒，可点击通知进入应用",
+            icon = { Icon(Icons.Outlined.Notifications, contentDescription = null) },
+            selected = reminderMode == ReminderMode.NOTIFICATION,
+            onClick = { onReminderModeChange(ReminderMode.NOTIFICATION) },
+        )
+        ReminderModeCard(
+            title = "闹钟提醒",
+            description = "到点响铃并显示停止界面，不发送任务通知",
+            icon = { Icon(Icons.Outlined.Alarm, contentDescription = null) },
+            selected = reminderMode == ReminderMode.ALARM,
+            onClick = {
+                onReminderModeChange(ReminderMode.ALARM)
+                requestAlarmPermissions(context)
+            },
+        )
+        if (reminderMode == ReminderMode.ALARM && !overlayEnabled) {
+            Text(
+                "需要允许悬浮窗权限，闹钟才能在后台或锁屏时显示。",
+                color = MaterialTheme.colorScheme.error,
+            )
+            OutlinedButton(
+                onClick = { requestAlarmPermissions(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("开启闹钟显示权限")
+            }
+        }
+        if (reminderMode == ReminderMode.ALARM && !fullScreenIntentEnabled) {
+            Text(
+                "需要允许全屏提醒，锁屏时才能显示停止闹钟界面。",
+                color = MaterialTheme.colorScheme.error,
+            )
+            OutlinedButton(
+                onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                Uri.parse("package:${context.packageName}"),
+                            ),
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("开启全屏闹钟提醒")
+            }
+        }
         OutlinedButton(
             onClick = { showDefaultReminderPicker = true },
             modifier = Modifier.fillMaxWidth(),
@@ -2986,7 +3115,7 @@ private fun SettingsScreen(
                 Text("打开通知设置")
             }
         }
-        if (!exactAlarmsEnabled) {
+        if (reminderMode == ReminderMode.ALARM && !exactAlarmsEnabled) {
             Text(
                 "精确闹钟权限未开启，提醒可能延迟。",
                 color = MaterialTheme.colorScheme.error,
@@ -3084,6 +3213,59 @@ private fun SettingsScreen(
                 TextButton(onClick = { showDonationQr = false }) { Text("关闭") }
             },
         )
+    }
+}
+
+@Composable
+private fun ReminderModeCard(
+    title: String,
+    description: String,
+    icon: @Composable () -> Unit,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+            } else {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)
+            },
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            icon()
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+            ) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    description,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            RadioButton(selected = selected, onClick = onClick)
+        }
     }
 }
 

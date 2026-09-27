@@ -2,6 +2,8 @@ package com.todocloud.app
 
 import android.os.Bundle
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.ComponentActivity
@@ -28,5 +30,15 @@ class MainActivity : ComponentActivity() {
                 TodoCloudApp()
             }
         }
+    }
+
+    companion object {
+        fun intent(context: Context, taskId: Int): Intent =
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("task_id", taskId)
+            }
     }
 }
