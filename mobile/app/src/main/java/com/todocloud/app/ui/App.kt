@@ -138,6 +138,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -314,6 +317,74 @@ private fun requestBackgroundRunPermission(context: Context) {
         context.startActivity(
             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri),
         )
+    }
+}
+
+private fun openNotificationSettings(context: Context) {
+    context.startActivity(
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        },
+    )
+}
+
+private fun openExactAlarmSettings(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val packageUri = Uri.parse("package:${context.packageName}")
+    runCatching {
+        context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, packageUri))
+    }.onFailure {
+        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri))
+    }
+}
+
+private fun openAppDetailsSettings(context: Context) {
+    context.startActivity(
+        Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}"),
+        ),
+    )
+}
+
+private fun isChineseOem(): Boolean {
+    val manufacturer = Build.MANUFACTURER.lowercase(Locale.ROOT)
+    return listOf(
+        "xiaomi",
+        "redmi",
+        "huawei",
+        "honor",
+        "oppo",
+        "vivo",
+        "oneplus",
+        "realme",
+        "meizu",
+        "zte",
+        "nubia",
+        "blackshark",
+        "transsion",
+    ).any(manufacturer::contains)
+}
+
+private fun oemBackgroundGuidance(): String {
+    val manufacturer = Build.MANUFACTURER.lowercase(Locale.ROOT)
+    return when {
+        manufacturer.contains("xiaomi") || manufacturer.contains("redmi") ->
+            "小米/红米：应用信息 → 自启动 → 允许；电池 → 无限制。"
+        manufacturer.contains("huawei") ->
+            "华为：应用启动 → TodoCloud → 关闭自动管理，并允许自启动、后台活动和关联启动。"
+        manufacturer.contains("honor") ->
+            "荣耀：应用启动管理 → TodoCloud → 允许自启动和后台活动；电池 → 不限制。"
+        manufacturer.contains("oppo") ->
+            "OPPO：应用管理 → 自启动 → 允许；耗电管理 → 允许后台运行/不限制。"
+        manufacturer.contains("vivo") ->
+            "vivo：应用与权限管理 → 自启动 → 允许；电量管理 → 不限制。"
+        manufacturer.contains("oneplus") || manufacturer.contains("realme") ->
+            "一加/realme：应用信息 → 电池 → 不限制，并允许自启动和后台活动。"
+        manufacturer.contains("meizu") ->
+            "魅族：应用管理 → 权限管理 → 自启动，并将电池策略设为不限制。"
+        else ->
+            "系统设置 → 应用 → TodoCloud → 电池/自启动，允许后台活动并选择不限制。"
     }
 }
 
@@ -3032,18 +3103,43 @@ private fun SettingsScreen(
     val alarmManager = remember(context) {
         context.getSystemService(AlarmManager::class.java)
     }
-    val notificationsEnabled = notificationManager.areNotificationsEnabled()
-    val exactAlarmsEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
-    val overlayEnabled = Settings.canDrawOverlays(context)
-    val fullScreenIntentEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
-        notificationManager.canUseFullScreenIntent()
     val powerManager = remember(context) {
         context.getSystemService(PowerManager::class.java)
     }
-    val backgroundRunAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-        powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var permissionRefreshToken by remember { mutableStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                permissionRefreshToken++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val notificationsEnabled = remember(permissionRefreshToken) {
+        notificationManager.areNotificationsEnabled()
+    }
+    val exactAlarmsEnabled = remember(permissionRefreshToken) {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+    }
+    val overlayEnabled = remember(permissionRefreshToken) { Settings.canDrawOverlays(context) }
+    val fullScreenIntentEnabled = remember(permissionRefreshToken) {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+            notificationManager.canUseFullScreenIntent()
+    }
+    val backgroundRunAllowed = remember(permissionRefreshToken) {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+            powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    }
+    val chineseOem = remember { isChineseOem() }
+    val needsReminderPermissionGuide = !notificationsEnabled ||
+        !backgroundRunAllowed ||
+        !exactAlarmsEnabled ||
+        chineseOem
     var showDefaultReminderPicker by rememberSaveable { mutableStateOf(false) }
     var showDonationQr by rememberSaveable { mutableStateOf(false) }
+    var showReminderPermissionGuide by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -3061,6 +3157,51 @@ private fun SettingsScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
+        if (needsReminderPermissionGuide) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                ),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        "提醒权限需要确认",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                    Text(
+                        "为保证划掉后台后仍能收到提醒，请完成系统设置中的相关权限。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                    if (!notificationsEnabled) {
+                        Text("• 通知权限：未开启", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                    if (!backgroundRunAllowed) {
+                        Text("• 电池使用：可能受到优化限制", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                    if (!exactAlarmsEnabled) {
+                        Text("• 精确闹钟：未开启", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                    if (chineseOem) {
+                        Text(
+                            "• 自启动/后台活动：请手动确认",
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
+                    TextButton(onClick = { showReminderPermissionGuide = true }) {
+                        Text("查看设置指引")
+                    }
+                }
+            }
+        }
         ReminderModeCard(
             title = "通知栏提醒",
             description = "沿用原来的通知栏提醒，可点击通知进入应用",
@@ -3123,32 +3264,19 @@ private fun SettingsScreen(
         )
         if (!notificationsEnabled) {
             OutlinedButton(
-                onClick = {
-                    context.startActivity(
-                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                        },
-                    )
-                },
+                onClick = { openNotificationSettings(context) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("打开通知设置")
             }
         }
-        if (reminderMode == ReminderMode.ALARM && !exactAlarmsEnabled) {
+        if (!exactAlarmsEnabled) {
             Text(
                 "精确闹钟权限未开启，提醒可能延迟。",
                 color = MaterialTheme.colorScheme.error,
             )
             OutlinedButton(
-                onClick = {
-                    context.startActivity(
-                        Intent(
-                            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                            Uri.parse("package:${context.packageName}"),
-                        ),
-                    )
-                },
+                onClick = { openExactAlarmSettings(context) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("开启精确提醒权限")
@@ -3156,7 +3284,7 @@ private fun SettingsScreen(
         }
         Text("后台运行", style = MaterialTheme.typography.titleLarge)
         Text(
-            "划掉最近任务后，系统闹钟仍能独立触发。建议允许 TodoCloud 不受电量优化限制；部分手机还需要在系统设置中开启自启动。",
+            "划掉最近任务后，系统闹钟仍能独立触发。建议允许 TodoCloud 不受电量优化限制，并在国产手机上开启自启动和后台活动。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -3174,6 +3302,19 @@ private fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("允许后台运行")
+            }
+        }
+        if (chineseOem) {
+            Text(
+                oemBackgroundGuidance(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(
+                onClick = { openAppDetailsSettings(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("打开自启动和后台设置")
             }
         }
         Text("支持开发", style = MaterialTheme.typography.titleLarge)
@@ -3253,6 +3394,90 @@ private fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showDonationQr = false }) { Text("关闭") }
+            },
+        )
+    }
+
+    if (showReminderPermissionGuide) {
+        AlertDialog(
+            onDismissRequest = { showReminderPermissionGuide = false },
+            title = { Text("提醒权限设置") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("请按下面的项目检查设置，国产手机尤其需要确认电池、自启动和后台活动。")
+                    Text(
+                        if (notificationsEnabled) "✓ 通知权限已开启" else "未开启通知权限",
+                        color = if (notificationsEnabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                    )
+                    if (!notificationsEnabled) {
+                        OutlinedButton(
+                            onClick = { openNotificationSettings(context) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("开启通知权限")
+                        }
+                    }
+                    Text(
+                        if (backgroundRunAllowed) "✓ 电池优化已放行" else "未设置为不限制电池使用",
+                        color = if (backgroundRunAllowed) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                    )
+                    if (!backgroundRunAllowed) {
+                        OutlinedButton(
+                            onClick = { requestBackgroundRunPermission(context) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("允许不受电量优化限制")
+                        }
+                    }
+                    Text(
+                        if (exactAlarmsEnabled) "✓ 精确闹钟权限已开启" else "未开启精确闹钟权限",
+                        color = if (exactAlarmsEnabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                    )
+                    if (!exactAlarmsEnabled) {
+                        OutlinedButton(
+                            onClick = { openExactAlarmSettings(context) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("开启精确闹钟权限")
+                        }
+                    }
+                    if (chineseOem) {
+                        Text("自启动和后台活动无法由应用代替开启，请在系统设置中手动确认。")
+                        Text(
+                            oemBackgroundGuidance(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        OutlinedButton(
+                            onClick = { openAppDetailsSettings(context) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("打开应用后台设置")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showReminderPermissionGuide = false }) {
+                    Text("完成")
+                }
             },
         )
     }
