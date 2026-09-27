@@ -113,8 +113,11 @@ object ReminderScheduler {
         val pendingIntent = pendingIntent(context, task, mode)
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         try {
+            // Keep the complete reminder payload locally. AlarmManager can
+            // wake the app after it has been removed from Recents, and this
+            // store lets us rebuild the entry after reboot/time changes too.
+            rememberTask(context, task, mode)
             if (mode == ReminderMode.ALARM) {
-                rememberTask(context, task)
                 val showIntent = PendingIntent.getActivity(
                     context,
                     task.id,
@@ -140,8 +143,7 @@ object ReminderScheduler {
         forgetStoredTask(context, taskId)
     }
 
-    fun restoreAlarmTasks(context: Context) {
-        if (loadReminderMode(context) != ReminderMode.ALARM) return
+    fun restoreScheduledTasks(context: Context) {
         val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
         val ids = prefs.getStringSet(STORED_ALARM_IDS_KEY, emptySet()).orEmpty().toList()
         ids.forEach { rawId ->
@@ -171,6 +173,9 @@ object ReminderScheduler {
             schedule(context, task)
         }
     }
+
+    @Suppress("unused")
+    fun restoreAlarmTasks(context: Context) = restoreScheduledTasks(context)
 
     fun forgetStoredTask(context: Context, taskId: Int) {
         val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -218,7 +223,7 @@ object ReminderScheduler {
         if (pendingIntent != null) alarmManager.cancel(pendingIntent)
     }
 
-    private fun rememberTask(context: Context, task: TaskItem) {
+    private fun rememberTask(context: Context, task: TaskItem, mode: ReminderMode) {
         val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
         val ids = prefs.getStringSet(STORED_ALARM_IDS_KEY, emptySet()).orEmpty().toMutableSet()
         ids.add(task.id.toString())
@@ -231,6 +236,7 @@ object ReminderScheduler {
                     .put("description", task.description)
                     .put("dueAt", task.dueAt)
                     .put("offset", task.reminderOffsetMinutes)
+                    .put("mode", mode.name)
                     .put("steps", JSONArray().apply {
                         task.steps.forEach { step ->
                             put(JSONObject().put("title", step.title).put("completed", step.completed))

@@ -11,7 +11,7 @@ class ReminderBootReceiver : BroadcastReceiver() {
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED,
-            -> ReminderScheduler.restoreAlarmTasks(context)
+            -> ReminderScheduler.restoreScheduledTasks(context)
         }
     }
 }

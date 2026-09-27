@@ -34,6 +34,13 @@ class ReminderReceiver : BroadcastReceiver() {
             }
         } else {
             showNotification(context, taskId, title)
+            // Notification reminders are one-shot too. Do not leave an old
+            // copy in the restore store after it has been delivered.
+            if (context.getSystemService(android.app.NotificationManager::class.java)
+                    .areNotificationsEnabled()
+            ) {
+                ReminderScheduler.forgetStoredTask(context, taskId)
+            }
         }
     }
 

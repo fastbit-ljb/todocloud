@@ -20,6 +20,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         ReminderScheduler.createNotificationChannel(this)
+        // Restore alarms/notifications before the network-backed task list is
+        // loaded. System AlarmManager entries survive a task swipe, but this
+        // also repairs schedules after a reboot, time change, or process stop.
+        ReminderScheduler.restoreScheduledTasks(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {

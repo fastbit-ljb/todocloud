@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -299,6 +300,20 @@ private fun requestAlarmPermissions(context: Context) {
                 }
                 .show()
         }
+    }
+}
+
+private fun requestBackgroundRunPermission(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+    val packageUri = Uri.parse("package:${context.packageName}")
+    runCatching {
+        context.startActivity(
+            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri),
+        )
+    }.onFailure {
+        context.startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri),
+        )
     }
 }
 
@@ -3022,6 +3037,11 @@ private fun SettingsScreen(
     val overlayEnabled = Settings.canDrawOverlays(context)
     val fullScreenIntentEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
         notificationManager.canUseFullScreenIntent()
+    val powerManager = remember(context) {
+        context.getSystemService(PowerManager::class.java)
+    }
+    val backgroundRunAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+        powerManager.isIgnoringBatteryOptimizations(context.packageName)
     var showDefaultReminderPicker by rememberSaveable { mutableStateOf(false) }
     var showDonationQr by rememberSaveable { mutableStateOf(false) }
 
@@ -3132,6 +3152,28 @@ private fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("开启精确提醒权限")
+            }
+        }
+        Text("后台运行", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "划掉最近任务后，系统闹钟仍能独立触发。建议允许 TodoCloud 不受电量优化限制；部分手机还需要在系统设置中开启自启动。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            if (backgroundRunAllowed) "后台活动不受电量优化限制" else "后台活动可能被系统限制",
+            color = if (backgroundRunAllowed) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.error
+            },
+        )
+        if (!backgroundRunAllowed) {
+            OutlinedButton(
+                onClick = { requestBackgroundRunPermission(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("允许后台运行")
             }
         }
         Text("支持开发", style = MaterialTheme.typography.titleLarge)
