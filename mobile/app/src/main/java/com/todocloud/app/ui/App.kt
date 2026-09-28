@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlarmManager
 import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -144,6 +145,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.todocloud.app.notification.ReminderAccessibilityService
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.window.Dialog
@@ -345,6 +347,22 @@ private fun openAppDetailsSettings(context: Context) {
             Uri.parse("package:${context.packageName}"),
         ),
     )
+}
+
+private fun openAccessibilitySettings(context: Context) {
+    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+}
+
+private fun isAccessibilityServiceEnabled(context: Context): Boolean {
+    val expectedService = ComponentName(
+        context,
+        ReminderAccessibilityService::class.java,
+    ).flattenToString()
+    val enabledServices = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+    ).orEmpty()
+    return enabledServices.split(':').any { it.equals(expectedService, ignoreCase = true) }
 }
 
 private fun isChineseOem(): Boolean {
@@ -3133,6 +3151,9 @@ private fun SettingsScreen(
             powerManager.isIgnoringBatteryOptimizations(context.packageName)
     }
     val chineseOem = remember { isChineseOem() }
+    val accessibilityEnabled = remember(permissionRefreshToken) {
+        isAccessibilityServiceEnabled(context)
+    }
     val needsReminderPermissionGuide = !notificationsEnabled ||
         !backgroundRunAllowed ||
         !exactAlarmsEnabled ||
@@ -3195,6 +3216,12 @@ private fun SettingsScreen(
                             "• 自启动/后台活动：请手动确认",
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
+                        if (!accessibilityEnabled) {
+                            Text(
+                                "• 无障碍后台辅助：未开启",
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
                     }
                     TextButton(onClick = { showReminderPermissionGuide = true }) {
                         Text("查看设置指引")
@@ -3315,6 +3342,22 @@ private fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("打开自启动和后台设置")
+            }
+            Text("实验性后台辅助", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (accessibilityEnabled) {
+                    "无障碍后台辅助已开启；它不读取屏幕内容，只用于在服务重连时恢复提醒。"
+                } else {
+                    "如果前台正常、后台仍没有提醒，可以尝试开启无障碍后台辅助进行验证。"
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(
+                onClick = { openAccessibilitySettings(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (accessibilityEnabled) "管理无障碍后台辅助" else "尝试开启无障碍辅助")
             }
         }
         Text("支持开发", style = MaterialTheme.typography.titleLarge)
@@ -3470,6 +3513,24 @@ private fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text("打开应用后台设置")
+                        }
+                        Text(
+                            if (accessibilityEnabled) {
+                                "✓ 无障碍后台辅助已开启"
+                            } else {
+                                "无障碍后台辅助未开启（实验性）"
+                            },
+                            color = if (accessibilityEnabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                        OutlinedButton(
+                            onClick = { openAccessibilitySettings(context) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(if (accessibilityEnabled) "管理无障碍辅助" else "尝试开启无障碍辅助")
                         }
                     }
                 }

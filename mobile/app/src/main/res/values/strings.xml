@@ -1,4 +1,6 @@
 <resources>
     <string name="app_name">TodoCloud</string>
+    <string name="accessibility_service_label">TodoCloud 后台提醒辅助</string>
+    <string name="accessibility_service_description">仅用于在部分国产系统中恢复 TodoCloud 的提醒调度，不读取屏幕内容，也不会代替用户点击。</string>
 </resources>
 
