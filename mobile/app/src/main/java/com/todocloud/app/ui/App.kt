@@ -3161,6 +3161,7 @@ private fun SettingsScreen(
     var showDefaultReminderPicker by rememberSaveable { mutableStateOf(false) }
     var showDonationQr by rememberSaveable { mutableStateOf(false) }
     var showReminderPermissionGuide by rememberSaveable { mutableStateOf(false) }
+    var showBackgroundLockGuide by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -3342,6 +3343,46 @@ private fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("打开自启动和后台设置")
+            }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                ),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        "建议锁定 TodoCloud 后台",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                    Text(
+                        "部分国产系统会清理未锁定的后台应用。请在最近任务中向下滑 TodoCloud，点击锁形图标锁定，否则可能收不到通知或闹钟。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                    Image(
+                        painter = painterResource(R.drawable.background_lock_guide),
+                        contentDescription = "在最近任务中锁定 TodoCloud 的操作示意图",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clip(RoundedCornerShape(14.dp)),
+                        contentScale = ContentScale.Fit,
+                    )
+                    TextButton(
+                        onClick = { showBackgroundLockGuide = true },
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        Text("查看大图和说明")
+                    }
+                }
             }
             Text("实验性后台辅助", style = MaterialTheme.typography.titleMedium)
             Text(
@@ -3538,6 +3579,41 @@ private fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = { showReminderPermissionGuide = false }) {
                     Text("完成")
+                }
+            },
+        )
+    }
+
+    if (showBackgroundLockGuide) {
+        AlertDialog(
+            onDismissRequest = { showBackgroundLockGuide = false },
+            title = { Text("锁定 TodoCloud 后台") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 560.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("打开最近任务界面，找到 TodoCloud 后向下滑动，点击锁形图标。锁定后不要点击清除全部。")
+                    Image(
+                        painter = painterResource(R.drawable.background_lock_guide),
+                        contentDescription = "锁定 TodoCloud 后台的操作示意图",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp)),
+                        contentScale = ContentScale.FillWidth,
+                    )
+                    Text(
+                        "不同品牌的图标位置可能不同，但目标都是让 TodoCloud 保持在最近任务中。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBackgroundLockGuide = false }) {
+                    Text("知道了")
                 }
             },
         )
