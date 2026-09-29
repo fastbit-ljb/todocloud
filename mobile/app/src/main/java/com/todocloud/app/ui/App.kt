@@ -1112,7 +1112,14 @@ private fun TaskHomeScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (showLoadingAnimation) {
-                    BouncingTaskLoader(Modifier.fillMaxWidth().padding(top = 4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        BouncingTaskLoader()
+                    }
                 } else {
                     OutlinedButton(
                         onClick = onImportScreenshot,
@@ -1216,6 +1223,24 @@ private fun RefreshTaskButton(
 
 @Composable
 private fun BouncingTaskLoader(modifier: Modifier = Modifier) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val loaderHtml = remember(primaryColor, primaryContainerColor, labelColor) {
+        UIVERSE_LOADER_HTML
+            .replace(
+                "linear-gradient(135deg, #23C4F8, #275EFE)",
+                "linear-gradient(135deg, ${primaryColor.toCssHex()}, ${primaryContainerColor.toCssHex()})",
+            )
+            .replace(
+                "rgba(39, 94, 254, 0.28)",
+                primaryColor.toCssRgba(0.28f),
+            )
+            .replace(
+                "#6C7486",
+                labelColor.toCssHex(),
+            )
+    }
     AndroidView(
         factory = { context ->
             WebView(context).apply {
@@ -1225,9 +1250,22 @@ private fun BouncingTaskLoader(modifier: Modifier = Modifier) {
                 isHorizontalScrollBarEnabled = false
                 settings.javaScriptEnabled = false
                 settings.domStorageEnabled = false
+                tag = loaderHtml
                 loadDataWithBaseURL(
                     "https://uiverse.io/",
-                    UIVERSE_LOADER_HTML,
+                    loaderHtml,
+                    "text/html",
+                    "UTF-8",
+                    null,
+                )
+            }
+        },
+        update = { webView ->
+            if (webView.tag != loaderHtml) {
+                webView.tag = loaderHtml
+                webView.loadDataWithBaseURL(
+                    "https://uiverse.io/",
+                    loaderHtml,
                     "text/html",
                     "UTF-8",
                     null,
@@ -1235,11 +1273,27 @@ private fun BouncingTaskLoader(modifier: Modifier = Modifier) {
             }
         },
         modifier = modifier
-            .fillMaxWidth()
-            .height(184.dp)
+            .size(width = 200.dp, height = 184.dp)
             .semantics { contentDescription = "正在加载任务" },
     )
 }
+
+private fun Color.toCssHex(): String = String.format(
+    Locale.US,
+    "#%02X%02X%02X",
+    (red * 255f).toInt().coerceIn(0, 255),
+    (green * 255f).toInt().coerceIn(0, 255),
+    (blue * 255f).toInt().coerceIn(0, 255),
+)
+
+private fun Color.toCssRgba(alpha: Float): String = String.format(
+    Locale.US,
+    "rgba(%d, %d, %d, %.2f)",
+    (red * 255f).toInt().coerceIn(0, 255),
+    (green * 255f).toInt().coerceIn(0, 255),
+    (blue * 255f).toInt().coerceIn(0, 255),
+    alpha.coerceIn(0f, 1f),
+)
 
 /** The original Uiverse.io by Nawsome loader, kept as HTML/CSS/SVG so the
  *  rotateY timing and page geometry are not approximated by a native rewrite. */
