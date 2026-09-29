@@ -13,8 +13,8 @@ android {
         targetSdk = 37
         // Keep this above the earlier alarm test builds so Android Studio can
         // update the installed app without asking to uninstall it.
-        versionCode = 19
-        versionName = "1.1.10"
+        versionCode = 20
+        versionName = "1.1.11"
         buildConfigField("String", "API_BASE_URL", "\"https://dnsgo.xyz/todocloud-api/api/v1\"")
     }
 
