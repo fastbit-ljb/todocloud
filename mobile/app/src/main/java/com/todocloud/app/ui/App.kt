@@ -15,6 +15,7 @@ import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -148,6 +149,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -1214,121 +1216,164 @@ private fun RefreshTaskButton(
 
 @Composable
 private fun BouncingTaskLoader(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "task-loader-pages")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 3000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "task-loader-page-phase",
-    )
-    val pageStarts = listOf(0.10f, 0.28f, 0.46f, 0.64f)
-    val pageProgresses = pageStarts.map { start ->
-        ((phase - start + 1f) % 1f).coerceIn(0f, 1f)
-    }
-
-    Column(
-        modifier = modifier
-            .height(170.dp)
-            .semantics { contentDescription = "正在加载任务" },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .width(210.dp)
-                .height(132.dp)
-                .graphicsLayer {
-                    shadowElevation = 12.dp.toPx()
-                    shape = RoundedCornerShape(14.dp)
-                    clip = true
-                }
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color(0xFF23C4F8),
-                            Color(0xFF275EFE),
-                        ),
-                    ),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            UiversePaperPage()
-            pageProgresses.forEach { progress ->
-                val visible = when {
-                    progress < 0.10f -> 0f
-                    progress < 0.22f -> (progress - 0.10f) / 0.12f
-                    progress < 0.52f -> 1f
-                    progress < 0.66f -> 1f - (progress - 0.52f) / 0.14f
-                    else -> 0f
-                }
-                val rotation = if (progress < 0.52f) 180f else 0f
-                UiversePaperPage(
-                    modifier = Modifier.graphicsLayer {
-                        rotationY = rotation
-                        alpha = visible
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 0.5f)
-                        cameraDistance = 8f * density
-                    },
+    AndroidView(
+        factory = { context ->
+            WebView(context).apply {
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                overScrollMode = WebView.OVER_SCROLL_NEVER
+                isVerticalScrollBarEnabled = false
+                isHorizontalScrollBarEnabled = false
+                settings.javaScriptEnabled = false
+                settings.domStorageEnabled = false
+                loadDataWithBaseURL(
+                    "https://uiverse.io/",
+                    UIVERSE_LOADER_HTML,
+                    "text/html",
+                    "UTF-8",
+                    null,
                 )
             }
-        }
-        Text(
-            "TodoCloud 正在加载",
-            modifier = Modifier.padding(top = 10.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-        )
-    }
+        },
+        modifier = modifier
+            .fillMaxWidth()
+            .height(184.dp)
+            .semantics { contentDescription = "正在加载任务" },
+    )
 }
 
-@Composable
-private fun UiversePaperPage(modifier: Modifier = Modifier) {
-    Canvas(
-        modifier = modifier
-            .size(width = 92.dp, height = 116.dp)
-            .graphicsLayer {
-                shadowElevation = 5.dp.toPx()
-                shape = RoundedCornerShape(8.dp)
-                clip = true
-            },
-    ) {
-        val corner = 8.dp.toPx()
-        drawRoundRect(
-            brush = Brush.linearGradient(
-                colors = listOf(Color(0xFFFFFDF0), Color(0xFFFFF3C8)),
-            ),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
-        )
-        val lineColor = Color(0xFFB7A46B).copy(alpha = 0.72f)
-        val left = size.width * 0.18f
-        val right = size.width * 0.82f
-        listOf(0.34f, 0.50f, 0.66f).forEach { fraction ->
-            drawLine(
-                color = lineColor,
-                start = androidx.compose.ui.geometry.Offset(left, size.height * fraction),
-                end = androidx.compose.ui.geometry.Offset(right, size.height * fraction),
-                strokeWidth = 4.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-        }
-        val fold = Path().apply {
-            moveTo(size.width * 0.68f, size.height)
-            lineTo(size.width, size.height * 0.68f)
-            lineTo(size.width, size.height)
-            close()
-        }
-        drawPath(fold, color = Color(0xFFFFD86A))
-        drawLine(
-            color = Color(0xFFE8C45D),
-            start = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height),
-            end = androidx.compose.ui.geometry.Offset(size.width, size.height * 0.68f),
-            strokeWidth = 1.dp.toPx(),
-        )
-    }
+/** The original Uiverse.io by Nawsome loader, kept as HTML/CSS/SVG so the
+ *  rotateY timing and page geometry are not approximated by a native rewrite. */
+private const val UIVERSE_PAGE_SVG = """<svg fill="currentColor" viewBox="0 0 90 120"><path d="M90,0 L90,120 L11,120 C4.92486775,120 0,115.075132 0,109 L0,11 C0,4.92486775 4.92486775,0 11,0 L90,0 Z M71.5,81 L18.5,81 C17.1192881,81 16,82.1192881 16,83.5 C16,84.8254834 17.0315359,85.9100387 18.3356243,85.9946823 L18.5,86 L71.5,86 C72.8807119,86 74,84.8807119 74,83.5 C74,82.1745166 72.9684641,81.0899613 71.6643757,81.0053177 L71.5,81 Z M71.5,57 L18.5,57 C17.1192881,57 16,58.1192881 16,59.5 C16,60.8254834 17.0315359,61.9100387 18.3356243,61.9946823 L18.5,62 L71.5,62 C72.8807119,62 74,60.8807119 74,59.5 C74,58.1192881 72.8807119,57 71.5,57 Z M71.5,33 L18.5,33 C17.1192881,33 16,34.1192881 16,35.5 C16,36.8254834 17.0315359,37.9100387 18.3356243,37.9946823 L18.5,38 L71.5,38 C72.8807119,38 74,36.8807119 74,35.5 C74,34.1192881 72.9684641,33.0899613 71.6643757,33.0053177 L71.5,33 Z"></path></svg>"""
+
+private val UIVERSE_PAGE_SVG_EXACT = UIVERSE_PAGE_SVG.replace(
+    "C74,34.1192881 72.9684641,33.0899613 71.6643757,33.0053177 L71.5,33",
+    "C74,34.1192881 72.8807119,33 71.5,33",
+)
+
+private val UIVERSE_LOADER_HTML = """
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; width: 200px; height: 184px; overflow: visible; background: transparent; }
+.loader {
+  --background: linear-gradient(135deg, #23C4F8, #275EFE);
+  --shadow: rgba(39, 94, 254, 0.28);
+  --text: #6C7486;
+  --page: rgba(255, 255, 255, 0.36);
+  --page-fold: rgba(255, 255, 255, 0.52);
+  --duration: 3s;
+  width: 200px;
+  height: 140px;
+  position: relative;
 }
+.loader:before, .loader:after {
+  --r: -6deg;
+  content: "";
+  position: absolute;
+  bottom: 8px;
+  width: 120px;
+  top: 80%;
+  box-shadow: 0 16px 12px var(--shadow);
+  transform: rotate(var(--r));
+}
+.loader:before { left: 4px; }
+.loader:after { --r: 6deg; right: 4px; }
+.loader div {
+  width: 100%;
+  height: 100%;
+  border-radius: 13px;
+  position: relative;
+  z-index: 1;
+  perspective: 600px;
+  box-shadow: 0 4px 6px var(--shadow);
+  background-image: var(--background);
+}
+.loader div ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  position: relative;
+}
+.loader div ul li {
+  --r: 180deg;
+  --o: 0;
+  --c: var(--page);
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  transform-origin: 100% 50%;
+  color: var(--c);
+  opacity: var(--o);
+  transform: rotateY(var(--r));
+  -webkit-animation: var(--duration) ease infinite;
+  animation: var(--duration) ease infinite;
+}
+.loader div ul li:nth-child(2) { --c: var(--page-fold); -webkit-animation-name: page-2; animation-name: page-2; }
+.loader div ul li:nth-child(3) { --c: var(--page-fold); -webkit-animation-name: page-3; animation-name: page-3; }
+.loader div ul li:nth-child(4) { --c: var(--page-fold); -webkit-animation-name: page-4; animation-name: page-4; }
+.loader div ul li:nth-child(5) { --c: var(--page-fold); -webkit-animation-name: page-5; animation-name: page-5; }
+.loader div ul li svg { width: 90px; height: 120px; display: block; }
+.loader div ul li:first-child { --r: 0deg; --o: 1; }
+.loader div ul li:last-child { --o: 1; }
+.loader span {
+  display: block;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 20px;
+  text-align: center;
+  color: var(--text);
+  font: 14px sans-serif;
+}
+@keyframes page-2 {
+  0% { transform: rotateY(180deg); opacity: 0; }
+  20% { opacity: 1; }
+  35%, 100% { opacity: 0; }
+  50%, 100% { transform: rotateY(0deg); }
+}
+@keyframes page-3 {
+  15% { transform: rotateY(180deg); opacity: 0; }
+  35% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+  65%, 100% { transform: rotateY(0deg); }
+}
+@keyframes page-4 {
+  30% { transform: rotateY(180deg); opacity: 0; }
+  50% { opacity: 1; }
+  65%, 100% { opacity: 0; }
+  80%, 100% { transform: rotateY(0deg); }
+}
+@keyframes page-5 {
+  45% { transform: rotateY(180deg); opacity: 0; }
+  65% { opacity: 1; }
+  80%, 100% { opacity: 0; }
+  95%, 100% { transform: rotateY(0deg); }
+}
+</style>
+</head>
+<body>
+<div class="loader">
+  <div>
+    <ul>
+      <li><svg fill="currentColor" viewBox="0 0 90 120"><path d="M90,0 L90,120 L11,120 C4.92486775,120 0,115.075132 0,109 L0,11 C0,4.92486775 4.92486775,0 11,0 L90,0 Z M71.5,81 L18.5,81 C17.1192881,81 16,82.1192881 16,83.5 C16,84.8254834 17.0315359,85.9100387 18.3356243,85.9946823 L18.5,86 L71.5,86 C72.8807119,86 74,84.8807119 74,83.5 C74,82.1745166 72.9684641,81.0899613 71.6643757,81.0053177 L71.5,81 Z M71.5,57 L18.5,57 C17.1192881,57 16,58.1192881 16,59.5 C16,60.8254834 17.0315359,61.9100387 18.3356243,61.9946823 L18.5,62 L71.5,62 C72.8807119,62 74,60.8807119 74,59.5 C74,58.1192881 72.8807119,57 71.5,57 Z M71.5,33 L18.5,33 C17.1192881,33 16,34.1192881 16,35.5 C16,36.8254834 17.0315359,37.9100387 18.3356243,37.9946823 L18.5,38 L71.5,38 C72.8807119,38 74,36.8807119 74,35.5 C74,34.1192881 72.9684641,33.0899613 71.6643757,33.0053177 L71.5,33 Z"></path></svg></li>
+      <li><svg fill="currentColor" viewBox="0 0 90 120"><path d="M90,0 L90,120 L11,120 C4.92486775,120 0,115.075132 0,109 L0,11 C0,4.92486775 4.92486775,0 11,0 L90,0 Z M71.5,81 L18.5,81 C17.1192881,81 16,82.1192881 16,83.5 C16,84.8254834 17.0315359,85.9100387 18.3356243,85.9946823 L18.5,86 L71.5,86 C72.8807119,86 74,84.8807119 74,83.5 C74,82.1745166 72.9684641,81.0899613 71.6643757,81.0053177 L71.5,81 Z M71.5,57 L18.5,57 C17.1192881,57 16,58.1192881 16,59.5 C16,60.8254834 17.0315359,61.9100387 18.3356243,61.9946823 L18.5,62 L71.5,62 C72.8807119,62 74,60.8807119 74,59.5 C74,58.1192881 72.8807119,57 71.5,57 Z M71.5,33 L18.5,33 C17.1192881,33 16,34.1192881 16,35.5 C16,36.8254834 17.0315359,37.9100387 18.3356243,37.9946823 L18.5,38 L71.5,38 C72.8807119,38 74,34.1192881 74,35.5 C74,34.1192881 72.8807119,33 71.5,33 Z"></path></svg></li>
+      <li><svg fill="currentColor" viewBox="0 0 90 120"><path d="M90,0 L90,120 L11,120 C4.92486775,120 0,115.075132 0,109 L0,11 C0,4.92486775 4.92486775,0 11,0 L90,0 Z M71.5,81 L18.5,81 C17.1192881,81 16,82.1192881 16,83.5 C16,84.8254834 17.0315359,85.9100387 18.3356243,85.9946823 L18.5,86 L71.5,86 C72.8807119,86 74,84.8807119 74,83.5 C74,82.1745166 72.9684641,81.0899613 71.6643757,81.0053177 L71.5,81 Z M71.5,57 L18.5,57 C17.1192881,57 16,58.1192881 16,59.5 C16,60.8254834 17.0315359,61.9100387 18.3356243,61.9946823 L18.5,62 L71.5,62 C72.8807119,62 74,60.8807119 74,59.5 C74,58.1192881 72.8807119,57 71.5,57 Z M71.5,33 L18.5,33 C17.1192881,33 16,34.1192881 16,35.5 C16,36.8254834 17.0315359,37.9100387 18.3356243,37.9946823 L18.5,38 L71.5,38 C72.8807119,38 74,36.8807119 74,35.5 C74,34.1192881 72.8807119,33 71.5,33 Z"></path></svg></li>
+      <li><svg fill="currentColor" viewBox="0 0 90 120"><path d="M90,0 L90,120 L11,120 C4.92486775,120 0,115.075132 0,109 L0,11 C0,4.92486775 4.92486775,0 11,0 L90,0 Z M71.5,81 L18.5,81 C17.1192881,81 16,82.1192881 16,83.5 C16,84.8254834 17.0315359,85.9100387 18.3356243,85.9946823 L18.5,86 L71.5,86 C72.8807119,86 74,84.8807119 74,83.5 C74,82.1745166 72.9684641,81.0899613 71.6643757,81.0053177 L71.5,81 Z M71.5,57 L18.5,57 C17.1192881,57 16,58.1192881 16,59.5 C16,60.8254834 17.0315359,61.9100387 18.3356243,61.9946823 L18.5,62 L71.5,62 C72.8807119,62 74,60.8807119 74,59.5 C74,58.1192881 72.8807119,57 71.5,57 Z M71.5,33 L18.5,33 C17.1192881,33 16,34.1192881 16,35.5 C16,36.8254834 17.0315359,37.9100387 18.3356243,37.9946823 L18.5,38 L71.5,38 C72.8807119,38 74,36.8807119 74,35.5 C74,34.1192881 72.9684641,33.0899613 71.6643757,33.0053177 L71.5,33 Z"></path></svg></li>
+      <li><svg fill="currentColor" viewBox="0 0 90 120"><path d="M90,0 L90,120 L11,120 C4.92486775,120 0,115.075132 0,109 L0,11 C0,4.92486775 4.92486775,0 11,0 L90,0 Z M71.5,81 L18.5,81 C17.1192881,81 16,82.1192881 16,83.5 C16,84.8254834 17.0315359,85.9100387 18.3356243,85.9946823 L18.5,86 L71.5,86 C72.8807119,86 74,84.8807119 74,83.5 C74,82.1745166 72.9684641,81.0899613 71.6643757,81.0053177 L71.5,81 Z M71.5,57 L18.5,57 C17.1192881,57 16,58.1192881 16,59.5 C16,60.8254834 17.0315359,61.9100387 18.3356243,61.9946823 L18.5,62 L71.5,62 C72.8807119,62 74,60.8807119 74,59.5 C74,58.1192881 72.8807119,57 71.5,57 Z M71.5,33 L18.5,33 C17.1192881,33 16,34.1192881 16,35.5 C16,36.8254834 17.0315359,37.9100387 18.3356243,37.9946823 L18.5,38 L71.5,38 C72.8807119,38 74,36.8807119 74,35.5 C74,34.1192881 72.9684641,33.0899613 71.6643757,33.0053177 L71.5,33 Z"></path></svg></li>
+      <li><svg fill="currentColor" viewBox="0 0 90 120"><path d="M90,0 L90,120 L11,120 C4.92486775,120 0,115.075132 0,109 L0,11 C0,4.92486775 4.92486775,0 11,0 L90,0 Z M71.5,81 L18.5,81 C17.1192881,81 16,82.1192881 16,83.5 C16,84.8254834 17.0315359,85.9100387 18.3356243,85.9946823 L18.5,86 L71.5,86 C72.8807119,86 74,84.8807119 74,83.5 C74,82.1745166 72.9684641,81.0899613 71.6643757,81.0053177 L71.5,81 Z M71.5,57 L18.5,57 C17.1192881,57 16,58.1192881 16,59.5 C16,60.8254834 17.0315359,61.9100387 18.3356243,61.9946823 L18.5,62 L71.5,62 C72.8807119,62 74,60.8807119 74,59.5 C74,58.1192881 72.8807119,57 71.5,57 Z M71.5,33 L18.5,33 C17.1192881,33 16,34.1192881 16,35.5 C16,36.8254834 17.0315359,37.9100387 18.3356243,37.9946823 L18.5,38 L71.5,38 C72.8807119,38 74,38.1192881 74,35.5 C74,34.1192881 72.8807119,33 71.5,33 Z"></path></svg></li>
+    </ul>
+  </div>
+  <span>Loading</span>
+</div>
+</body>
+</html>
+""".trimIndent().replace(
+    Regex("<svg fill=\"currentColor\" viewBox=\"0 0 90 120\">.*?</svg>"),
+    UIVERSE_PAGE_SVG_EXACT,
+)
 
 @Composable
 private fun TaskCard(
