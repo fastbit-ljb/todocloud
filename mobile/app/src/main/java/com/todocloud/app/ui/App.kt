@@ -16,6 +16,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.webkit.WebView
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -437,6 +438,10 @@ fun TodoCloudApp() {
     }
     var reminderMode by remember(context) {
         mutableStateOf(ReminderScheduler.loadReminderMode(context))
+    }
+
+    BackHandler(enabled = selectedTab == 2 && settingsPage != "main") {
+        settingsPage = "main"
     }
 
     fun handleApiError(exception: ApiException) {
