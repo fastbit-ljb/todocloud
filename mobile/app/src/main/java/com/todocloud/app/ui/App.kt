@@ -83,6 +83,8 @@ import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Refresh
@@ -3163,6 +3165,7 @@ private fun SettingsScreen(
     var showDonationQr by rememberSaveable { mutableStateOf(false) }
     var showReminderPermissionGuide by rememberSaveable { mutableStateOf(false) }
     var showBackgroundLockGuide by rememberSaveable { mutableStateOf(false) }
+    var expandedSettingsSection by rememberSaveable { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -3175,6 +3178,10 @@ private fun SettingsScreen(
         SettingsSection(
             title = "账号",
             description = "当前登录账号与云端同步状态",
+            expanded = expandedSettingsSection == "account",
+            onToggle = {
+                expandedSettingsSection = if (expandedSettingsSection == "account") null else "account"
+            },
         ) {
             Text(session.email, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("已登录，任务会继续与云端同步", style = MaterialTheme.typography.bodySmall)
@@ -3188,6 +3195,10 @@ private fun SettingsScreen(
         SettingsSection(
             title = "提醒设置",
             description = "选择任务到点后的提醒方式，以及 AI 识别任务的默认提醒时间",
+            expanded = expandedSettingsSection == "reminder",
+            onToggle = {
+                expandedSettingsSection = if (expandedSettingsSection == "reminder") null else "reminder"
+            },
         ) {
             ReminderModeCard(
                 title = "通知栏提醒",
@@ -3216,7 +3227,11 @@ private fun SettingsScreen(
 
         SettingsSection(
             title = "权限",
-            description = "通知和闹钟需要系统权限；权限关闭时，提醒可能无法正常显示",
+            description = "通知、闹钟和后台运行权限；权限关闭时提醒可能无法正常显示",
+            expanded = expandedSettingsSection == "permissions",
+            onToggle = {
+                expandedSettingsSection = if (expandedSettingsSection == "permissions") null else "permissions"
+            },
         ) {
             if (needsReminderPermissionGuide) {
                 Card(
@@ -3312,12 +3327,6 @@ private fun SettingsScreen(
             ) {
                 Text("查看完整权限指引")
             }
-        }
-
-        SettingsSection(
-            title = "后台运行",
-            description = "国产手机可能会清理后台应用，建议允许后台活动并锁定 TodoCloud",
-        ) {
             Text(
                 if (backgroundRunAllowed) "后台活动不受电量优化限制" else "后台活动可能被系统限制",
                 color = if (backgroundRunAllowed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
@@ -3404,6 +3413,10 @@ private fun SettingsScreen(
         SettingsSection(
             title = "赞助开发",
             description = "如果 TodoCloud 对你有帮助，欢迎支持开发",
+            expanded = expandedSettingsSection == "sponsor",
+            onToggle = {
+                expandedSettingsSection = if (expandedSettingsSection == "sponsor") null else "sponsor"
+            },
         ) {
             Image(
                 painter = painterResource(R.drawable.wechat_donation_qr),
@@ -3426,6 +3439,10 @@ private fun SettingsScreen(
         SettingsSection(
             title = "关于 TodoCloud",
             description = "任务、提醒与云端同步",
+            expanded = expandedSettingsSection == "about",
+            onToggle = {
+                expandedSettingsSection = if (expandedSettingsSection == "about") null else "about"
+            },
         ) {
             Text("当前版本 ${BuildConfig.VERSION_NAME}")
             Text(
@@ -3610,6 +3627,8 @@ private fun SettingsScreen(
 private fun SettingsSection(
     title: String,
     description: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
     content: @Composable () -> Unit,
 ) {
     Card(
@@ -3629,13 +3648,34 @@ private fun SettingsSection(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            Text(
-                description,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            content()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggle),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        description,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) {
+                        Icons.Outlined.KeyboardArrowUp
+                    } else {
+                        Icons.Outlined.KeyboardArrowDown
+                    },
+                    contentDescription = if (expanded) "收起$title" else "展开$title",
+                )
+            }
+            if (expanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    content()
+                }
+            }
         }
     }
 }
