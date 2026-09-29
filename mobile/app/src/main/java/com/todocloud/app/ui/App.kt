@@ -78,11 +78,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Logout
@@ -421,6 +424,7 @@ fun TodoCloudApp() {
     var taskHeaderLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var selectedTab by rememberSaveable { mutableStateOf(0) }
+    var settingsPage by rememberSaveable { mutableStateOf("main") }
     var showComposer by rememberSaveable { mutableStateOf(false) }
     var showAiTextComposer by rememberSaveable { mutableStateOf(false) }
     var aiResult by remember { mutableStateOf<AiParseResult?>(null) }
@@ -527,20 +531,43 @@ fun TodoCloudApp() {
     )
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text(if (selectedTab == 0) "我的任务" else tabs[selectedTab].label) })
+            TopAppBar(
+                title = {
+                    Text(
+                        when {
+                            selectedTab == 0 -> "我的任务"
+                            selectedTab == 2 && settingsPage == "permissions" -> "权限"
+                            selectedTab == 2 && settingsPage == "sponsor" -> "赞助开发"
+                            else -> tabs[selectedTab].label
+                        },
+                    )
+                },
+                navigationIcon = {
+                    if (selectedTab == 2 && settingsPage != "main") {
+                        IconButton(onClick = { settingsPage = "main" }) {
+                            Icon(Icons.Outlined.ArrowBack, contentDescription = "返回设置")
+                        }
+                    }
+                },
+            )
         },
         bottomBar = {
-            NavigationBar {
-                tabs.forEachIndexed { index, tab ->
-                    NavigationBarItem(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        icon = tab.icon,
-                        label = { Text(tab.label) },
-                        colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                        ),
-                    )
+            if (selectedTab != 2 || settingsPage == "main") {
+                NavigationBar {
+                    tabs.forEachIndexed { index, tab ->
+                        NavigationBarItem(
+                            selected = selectedTab == index,
+                            onClick = {
+                                selectedTab = index
+                                if (index != 2) settingsPage = "main"
+                            },
+                            icon = tab.icon,
+                            label = { Text(tab.label) },
+                            colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                            ),
+                        )
+                    }
                 }
             }
         },
@@ -636,28 +663,38 @@ fun TodoCloudApp() {
             )
 
             1 -> CalendarScreen(paddingValues, tasks)
-            else -> SettingsScreen(
-                context = context,
-                paddingValues = paddingValues,
-                session = currentSession,
-                reminderMode = reminderMode,
-                defaultReminderOffsetMinutes = defaultReminderOffsetMinutes,
-                onDefaultReminderChange = { offsetMinutes ->
-                    defaultReminderOffsetMinutes = offsetMinutes
-                    saveDefaultReminderOffset(context, offsetMinutes)
-                },
-                onReminderModeChange = { mode ->
-                    reminderMode = mode
-                    ReminderScheduler.saveReminderMode(context, mode)
-                    scheduleTasks(tasks)
-                },
-                onLogout = {
-                    scope.launch {
-                        repository.logout(currentSession)
-                        session = null
-                    }
-                },
-            )
+            else -> when (settingsPage) {
+                "permissions" -> PermissionSettingsScreen(
+                    context = context,
+                    paddingValues = paddingValues,
+                    reminderMode = reminderMode,
+                )
+                "sponsor" -> SponsorSettingsScreen(paddingValues)
+                else -> SettingsHomeScreen(
+                    context = context,
+                    paddingValues = paddingValues,
+                    session = currentSession,
+                    reminderMode = reminderMode,
+                    defaultReminderOffsetMinutes = defaultReminderOffsetMinutes,
+                    onDefaultReminderChange = { offsetMinutes ->
+                        defaultReminderOffsetMinutes = offsetMinutes
+                        saveDefaultReminderOffset(context, offsetMinutes)
+                    },
+                    onReminderModeChange = { mode ->
+                        reminderMode = mode
+                        ReminderScheduler.saveReminderMode(context, mode)
+                        scheduleTasks(tasks)
+                    },
+                    onOpenPermissions = { settingsPage = "permissions" },
+                    onOpenSponsor = { settingsPage = "sponsor" },
+                    onLogout = {
+                        scope.launch {
+                            repository.logout(currentSession)
+                            session = null
+                        }
+                    },
+                )
+            }
         }
         }
 
@@ -3104,6 +3141,464 @@ private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) 
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SettingsHomeScreen(
+    context: Context,
+    paddingValues: PaddingValues,
+    session: Session,
+    reminderMode: ReminderMode,
+    defaultReminderOffsetMinutes: Int?,
+    onDefaultReminderChange: (Int?) -> Unit,
+    onReminderModeChange: (ReminderMode) -> Unit,
+    onOpenPermissions: () -> Unit,
+    onOpenSponsor: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    var showDefaultReminderPicker by rememberSaveable { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .padding(horizontal = 20.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text("账号", style = MaterialTheme.typography.titleMedium)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Outlined.Settings,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(30.dp),
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(session.email, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "已登录 · 任务会继续云端同步",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                TextButton(onClick = onLogout) { Text("退出") }
+            }
+        }
+
+        Text("提醒设置", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "选择任务到点后的提醒方式",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        ReminderModeCard(
+            title = "通知栏提醒",
+            description = "沿用原来的通知栏提醒，可点击通知进入应用",
+            icon = { Icon(Icons.Outlined.Notifications, contentDescription = null) },
+            selected = reminderMode == ReminderMode.NOTIFICATION,
+            onClick = { onReminderModeChange(ReminderMode.NOTIFICATION) },
+        )
+        ReminderModeCard(
+            title = "闹钟提醒",
+            description = "到点响铃并显示停止界面，不发送任务通知",
+            icon = { Icon(Icons.Outlined.Alarm, contentDescription = null) },
+            selected = reminderMode == ReminderMode.ALARM,
+            onClick = {
+                onReminderModeChange(ReminderMode.ALARM)
+                requestAlarmPermissions(context)
+            },
+        )
+        OutlinedButton(
+            onClick = { showDefaultReminderPicker = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("AI 识别任务默认：${formatReminderOffset(defaultReminderOffsetMinutes)}")
+        }
+
+        Text("更多设置", style = MaterialTheme.typography.titleMedium)
+        SettingsEntry(
+            title = "权限",
+            description = "通知、闹钟、后台运行和无障碍辅助",
+            icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
+            onClick = onOpenPermissions,
+        )
+        SettingsEntry(
+            title = "赞助开发",
+            description = "查看收款码，支持 TodoCloud 持续开发",
+            icon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null) },
+            onClick = onOpenSponsor,
+        )
+        Text("关于 TodoCloud", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "当前版本 ${BuildConfig.VERSION_NAME}\n任务、提醒与云端同步",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(bottom = 20.dp),
+        )
+    }
+
+    if (showDefaultReminderPicker) {
+        ReminderPickerDialog(
+            currentOffsetMinutes = defaultReminderOffsetMinutes,
+            onDismiss = { showDefaultReminderPicker = false },
+            onSelect = {
+                onDefaultReminderChange(it)
+                showDefaultReminderPicker = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun SettingsEntry(
+    title: String,
+    description: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            icon()
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    description,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Icon(Icons.Outlined.ChevronRight, contentDescription = "打开$title")
+        }
+    }
+}
+
+@Composable
+private fun PermissionSettingsScreen(
+    context: Context,
+    paddingValues: PaddingValues,
+    reminderMode: ReminderMode,
+) {
+    val notificationManager = remember(context) {
+        context.getSystemService(NotificationManager::class.java)
+    }
+    val alarmManager = remember(context) {
+        context.getSystemService(AlarmManager::class.java)
+    }
+    val powerManager = remember(context) {
+        context.getSystemService(PowerManager::class.java)
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var permissionRefreshToken by remember { mutableStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) permissionRefreshToken++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val notificationsEnabled = remember(permissionRefreshToken) {
+        notificationManager.areNotificationsEnabled()
+    }
+    val exactAlarmsEnabled = remember(permissionRefreshToken) {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+    }
+    val overlayEnabled = remember(permissionRefreshToken) { Settings.canDrawOverlays(context) }
+    val fullScreenIntentEnabled = remember(permissionRefreshToken) {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+            notificationManager.canUseFullScreenIntent()
+    }
+    val backgroundRunAllowed = remember(permissionRefreshToken) {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+            powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    }
+    val chineseOem = remember { isChineseOem() }
+    val accessibilityEnabled = remember(permissionRefreshToken) {
+        isAccessibilityServiceEnabled(context)
+    }
+    var showReminderPermissionGuide by rememberSaveable { mutableStateOf(false) }
+    var showBackgroundLockGuide by rememberSaveable { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .padding(horizontal = 20.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text(
+            "系统权限",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            "权限由手机系统管理。国产手机还需要允许自启动、后台活动，并在最近任务中锁定 TodoCloud。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        PermissionStateRow("通知权限", notificationsEnabled, "通知栏提醒需要")
+        if (!notificationsEnabled) {
+            OutlinedButton(
+                onClick = { openNotificationSettings(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("打开通知设置") }
+        }
+        PermissionStateRow("精确闹钟", exactAlarmsEnabled, "让闹钟尽量准时触发")
+        if (!exactAlarmsEnabled) {
+            OutlinedButton(
+                onClick = { openExactAlarmSettings(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("开启精确闹钟权限") }
+        }
+        if (reminderMode == ReminderMode.ALARM) {
+            PermissionStateRow("悬浮窗", overlayEnabled, "后台或锁屏时显示停止界面")
+            if (!overlayEnabled) {
+                OutlinedButton(
+                    onClick = { requestAlarmPermissions(context) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("开启闹钟显示权限") }
+            }
+            PermissionStateRow("全屏闹钟", fullScreenIntentEnabled, "锁屏时显示停止闹钟界面")
+            if (!fullScreenIntentEnabled) {
+                OutlinedButton(
+                    onClick = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                    Uri.parse("package:${context.packageName}"),
+                                ),
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("开启全屏闹钟提醒") }
+            }
+        }
+
+        Text("后台运行", style = MaterialTheme.typography.titleMedium)
+        PermissionStateRow("电池优化", backgroundRunAllowed, "允许 TodoCloud 在后台工作")
+        if (!backgroundRunAllowed) {
+            OutlinedButton(
+                onClick = { requestBackgroundRunPermission(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("允许后台运行") }
+        }
+        if (chineseOem) {
+            Text(
+                oemBackgroundGuidance(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(
+                onClick = { openAppDetailsSettings(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("打开自启动和后台设置") }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("建议锁定 TodoCloud 后台", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "部分国产系统会清理未锁定的后台应用。请在最近任务中向下滑 TodoCloud，点击锁形图标锁定，否则可能收不到通知或闹钟。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Image(
+                        painter = painterResource(R.drawable.background_lock_guide),
+                        contentDescription = "在最近任务中锁定 TodoCloud 的操作示意图",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clip(RoundedCornerShape(14.dp)),
+                        contentScale = ContentScale.Fit,
+                    )
+                    TextButton(
+                        onClick = { showBackgroundLockGuide = true },
+                        modifier = Modifier.align(Alignment.End),
+                    ) { Text("查看大图和说明") }
+                }
+            }
+            PermissionStateRow(
+                "无障碍后台辅助",
+                accessibilityEnabled,
+                "仅用于部分国产系统的提醒恢复，不读取屏幕内容",
+            )
+            OutlinedButton(
+                onClick = { openAccessibilitySettings(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (accessibilityEnabled) "管理无障碍辅助" else "尝试开启无障碍辅助") }
+        }
+        OutlinedButton(
+            onClick = { showReminderPermissionGuide = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("查看完整权限指引") }
+        Spacer(Modifier.height(20.dp))
+    }
+
+    if (showReminderPermissionGuide) {
+        AlertDialog(
+            onDismissRequest = { showReminderPermissionGuide = false },
+            title = { Text("提醒权限设置") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("请按下面的项目检查设置，国产手机尤其需要确认电池、自启动和后台活动。")
+                    Text(if (notificationsEnabled) "✓ 通知权限已开启" else "未开启通知权限")
+                    Text(if (backgroundRunAllowed) "✓ 电池优化已放行" else "未设置为不限制电池使用")
+                    Text(if (exactAlarmsEnabled) "✓ 精确闹钟权限已开启" else "未开启精确闹钟权限")
+                    if (chineseOem) {
+                        Text("自启动和后台活动无法由应用代替开启，请在系统设置中手动确认。")
+                        Text(oemBackgroundGuidance(), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showReminderPermissionGuide = false }) { Text("完成") }
+            },
+        )
+    }
+
+    if (showBackgroundLockGuide) {
+        AlertDialog(
+            onDismissRequest = { showBackgroundLockGuide = false },
+            title = { Text("锁定 TodoCloud 后台") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 560.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("打开最近任务界面，找到 TodoCloud 后向下滑动，点击锁形图标。锁定后不要点击清除全部。")
+                    Image(
+                        painter = painterResource(R.drawable.background_lock_guide),
+                        contentDescription = "锁定 TodoCloud 后台的操作示意图",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp)),
+                        contentScale = ContentScale.FillWidth,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBackgroundLockGuide = false }) { Text("知道了") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun PermissionStateRow(
+    title: String,
+    enabled: Boolean,
+    description: String,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+            Text(
+                if (enabled) "已开启" else "需设置",
+                color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SponsorSettingsScreen(paddingValues: PaddingValues) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .padding(20.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            "如果 TodoCloud 对你有帮助，欢迎支持开发。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Image(
+                painter = painterResource(R.drawable.wechat_donation_qr),
+                contentDescription = "微信收款码",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp)
+                    .clip(RoundedCornerShape(16.dp)),
+                contentScale = ContentScale.Fit,
+            )
+        }
+        Text(
+            "感谢你的支持",
+            style = MaterialTheme.typography.titleMedium,
+        )
     }
 }
 
