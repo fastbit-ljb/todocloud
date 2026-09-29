@@ -79,6 +79,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.AccessTime
@@ -3306,8 +3307,8 @@ private fun SettingsHomeScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    Icons.Outlined.Settings,
-                    contentDescription = null,
+                    Icons.Outlined.AccountCircle,
+                    contentDescription = "账号",
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(30.dp),
                 )
@@ -3324,7 +3325,16 @@ private fun SettingsHomeScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                TextButton(onClick = onLogout) { Text("退出") }
+                IconButton(
+                    onClick = onLogout,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        Icons.Outlined.Logout,
+                        contentDescription = "退出登录",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         }
 
