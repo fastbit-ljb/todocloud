@@ -124,6 +124,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
@@ -1213,93 +1214,119 @@ private fun RefreshTaskButton(
 
 @Composable
 private fun BouncingTaskLoader(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "task-loader")
-    val delays = listOf(0, 200, 300)
-    val bounceProgresses = delays.mapIndexed { index, delay ->
-        transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                // CSS `ease` = cubic-bezier(0.25, 0.1, 0.25, 1).
-                animation = tween(durationMillis = 500, easing = UiverseEase),
-                repeatMode = RepeatMode.Reverse,
-                initialStartOffset = StartOffset(offsetMillis = delay),
-            ),
-            label = "task-loader-ball-$index",
-        ).value
+    val transition = rememberInfiniteTransition(label = "task-loader-pages")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "task-loader-page-phase",
+    )
+    val pageStarts = listOf(0.10f, 0.28f, 0.46f, 0.64f)
+    val pageProgresses = pageStarts.map { start ->
+        ((phase - start + 1f) % 1f).coerceIn(0f, 1f)
     }
-    val ballColor = MaterialTheme.colorScheme.primaryContainer
-    val shadowColor = MaterialTheme.colorScheme.onSurface
 
-    Box(modifier = modifier.height(92.dp), contentAlignment = Alignment.Center) {
-        Canvas(
+    Column(
+        modifier = modifier
+            .height(170.dp)
+            .semantics { contentDescription = "正在加载任务" },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
             modifier = Modifier
-                .width(200.dp)
-                .height(76.dp)
-                .semantics { contentDescription = "正在加载任务" },
+                .width(210.dp)
+                .height(132.dp)
+                .graphicsLayer {
+                    shadowElevation = 12.dp.toPx()
+                    shape = RoundedCornerShape(14.dp)
+                    clip = true
+                }
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF23C4F8),
+                            Color(0xFF275EFE),
+                        ),
+                    ),
+                ),
+            contentAlignment = Alignment.Center,
         ) {
-            val unit = size.width / 200f
-            val ballWidth = 20f * unit
-            val ballHeightMax = 20f * unit
-            // Match the supplied .wrapper/.circle/.shadow geometry exactly.
-            val floorTop = 60f * unit
-            val shadowTop = 62f * unit
-            val centers = listOf(0.20f, 0.50f, 0.80f)
-
-            bounceProgresses.forEachIndexed { index, rawProgress ->
-                val progress = rawProgress.coerceIn(0f, 1f)
-                // Keyframes from circle7124:
-                // 0%: top 60px, height 5px, scaleX 1.7
-                // 40%: height 20px, scaleX 1
-                // 100%: top 0
-                val landingProgress = (progress / 0.4f).coerceIn(0f, 1f)
-                val jumpProgress = ((progress - 0.4f) / 0.6f).coerceIn(0f, 1f)
-                val ballHeight = (5f + 15f * landingProgress) * unit
-                val horizontalStretch = 1.7f - 0.7f * landingProgress
-                val top = if (progress <= 0.4f) {
-                    floorTop
-                } else {
-                    floorTop * (1f - jumpProgress)
+            UiversePaperPage()
+            pageProgresses.forEach { progress ->
+                val visible = when {
+                    progress < 0.10f -> 0f
+                    progress < 0.22f -> (progress - 0.10f) / 0.12f
+                    progress < 0.52f -> 1f
+                    progress < 0.66f -> 1f - (progress - 0.52f) / 0.14f
+                    else -> 0f
                 }
-                val centerX = size.width * centers[index]
-
-                // Keyframes from shadow046:
-                // 0% scaleX 1.5, 40% scaleX 1 / alpha .7,
-                // 100% scaleX .2 / alpha .4.
-                val shadowScale = if (progress <= 0.4f) {
-                    1.5f - 0.5f * landingProgress
-                } else {
-                    1f - 0.8f * jumpProgress
-                }
-                val shadowAlpha = if (progress <= 0.4f) {
-                    0.9f - 0.2f * landingProgress
-                } else {
-                    0.7f - 0.3f * jumpProgress
-                }
-                drawOval(
-                    color = shadowColor.copy(alpha = shadowAlpha),
-                    topLeft = androidx.compose.ui.geometry.Offset(
-                        x = centerX - ballWidth * shadowScale / 2f,
-                        y = shadowTop,
-                    ),
-                    size = androidx.compose.ui.geometry.Size(
-                        width = ballWidth * shadowScale,
-                        height = 4f * unit,
-                    ),
-                )
-                drawOval(
-                    color = ballColor,
-                    topLeft = androidx.compose.ui.geometry.Offset(
-                        x = centerX - ballWidth * horizontalStretch / 2f,
-                        y = top,
-                    ),
-                    size = androidx.compose.ui.geometry.Size(
-                        width = ballWidth * horizontalStretch,
-                        height = ballHeight.coerceAtMost(ballHeightMax),
-                    ),
+                val rotation = if (progress < 0.52f) 180f else 0f
+                UiversePaperPage(
+                    modifier = Modifier.graphicsLayer {
+                        rotationY = rotation
+                        alpha = visible
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 0.5f)
+                        cameraDistance = 8f * density
+                    },
                 )
             }
         }
+        Text(
+            "TodoCloud 正在加载",
+            modifier = Modifier.padding(top = 10.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun UiversePaperPage(modifier: Modifier = Modifier) {
+    Canvas(
+        modifier = modifier
+            .size(width = 92.dp, height = 116.dp)
+            .graphicsLayer {
+                shadowElevation = 5.dp.toPx()
+                shape = RoundedCornerShape(8.dp)
+                clip = true
+            },
+    ) {
+        val corner = 8.dp.toPx()
+        drawRoundRect(
+            brush = Brush.linearGradient(
+                colors = listOf(Color(0xFFFFFDF0), Color(0xFFFFF3C8)),
+            ),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+        )
+        val lineColor = Color(0xFFB7A46B).copy(alpha = 0.72f)
+        val left = size.width * 0.18f
+        val right = size.width * 0.82f
+        listOf(0.34f, 0.50f, 0.66f).forEach { fraction ->
+            drawLine(
+                color = lineColor,
+                start = androidx.compose.ui.geometry.Offset(left, size.height * fraction),
+                end = androidx.compose.ui.geometry.Offset(right, size.height * fraction),
+                strokeWidth = 4.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+        }
+        val fold = Path().apply {
+            moveTo(size.width * 0.68f, size.height)
+            lineTo(size.width, size.height * 0.68f)
+            lineTo(size.width, size.height)
+            close()
+        }
+        drawPath(fold, color = Color(0xFFFFD86A))
+        drawLine(
+            color = Color(0xFFE8C45D),
+            start = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height),
+            end = androidx.compose.ui.geometry.Offset(size.width, size.height * 0.68f),
+            strokeWidth = 1.dp.toPx(),
+        )
     }
 }
 
