@@ -195,7 +195,7 @@ class TodoCloudRepository(context: Context) {
                 "screenshot.$extension",
                 imageBytes.toRequestBody(contentType.toMediaTypeOrNull() ?: "image/jpeg".toMediaType()),
             )
-            .addFormDataPart("reference_at", Instant.now().toString())
+            .addFormDataPart("reference_at", currentAiReferenceAt())
             .addFormDataPart("timezone_name", java.time.ZoneId.systemDefault().id)
             .build()
         val response = authorizedRequest(token) { authToken ->
@@ -307,7 +307,7 @@ class TodoCloudRepository(context: Context) {
     suspend fun parseText(token: String, text: String): AiParseResult {
         val payload = JSONObject().apply {
             put("text", text)
-            put("reference_at", Instant.now().toString())
+            put("reference_at", currentAiReferenceAt())
             put("timezone_name", java.time.ZoneId.systemDefault().id)
         }
         val response = authorizedRequest(token) { authToken ->
@@ -345,6 +345,11 @@ class TodoCloudRepository(context: Context) {
             candidates = candidates,
         )
     }
+
+    private fun currentAiReferenceAt(): String = java.time.ZonedDateTime
+        .now(java.time.ZoneId.systemDefault())
+        .toOffsetDateTime()
+        .toString()
 
     private suspend fun refreshSession(refreshToken: String): Session {
         val response = request(

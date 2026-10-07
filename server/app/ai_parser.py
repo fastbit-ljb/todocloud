@@ -5,8 +5,9 @@ import json
 import logging
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from urllib import error as urlerror, request
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PIL import Image
 
@@ -17,6 +18,10 @@ logger = logging.getLogger(__name__)
 MAX_AI_IMAGE_EDGE = 2048
 AI_PROVIDER_TIMEOUT_SECONDS = 30
 AI_PRIMARY_ATTEMPTS = 2
+FIXED_OFFSET_ZONE_PATTERN = re.compile(
+    r"^(?:GMT|UTC)(?P<sign>[+-])(?P<hours>\d{1,2})(?::?(?P<minutes>\d{2}))?$",
+    re.IGNORECASE,
+)
 
 
 class AiNotConfiguredError(RuntimeError):
@@ -25,6 +30,83 @@ class AiNotConfiguredError(RuntimeError):
 
 class AiParseError(RuntimeError):
     pass
+
+
+def _user_timezone(timezone_name: str) -> tzinfo:
+    normalized = (timezone_name or "UTC").strip()
+    try:
+        return ZoneInfo(normalized)
+    except (ZoneInfoNotFoundError, ValueError):
+        match = FIXED_OFFSET_ZONE_PATTERN.fullmatch(normalized)
+        if match is None:
+            raise AiParseError(f"无法识别用户时区：{normalized}") from None
+        hours = int(match.group("hours"))
+        minutes = int(match.group("minutes") or 0)
+        if hours > 18 or minutes > 59 or (hours == 18 and minutes != 0):
+            raise AiParseError(f"无效的用户时区偏移：{normalized}")
+        direction = 1 if match.group("sign") == "+" else -1
+        return timezone(direction * timedelta(hours=hours, minutes=minutes), name=normalized)
+
+
+def _localize_reference(reference_at: str | None, timezone_name: str) -> datetime:
+    user_zone = _user_timezone(timezone_name)
+    if reference_at:
+        try:
+            parsed = datetime.fromisoformat(reference_at.strip().replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise AiParseError("当前参考时间格式无效") from exc
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=user_zone)
+    else:
+        parsed = datetime.now(timezone.utc)
+    return parsed.astimezone(user_zone)
+
+
+def _parse_due_at(value: object, user_zone: tzinfo) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=user_zone)
+    return parsed.astimezone(user_zone)
+
+
+def _relative_day_offset(source_text: str) -> int | None:
+    patterns = (
+        (r"大后天", 3),
+        (r"后天", 2),
+        (r"明天|明早|明晚", 1),
+        (r"今天|今日|今晚|今早|今晨", 0),
+    )
+    for pattern, offset in patterns:
+        if re.search(pattern, source_text):
+            return offset
+    return None
+
+
+def _normalize_due_at(
+    task: dict,
+    reference_at: datetime,
+    repair_relative_dates: bool,
+) -> None:
+    parsed = _parse_due_at(task.get("due_at"), reference_at.tzinfo or timezone.utc)
+    if parsed is None:
+        return
+
+    if repair_relative_dates:
+        offset = _relative_day_offset(str(task.get("source_text") or ""))
+        if offset is not None:
+            expected_date = reference_at.date() + timedelta(days=offset)
+            parsed = parsed.replace(
+                year=expected_date.year,
+                month=expected_date.month,
+                day=expected_date.day,
+            )
+
+    task["due_at"] = parsed.isoformat()
 
 
 def _extract_json(content: str) -> dict:
@@ -100,9 +182,14 @@ def _infer_ordered_steps(text: str) -> list[dict]:
     return steps[:30] if len(steps) >= 2 else []
 
 
-def _normalize_tasks(result: dict) -> dict:
+def _normalize_tasks(
+    result: dict,
+    reference_at: datetime,
+    repair_relative_dates: bool,
+) -> dict:
     for task in result.get("tasks", []):
         if isinstance(task, dict):
+            _normalize_due_at(task, reference_at, repair_relative_dates)
             _normalize_unspecified_morning(task)
             normalized_steps = []
             for step in task.get("steps") or []:
@@ -120,18 +207,29 @@ def _normalize_tasks(result: dict) -> dict:
     return result
 
 
-def _build_prompt(reference_at: str, timezone_name: str, source_type: str) -> str:
+def _build_prompt(reference_at: datetime, timezone_name: str, source_type: str) -> str:
     source = "聊天截图" if source_type == "image" else "聊天文字"
+    today = reference_at.date()
+    tomorrow = today + timedelta(days=1)
+    day_after_tomorrow = today + timedelta(days=2)
+    screenshot_time_rule = (
+        "如果截图中能辨认出聊天消息旁的发送日期或时间，优先用该消息时间作为‘明天、下周一’等相对时间的基准；"
+        "截图没有可辨认的聊天时间时，才使用当前参考时间。不要把手机状态栏时间当成聊天消息时间。"
+        if source_type == "image"
+        else "文字中的相对时间必须使用下面给出的用户当地日期作为基准。"
+    )
     return (
         f"请从这份{source}中提取需要完成的待办事项。只返回 JSON，不要解释。"
         "格式必须是 {\"tasks\":[{\"title\":\"...\",\"description\":null,"
         "\"due_at\":\"ISO-8601 或 null\",\"reminder_offset_minutes\":null,"
         "\"confidence\":0.0,\"source_text\":\"原文片段\","
         "\"steps\":[{\"title\":\"按顺序执行的步骤\"}]}]}。"
-        f"当前参考时间是 {reference_at}，用户时区是 {timezone_name}。"
-        "如果截图中能辨认出聊天消息旁的发送日期或时间，优先用该消息时间作为‘明天、下周一’等相对时间的基准；"
-        "截图没有可辨认的聊天时间时，才使用当前参考时间。不要把手机状态栏时间当成聊天消息时间。"
+        f"当前用户当地时间是 {reference_at.isoformat(timespec='seconds')}，IANA 时区是 {timezone_name}，"
+        f"当地日期是 {today.isoformat()}；今天={today.isoformat()}，明天={tomorrow.isoformat()}，"
+        f"后天={day_after_tomorrow.isoformat()}。"
+        f"{screenshot_time_rule}"
         "聊天中出现‘明天、下周一、今晚’等相对时间时，必须以参考时间和用户时区换算成 ISO-8601；"
+        "due_at 必须带明确的 UTC 偏移，不得返回无时区时间；"
         "如果只写‘6点’、‘8点’等时间而没有明确上午、下午、晚上、中午、凌晨或 24 小时制，默认按上午处理；"
         "例如‘明天6点把word给我’必须是次日 06:00，不得擅自解释成 18:00；只有‘下午6点’或‘晚上6点’才是 18:00。"
         "没有明确时间就填 null。标题要简短可执行，不要把聊天寒暄当成任务。"
@@ -162,7 +260,7 @@ def _prepare_image_for_ai(image_bytes: bytes, content_type: str) -> tuple[bytes,
     return image_bytes, content_type
 
 
-def _call_model(content: object, reference_at: str, timezone_name: str) -> dict:
+def _call_model(content: object, reference_at: datetime, timezone_name: str) -> dict:
     if not settings.ai_api_key:
         raise AiNotConfiguredError("服务端尚未配置 AI_API_KEY")
 
@@ -232,7 +330,11 @@ def _call_model(content: object, reference_at: str, timezone_name: str) -> dict:
                 parsed = _extract_json(content_result)
                 if not isinstance(parsed.get("tasks"), list):
                     raise AiParseError("AI 返回结果缺少任务列表")
-                return _normalize_tasks(parsed)
+                return _normalize_tasks(
+                    parsed,
+                    reference_at,
+                    repair_relative_dates=not isinstance(content, dict),
+                )
             except urlerror.HTTPError as exc:
                 elapsed = time.monotonic() - started_at
                 logger.warning("AI provider returned HTTP %s for %s after %.2fs", exc.code, model, elapsed)
@@ -279,7 +381,7 @@ async def parse_screenshot(
     reference_at: str | None,
     timezone_name: str,
 ) -> dict:
-    reference = reference_at or datetime.now(timezone.utc).isoformat()
+    reference = _localize_reference(reference_at, timezone_name)
     ai_image_bytes, ai_content_type = await asyncio.to_thread(
         _prepare_image_for_ai,
         image_bytes,
@@ -308,7 +410,7 @@ async def parse_text(
     reference_at: str | None,
     timezone_name: str,
 ) -> dict:
-    reference = reference_at or datetime.now(timezone.utc).isoformat()
+    reference = _localize_reference(reference_at, timezone_name)
     return await asyncio.to_thread(
         _call_model,
         text,
