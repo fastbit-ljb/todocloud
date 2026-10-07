@@ -1,20 +1,14 @@
 package com.todocloud.app.ui
 
-import android.Manifest
-import android.app.Activity
 import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -86,13 +80,12 @@ import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.KeyboardVoice
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Logout
-import androidx.compose.material.icons.outlined.Notes
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -652,7 +645,7 @@ fun TodoCloudApp(
                         taskPage = "home"
                         screenshotLauncher.launch("image/*")
                     },
-                    onVoiceOrText = {
+                    onText = {
                         taskPage = "home"
                         showAiTextComposer = true
                     },
@@ -1141,7 +1134,7 @@ private fun AddTaskMethodScreen(
     enabled: Boolean,
     onManual: () -> Unit,
     onScreenshot: () -> Unit,
-    onVoiceOrText: () -> Unit,
+    onText: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -1179,14 +1172,13 @@ private fun AddTaskMethodScreen(
                 modifier = Modifier.weight(1f).height(140.dp),
             )
             AddMethodIconButton(
-                icon = Icons.Outlined.KeyboardVoice,
-                badgeIcon = Icons.Outlined.Notes,
-                contentDescription = "从语音或文字识别任务",
+                icon = Icons.Outlined.TextFields,
+                contentDescription = "从文字提取任务",
                 containerStart = MaterialTheme.colorScheme.primaryContainer,
                 containerEnd = MaterialTheme.colorScheme.secondaryContainer,
                 iconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 enabled = enabled,
-                onClick = onVoiceOrText,
+                onClick = onText,
                 modifier = Modifier.weight(1f).height(140.dp),
             )
         }
@@ -1203,7 +1195,6 @@ private fun AddMethodIconButton(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    badgeIcon: ImageVector? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -1264,25 +1255,6 @@ private fun AddMethodIconButton(
                 tint = iconColor,
                 modifier = Modifier.size(50.dp),
             )
-        }
-
-        badgeIcon?.let {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp)
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(iconColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = it,
-                    contentDescription = null,
-                    tint = containerStart,
-                    modifier = Modifier.size(17.dp),
-                )
-            }
         }
     }
 }
@@ -2424,7 +2396,7 @@ private fun ThemeCardTextField(
     onValueChange: (String) -> Unit,
     label: String,
     modifier: Modifier = Modifier,
-    placeholder: String = "请输入聊天内容，或点击下方按钮转成文字",
+    placeholder: String = "请输入或粘贴需要提取的内容",
 ) {
     var focused by remember { mutableStateOf(false) }
     // Keep the theme tint visible, but soften it so the input feels lighter
@@ -2483,113 +2455,15 @@ private fun AiTextDialog(
     onDismiss: () -> Unit,
     onParse: (String) -> Unit,
 ) {
-    val context = LocalContext.current
     var text by rememberSaveable { mutableStateOf("") }
-    var listening by remember { mutableStateOf(false) }
-    var speechError by remember { mutableStateOf<String?>(null) }
-    var speechBaseText by remember { mutableStateOf("") }
-    val recognizer = remember(context) {
-        if (SpeechRecognizer.isRecognitionAvailable(context)) {
-            SpeechRecognizer.createSpeechRecognizer(context)
-        } else {
-            null
-        }
-    }
-
-    fun applyTranscript(transcript: String) {
-        if (transcript.isBlank()) return
-        text = if (speechBaseText.isBlank()) transcript else "$speechBaseText $transcript"
-        speechError = null
-    }
-
-    val externalRecognizerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            result.data
-                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                ?.firstOrNull()
-                ?.let(::applyTranscript)
-        }
-    }
-
-    DisposableEffect(recognizer) {
-        if (recognizer != null) {
-            recognizer.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: android.os.Bundle?) {
-                    listening = true
-                    speechError = null
-                }
-
-                override fun onBeginningOfSpeech() = Unit
-
-                override fun onRmsChanged(rmsdB: Float) = Unit
-
-                override fun onBufferReceived(buffer: ByteArray?) = Unit
-
-                override fun onEndOfSpeech() {
-                    listening = false
-                }
-
-                override fun onError(error: Int) {
-                    listening = false
-                    speechError = when (error) {
-                        SpeechRecognizer.ERROR_NO_MATCH -> "没有听清内容，请再试一次"
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "没有录音权限"
-                        else -> "语音识别失败，请检查系统语音服务或改用文字"
-                    }
-                }
-
-                override fun onResults(results: android.os.Bundle?) {
-                    listening = false
-                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()
-                        ?.let(::applyTranscript)
-                }
-
-                override fun onPartialResults(partialResults: android.os.Bundle?) = Unit
-
-                override fun onEvent(eventType: Int, params: android.os.Bundle?) = Unit
-            })
-        }
-        onDispose {
-            recognizer?.cancel()
-            recognizer?.destroy()
-        }
-    }
-
-    fun startListening() {
-        speechBaseText = text.trimEnd()
-        speechError = null
-        val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-        }
-        val speechRecognizer = recognizer
-        if (speechRecognizer != null) {
-            speechRecognizer.cancel()
-            speechRecognizer.startListening(speechIntent)
-        } else if (speechIntent.resolveActivity(context.packageManager) != null) {
-            externalRecognizerLauncher.launch(speechIntent)
-        } else {
-            speechError = "此设备没有可用的语音识别服务，请直接输入文字或使用键盘语音"
-        }
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) startListening() else speechError = "需要录音权限才能使用语音转文字"
-    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("AI 提取任务") },
+        title = { Text("AI 文字提取") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "先把语音转成文字，再由 AI 根据聊天时间提取任务。不会上传录音。",
+                    "输入或粘贴聊天、课程或安排内容，AI 会提取其中的任务和时间。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 ThemeCardTextField(
@@ -2598,23 +2472,6 @@ private fun AiTextDialog(
                     label = "聊天内容",
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedButton(
-                    onClick = {
-                        if (listening) {
-                            recognizer?.stopListening()
-                            listening = false
-                        } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            startListening()
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    },
-                    enabled = !loading,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (listening) "停止录音" else "开始语音转文字")
-                }
-                speechError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 if (error != null && !loading) {
                     Text(error, color = MaterialTheme.colorScheme.error)
                 }
