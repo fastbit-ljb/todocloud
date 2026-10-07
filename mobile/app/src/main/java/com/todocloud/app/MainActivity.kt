@@ -23,6 +23,14 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Android 12+ always creates a system starting window. Remove its
+            // exit transition immediately so launching TodoCloud does not look
+            // like a custom splash animation.
+            splashScreen.setOnExitAnimationListener { splashView ->
+                splashView.remove()
+            }
+        }
         applyNavigationRequest(intent)
         enableEdgeToEdge()
         ReminderScheduler.createNotificationChannel(this)
