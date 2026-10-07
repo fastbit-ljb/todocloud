@@ -51,6 +51,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,14 +79,18 @@ import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.KeyboardVoice
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Logout
+import androidx.compose.material.icons.outlined.Notes
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -124,6 +129,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
@@ -429,6 +435,7 @@ fun TodoCloudApp(
     var taskHeaderLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var selectedTab by rememberSaveable { mutableStateOf(requestedTab.coerceIn(0, 2)) }
+    var taskPage by rememberSaveable { mutableStateOf("home") }
     var settingsPage by rememberSaveable { mutableStateOf("main") }
     var showComposer by rememberSaveable { mutableStateOf(false) }
     var showAiTextComposer by rememberSaveable { mutableStateOf(false) }
@@ -442,6 +449,7 @@ fun TodoCloudApp(
 
     LaunchedEffect(requestedTab, requestedCalendarDate) {
         selectedTab = requestedTab.coerceIn(0, 2)
+        taskPage = "home"
     }
 
     LaunchedEffect(session?.token, tasks, tasksLoaded) {
@@ -454,6 +462,10 @@ fun TodoCloudApp(
 
     BackHandler(enabled = selectedTab == 2 && settingsPage != "main") {
         settingsPage = "main"
+    }
+
+    BackHandler(enabled = selectedTab == 0 && taskPage != "home") {
+        taskPage = "home"
     }
 
     fun handleApiError(exception: ApiException) {
@@ -573,6 +585,7 @@ fun TodoCloudApp(
                 title = {
                     Text(
                         when {
+                            selectedTab == 0 && taskPage == "add" -> "添加任务"
                             selectedTab == 0 -> "我的任务"
                             selectedTab == 2 && settingsPage == "permissions" -> "权限"
                             selectedTab == 2 && settingsPage == "sponsor" -> "赞助开发"
@@ -581,7 +594,11 @@ fun TodoCloudApp(
                     )
                 },
                 navigationIcon = {
-                    if (selectedTab == 2 && settingsPage != "main") {
+                    if (selectedTab == 0 && taskPage != "home") {
+                        IconButton(onClick = { taskPage = "home" }) {
+                            Icon(Icons.Outlined.ArrowBack, contentDescription = "返回任务")
+                        }
+                    } else if (selectedTab == 2 && settingsPage != "main") {
                         IconButton(onClick = { settingsPage = "main" }) {
                             Icon(Icons.Outlined.ArrowBack, contentDescription = "返回设置")
                         }
@@ -590,13 +607,14 @@ fun TodoCloudApp(
             )
         },
         bottomBar = {
-            if (selectedTab != 2 || settingsPage == "main") {
+            if ((selectedTab != 2 || settingsPage == "main") && taskPage == "home") {
                 NavigationBar {
                     tabs.forEachIndexed { index, tab ->
                         NavigationBarItem(
                             selected = selectedTab == index,
                             onClick = {
                                 selectedTab = index
+                                taskPage = "home"
                                 if (index != 2) settingsPage = "main"
                             },
                             icon = tab.icon,
@@ -610,9 +628,9 @@ fun TodoCloudApp(
             }
         },
         floatingActionButton = {
-            if (selectedTab == 0) {
+            if (selectedTab == 0 && taskPage == "home") {
                 FloatingActionButton(
-                    onClick = { showComposer = true },
+                    onClick = { taskPage = "add" },
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 ) {
@@ -622,16 +640,32 @@ fun TodoCloudApp(
         },
     ) { paddingValues ->
         when (selectedTab) {
-            0 -> TaskHomeScreen(
-                paddingValues = paddingValues,
-                session = currentSession,
-                tasks = tasks,
-                loading = loading,
-                showLoadingAnimation = taskHeaderLoading,
-                error = error,
-                onImportScreenshot = { screenshotLauncher.launch("image/*") },
-                onImportText = { showAiTextComposer = true },
-                onToggle = { task ->
+            0 -> if (taskPage == "add") {
+                AddTaskMethodScreen(
+                    paddingValues = paddingValues,
+                    enabled = !loading,
+                    onManual = {
+                        taskPage = "home"
+                        showComposer = true
+                    },
+                    onScreenshot = {
+                        taskPage = "home"
+                        screenshotLauncher.launch("image/*")
+                    },
+                    onVoiceOrText = {
+                        taskPage = "home"
+                        showAiTextComposer = true
+                    },
+                )
+            } else {
+                TaskHomeScreen(
+                    paddingValues = paddingValues,
+                    session = currentSession,
+                    tasks = tasks,
+                    loading = loading,
+                    showLoadingAnimation = taskHeaderLoading,
+                    error = error,
+                    onToggle = { task ->
                     runRequest {
                         val nextCompleted = !task.completed
                         val nextSteps = task.steps.takeIf { it.isNotEmpty() }
@@ -653,7 +687,7 @@ fun TodoCloudApp(
                         tasks = sortTasks(tasks)
                     }
                 },
-                onStepToggle = { task, stepIndex ->
+                    onStepToggle = { task, stepIndex ->
                     runRequest {
                         val nextSteps = task.steps.mapIndexed { index, step ->
                             if (index == stepIndex) step.copy(completed = !step.completed) else step
@@ -675,7 +709,7 @@ fun TodoCloudApp(
                         tasks = sortTasks(tasks)
                     }
                 },
-                onReminderChange = { task, reminderOffsetMinutes ->
+                    onReminderChange = { task, reminderOffsetMinutes ->
                     runRequest {
                         val updated = repository.updateTask(
                             currentSession.token,
@@ -688,14 +722,15 @@ fun TodoCloudApp(
                         tasks = tasks.map { if (it.id == updated.id) updated else it }
                     }
                 },
-                onDelete = { task ->
+                    onDelete = { task ->
                     runRequest {
                         repository.deleteTask(currentSession.token, task.id)
                         ReminderScheduler.cancel(context, task.id)
                         tasks = tasks.filterNot { it.id == task.id }
                     }
-                },
-            )
+                    },
+                )
+            }
 
             1 -> CalendarScreen(
                 paddingValues = paddingValues,
@@ -1101,6 +1136,158 @@ private fun FloatingUnderlineTextField(
 }
 
 @Composable
+private fun AddTaskMethodScreen(
+    paddingValues: PaddingValues,
+    enabled: Boolean,
+    onManual: () -> Unit,
+    onScreenshot: () -> Unit,
+    onVoiceOrText: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .padding(horizontal = 24.dp, vertical = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        AddMethodIconButton(
+            icon = Icons.Outlined.EditNote,
+            contentDescription = "手动添加任务",
+            containerStart = MaterialTheme.colorScheme.secondaryContainer,
+            containerEnd = MaterialTheme.colorScheme.primaryContainer,
+            iconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            enabled = enabled,
+            onClick = onManual,
+            modifier = Modifier.size(width = 188.dp, height = 160.dp),
+        )
+
+        Spacer(Modifier.height(22.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            AddMethodIconButton(
+                icon = Icons.Outlined.AddPhotoAlternate,
+                contentDescription = "从截图识别任务",
+                containerStart = MaterialTheme.colorScheme.tertiaryContainer,
+                containerEnd = MaterialTheme.colorScheme.surfaceVariant,
+                iconColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                enabled = enabled,
+                onClick = onScreenshot,
+                modifier = Modifier.weight(1f).height(140.dp),
+            )
+            AddMethodIconButton(
+                icon = Icons.Outlined.KeyboardVoice,
+                badgeIcon = Icons.Outlined.Notes,
+                contentDescription = "从语音或文字识别任务",
+                containerStart = MaterialTheme.colorScheme.primaryContainer,
+                containerEnd = MaterialTheme.colorScheme.secondaryContainer,
+                iconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                enabled = enabled,
+                onClick = onVoiceOrText,
+                modifier = Modifier.weight(1f).height(140.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AddMethodIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    containerStart: Color,
+    containerEnd: Color,
+    iconColor: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    badgeIcon: ImageVector? = null,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val scale by animateFloatAsState(
+        targetValue = when {
+            pressed -> 0.94f
+            hovered -> 1.03f
+            else -> 1f
+        },
+        animationSpec = tween(160, easing = UiverseEase),
+        label = "addMethodScale",
+    )
+    val shape = RoundedCornerShape(34.dp)
+
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                alpha = if (enabled) 1f else 0.5f
+                shadowElevation = 12.dp.toPx()
+                this.shape = shape
+                clip = true
+            }
+            .background(
+                brush = Brush.linearGradient(listOf(containerStart, containerEnd)),
+                shape = shape,
+            )
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                shape = shape,
+            )
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .semantics {
+                this.contentDescription = contentDescription
+                role = Role.Button
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(88.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(50.dp),
+            )
+        }
+
+        badgeIcon?.let {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp)
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(iconColor),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = it,
+                    contentDescription = null,
+                    tint = containerStart,
+                    modifier = Modifier.size(17.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun TaskHomeScreen(
     paddingValues: PaddingValues,
     session: Session,
@@ -1108,8 +1295,6 @@ private fun TaskHomeScreen(
     loading: Boolean,
     showLoadingAnimation: Boolean,
     error: String?,
-    onImportScreenshot: () -> Unit,
-    onImportText: () -> Unit,
     onToggle: (TaskItem) -> Unit,
     onStepToggle: (TaskItem, Int) -> Unit,
     onReminderChange: (TaskItem, Int?) -> Unit,
@@ -1125,8 +1310,8 @@ private fun TaskHomeScreen(
             modifier = Modifier
                 .fillMaxSize(),
         ) {
-            // Keep the account summary and import actions fixed while only the
-            // task area below participates in scrolling.
+            // Keep the account summary fixed while only the task area below
+            // participates in scrolling.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1146,21 +1331,6 @@ private fun TaskHomeScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         BouncingTaskLoader()
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = onImportScreenshot,
-                        enabled = !loading,
-                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                    ) {
-                        Text("从截图识别任务")
-                    }
-                    OutlinedButton(
-                        onClick = onImportText,
-                        enabled = !loading,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("语音/文字提取任务")
                     }
                 }
                 error?.let { message ->
