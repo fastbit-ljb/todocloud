@@ -3160,7 +3160,7 @@ private fun CalendarScreen(
                 TextButton(onClick = { moveMonth(1) }) { Text("›") }
             }
             Text(
-                "颜色越深表示当天任务越多，小圆点表示今天。带提醒的任务会在到期前通知。",
+                "颜色越深表示当天任务越多，格子下方数字是任务数；红色数字表示今天。",
                 modifier = Modifier.padding(top = 4.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -3223,11 +3223,15 @@ private fun CalendarScreen(
                                             color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
                                             else MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
-                                        if (isToday) {
+                                        if (taskCount > 0 || isToday) {
                                             Text(
-                                                "•",
-                                                color = MaterialTheme.colorScheme.primary,
-                                                style = MaterialTheme.typography.titleMedium,
+                                                taskCount.toString(),
+                                                color = if (isToday) {
+                                                    MaterialTheme.colorScheme.error
+                                                } else {
+                                                    MaterialTheme.colorScheme.primary
+                                                },
+                                                style = MaterialTheme.typography.labelMedium,
                                             )
                                         }
                                     }
