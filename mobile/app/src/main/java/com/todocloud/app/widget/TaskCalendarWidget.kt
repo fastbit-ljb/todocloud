@@ -157,11 +157,13 @@ object TaskCalendarWidget {
             .putLong(KEY_UPDATED_AT, System.currentTimeMillis())
             .apply()
         renderAll(context, tasks = tasks, loggedIn = true)
+        MonthCalendarWidget.renderAll(context, tasks = tasks, loggedIn = true)
     }
 
     fun clear(context: Context) {
         preferences(context).edit().clear().apply()
         renderAll(context, tasks = emptyList(), loggedIn = false)
+        MonthCalendarWidget.renderAll(context, tasks = emptyList(), loggedIn = false)
     }
 
     fun renderAll(context: Context) {
@@ -325,7 +327,7 @@ object TaskCalendarWidget {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    private fun loadCachedTasks(context: Context): List<TaskItem> {
+    internal fun loadCachedTasks(context: Context): List<TaskItem> {
         val raw = preferences(context).getString(KEY_TASKS, null) ?: return emptyList()
         return runCatching {
             val array = JSONArray(raw)

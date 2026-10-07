@@ -99,28 +99,22 @@ object MascotStateManager {
             return MascotState.OVERDUE
         }
 
+        val today = now.atZone(zoneId).toLocalDate()
         val hasDueSoonTask = datedPendingTasks.any { (task, dueAt) ->
+            if (dueAt.atZone(zoneId).toLocalDate() == today) return@any true
             val offsetMinutes = task.reminderOffsetMinutes ?: return@any false
             val reminderAt = dueAt.minusSeconds(offsetMinutes.toLong() * 60L)
             !now.isBefore(reminderAt) && now.isBefore(dueAt)
         }
         if (hasDueSoonTask) return MascotState.DUE_SOON
 
-        val today = now.atZone(zoneId).toLocalDate()
-        val completedSomethingToday = tasks.any { task ->
-            task.completed && parseInstant(task.completedAt, zoneId)
-                ?.atZone(zoneId)
-                ?.toLocalDate() == today
-        }
-        val hasCurrentUnfinishedTask = pendingTasks.any { task ->
-            val dueDate = parseInstant(task.dueAt, zoneId)?.atZone(zoneId)?.toLocalDate()
-            dueDate == null || !dueDate.isAfter(today)
-        }
-        if (completedSomethingToday && !hasCurrentUnfinishedTask) {
+        if (tasks.isNotEmpty() && pendingTasks.isEmpty()) {
             return MascotState.COMPLETE
         }
 
-        if (pendingTasks.any { task -> task.steps.any { it.completed } }) {
+        val hasPartialProgress = tasks.any { it.completed } ||
+            pendingTasks.any { task -> task.steps.any { it.completed } }
+        if (hasPartialProgress) {
             return MascotState.IN_PROGRESS
         }
 

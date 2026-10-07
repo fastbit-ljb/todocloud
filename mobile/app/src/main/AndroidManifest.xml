@@ -149,6 +149,7 @@
             android:exported="false" />
         <receiver
             android:name=".widget.TaskCalendarWidgetProvider"
+            android:label="@string/widget_week_label"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -156,6 +157,17 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/task_calendar_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.MonthCalendarWidgetProvider"
+            android:label="@string/widget_month_label"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/month_calendar_widget_info" />
         </receiver>
         <receiver
             android:name=".notification.ReminderBootReceiver"

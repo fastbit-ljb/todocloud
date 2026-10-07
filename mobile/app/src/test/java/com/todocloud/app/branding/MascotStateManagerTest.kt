@@ -53,6 +53,45 @@ class MascotStateManagerTest {
     }
 
     @Test
+    fun completedTaskWithRemainingWorkShowsProgress() {
+        val state = resolve(
+            tasks = listOf(
+                task(id = 1, completed = true),
+                task(id = 2, dueAt = "2026-10-09T18:00:00Z"),
+            ),
+            lastActivity = now,
+        )
+
+        assertEquals(MascotState.IN_PROGRESS, state)
+    }
+
+    @Test
+    fun allTasksCompletedShowsComplete() {
+        val state = resolve(
+            tasks = listOf(
+                task(id = 1, completed = true),
+                task(id = 2, completed = true),
+            ),
+            lastActivity = now,
+        )
+
+        assertEquals(MascotState.COMPLETE, state)
+    }
+
+    @Test
+    fun taskDueTodayWinsOverPartialProgress() {
+        val state = resolve(
+            tasks = listOf(
+                task(id = 1, completed = true),
+                task(id = 2, dueAt = "2026-10-07T23:00:00Z"),
+            ),
+            lastActivity = now,
+        )
+
+        assertEquals(MascotState.DUE_SOON, state)
+    }
+
+    @Test
     fun inactivityTransitionsFromHalfToFullFrozen() {
         assertEquals(
             MascotState.HALF_FROZEN,
@@ -76,17 +115,19 @@ class MascotStateManagerTest {
         MascotStateManager.resolve(tasks, lastActivity, now, ZoneOffset.UTC)
 
     private fun task(
+        id: Int = 1,
         dueAt: String? = null,
         reminderOffsetMinutes: Int? = null,
         steps: List<TaskStep> = emptyList(),
+        completed: Boolean = false,
     ) = TaskItem(
-        id = 1,
+        id = id,
         title = "测试任务",
         description = null,
         dueAt = dueAt,
         reminderOffsetMinutes = reminderOffsetMinutes,
-        completed = false,
-        completedAt = null,
+        completed = completed,
+        completedAt = if (completed) "2026-10-07T17:30:00Z" else null,
         steps = steps,
     )
 }

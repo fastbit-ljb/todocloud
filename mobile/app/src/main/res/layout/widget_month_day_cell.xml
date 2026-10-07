@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/month_widget_cell_root"
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_margin="2dp"
+    android:layout_weight="1"
+    android:background="@drawable/widget_day_normal"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:paddingTop="2dp"
+    android:paddingBottom="2dp">
+
+    <TextView
+        android:id="@+id/month_widget_day_number"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="8"
+        android:textColor="@color/widget_text"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/month_widget_day_count"
+        android:layout_width="22dp"
+        android:layout_height="12dp"
+        android:background="@drawable/widget_count_background"
+        android:gravity="center"
+        android:text="2"
+        android:textColor="@color/widget_on_primary"
+        android:textSize="7sp"
+        android:textStyle="bold" />
+</LinearLayout>

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/month_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="vertical"
+    android:paddingHorizontal="12dp"
+    android:paddingVertical="10dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="34dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/month_widget_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="2026年10月"
+            android:textColor="@color/widget_text"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/month_widget_total"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="本月暂无任务"
+            android:textColor="@color/widget_primary"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="24dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <TextView style="@style/WidgetMonthWeekday" android:text="一" />
+        <TextView style="@style/WidgetMonthWeekday" android:text="二" />
+        <TextView style="@style/WidgetMonthWeekday" android:text="三" />
+        <TextView style="@style/WidgetMonthWeekday" android:text="四" />
+        <TextView style="@style/WidgetMonthWeekday" android:text="五" />
+        <TextView style="@style/WidgetMonthWeekday" android:text="六" />
+        <TextView style="@style/WidgetMonthWeekday" android:text="日" />
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/month_widget_week_0" style="@style/WidgetMonthWeekRow" />
+    <LinearLayout android:id="@+id/month_widget_week_1" style="@style/WidgetMonthWeekRow" />
+    <LinearLayout android:id="@+id/month_widget_week_2" style="@style/WidgetMonthWeekRow" />
+    <LinearLayout android:id="@+id/month_widget_week_3" style="@style/WidgetMonthWeekRow" />
+    <LinearLayout android:id="@+id/month_widget_week_4" style="@style/WidgetMonthWeekRow" />
+    <LinearLayout android:id="@+id/month_widget_week_5" style="@style/WidgetMonthWeekRow" />
+</LinearLayout>

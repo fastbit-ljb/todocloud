@@ -12,7 +12,9 @@
     <color name="widget_background">#F2F8EC</color>
     <color name="widget_surface">#E5F0DF</color>
     <color name="widget_today">#CBEBCB</color>
+    <color name="widget_task_day">#D6ECD2</color>
     <color name="widget_primary">#27833A</color>
+    <color name="widget_error">#BA1A1A</color>
     <color name="widget_text">#182018</color>
     <color name="widget_muted">#5E6B5C</color>
     <color name="widget_on_primary">#FFFFFF</color>

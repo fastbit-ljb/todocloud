@@ -9,7 +9,9 @@
     <color name="widget_background">@android:color/system_neutral1_50</color>
     <color name="widget_surface">@android:color/system_neutral2_100</color>
     <color name="widget_today">@android:color/system_accent1_100</color>
+    <color name="widget_task_day">@android:color/system_accent1_50</color>
     <color name="widget_primary">@android:color/system_accent1_600</color>
+    <color name="widget_error">#BA1A1A</color>
     <color name="widget_text">@android:color/system_neutral1_900</color>
     <color name="widget_muted">@android:color/system_neutral2_700</color>
     <color name="widget_on_primary">@android:color/system_neutral1_0</color>
