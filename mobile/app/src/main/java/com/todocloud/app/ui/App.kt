@@ -3227,11 +3227,23 @@ private fun CalendarScreen(
                                             Text(
                                                 taskCount.toString(),
                                                 color = if (isToday) {
-                                                    MaterialTheme.colorScheme.error
+                                                    MaterialTheme.colorScheme.onError
                                                 } else {
-                                                    MaterialTheme.colorScheme.primary
+                                                    MaterialTheme.colorScheme.onPrimary
                                                 },
-                                                style = MaterialTheme.typography.labelMedium,
+                                                modifier = Modifier
+                                                    .widthIn(min = 18.dp)
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        if (isToday) {
+                                                            MaterialTheme.colorScheme.error
+                                                        } else {
+                                                            MaterialTheme.colorScheme.primary
+                                                        },
+                                                    )
+                                                    .padding(horizontal = 5.dp, vertical = 1.dp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                             )
                                         }
                                     }
