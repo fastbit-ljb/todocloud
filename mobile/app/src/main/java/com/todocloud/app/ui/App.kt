@@ -1176,7 +1176,14 @@ private fun TaskHomeScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
+                // Keep the FAB in its easy-to-reach corner while allowing the
+                // final task card (and its delete button) to scroll fully above it.
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    top = 4.dp,
+                    end = 20.dp,
+                    bottom = 96.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (homeTasks.isEmpty() && !loading) {
