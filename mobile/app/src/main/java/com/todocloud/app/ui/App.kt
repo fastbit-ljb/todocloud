@@ -3160,7 +3160,7 @@ private fun CalendarScreen(
                 TextButton(onClick = { moveMonth(1) }) { Text("›") }
             }
             Text(
-                "颜色越深表示当天任务越多，格子下方数字是任务数；红色数字表示今天。",
+                "颜色越深表示当天任务越多，格子下方数字是任务数；今天有任务时使用红色。",
                 modifier = Modifier.padding(top = 4.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -3223,28 +3223,32 @@ private fun CalendarScreen(
                                             color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
                                             else MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
-                                        if (taskCount > 0 || isToday) {
-                                            Text(
-                                                taskCount.toString(),
-                                                color = if (isToday) {
-                                                    MaterialTheme.colorScheme.onError
-                                                } else {
-                                                    MaterialTheme.colorScheme.onPrimary
-                                                },
+                                        if (taskCount > 0) {
+                                            Box(
                                                 modifier = Modifier
-                                                    .widthIn(min = 18.dp)
-                                                    .clip(CircleShape)
+                                                    .widthIn(min = 22.dp)
+                                                    .height(12.dp)
+                                                    .clip(RoundedCornerShape(50))
                                                     .background(
                                                         if (isToday) {
                                                             MaterialTheme.colorScheme.error
                                                         } else {
                                                             MaterialTheme.colorScheme.primary
                                                         },
-                                                    )
-                                                    .padding(horizontal = 5.dp, vertical = 1.dp),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                            )
+                                                    ),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Text(
+                                                    taskCount.toString(),
+                                                    color = if (isToday) {
+                                                        MaterialTheme.colorScheme.onError
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onPrimary
+                                                    },
+                                                    fontSize = 8.sp,
+                                                    lineHeight = 8.sp,
+                                                )
+                                            }
                                         }
                                     }
                                 }
