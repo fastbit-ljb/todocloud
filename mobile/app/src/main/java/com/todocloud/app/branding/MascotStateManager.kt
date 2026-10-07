@@ -24,12 +24,19 @@ enum class MascotState(
     FROZEN("Frozen"),
 }
 
+data class MascotTransition(
+    val from: MascotState,
+    val to: MascotState,
+)
+
 object MascotStateManager {
     private const val PREFERENCES_NAME = "mascot_state"
     private const val KEY_LAST_ACTIVITY_AT = "last_meaningful_activity_at"
     private const val KEY_CURRENT_STATE = "current_state"
     private const val KEY_PENDING_STATE = "pending_state"
     private const val KEY_ALIASES_CONFIGURED = "aliases_configured"
+    private const val KEY_TRANSITION_FROM_STATE = "transition_from_state"
+    private const val KEY_TRANSITION_TO_STATE = "transition_to_state"
     private const val HALF_FROZEN_HOURS = 24L
     private const val FROZEN_HOURS = 72L
 
@@ -82,6 +89,23 @@ object MascotStateManager {
             .putString(KEY_PENDING_STATE, MascotState.DAILY.name)
             .apply()
         if (!appInForeground) applyPendingLauncherState(context)
+    }
+
+    fun consumePendingTransition(context: Context): MascotTransition? {
+        val prefs = preferences(context)
+        val from = prefs.getString(KEY_TRANSITION_FROM_STATE, null)
+            ?.let { stored -> MascotState.entries.firstOrNull { it.name == stored } }
+        val to = prefs.getString(KEY_TRANSITION_TO_STATE, null)
+            ?.let { stored -> MascotState.entries.firstOrNull { it.name == stored } }
+        prefs.edit()
+            .remove(KEY_TRANSITION_FROM_STATE)
+            .remove(KEY_TRANSITION_TO_STATE)
+            .apply()
+        return if (from != null && to != null && from != to) {
+            MascotTransition(from = from, to = to)
+        } else {
+            null
+        }
     }
 
     internal fun resolve(
@@ -186,11 +210,16 @@ object MascotStateManager {
         }.isSuccess
 
         if (!applied) return
-        prefs.edit()
+        val editor = prefs.edit()
             .putString(KEY_CURRENT_STATE, state.name)
             .remove(KEY_PENDING_STATE)
             .putBoolean(KEY_ALIASES_CONFIGURED, true)
-            .apply()
+        if (configured && previous != null && previous != state.name) {
+            editor
+                .putString(KEY_TRANSITION_FROM_STATE, previous)
+                .putString(KEY_TRANSITION_TO_STATE, state.name)
+        }
+        editor.apply()
     }
 
     private fun parseInstant(value: String?, zoneId: ZoneId): Instant? {
