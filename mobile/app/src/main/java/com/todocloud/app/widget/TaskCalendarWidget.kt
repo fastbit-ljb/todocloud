@@ -35,6 +35,16 @@ class TaskCalendarWidgetProvider : AppWidgetProvider() {
         refreshFromServer(context)
     }
 
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: android.os.Bundle,
+    ) {
+        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        TaskCalendarWidget.render(context, appWidgetManager, appWidgetId)
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action == TaskCalendarWidget.ACTION_REFRESH) {
@@ -70,6 +80,8 @@ object TaskCalendarWidget {
     private const val KEY_UPDATED_AT = "updated_at"
     private const val DAYS_TO_SHOW = 7L
     private const val TASKS_TO_SHOW = 5
+    private const val COMPACT_TASKS_TO_SHOW = 1
+    private const val FULL_LAYOUT_MIN_HEIGHT_DP = 220
 
     private val dayContainerIds = intArrayOf(
         R.id.widget_day_container_0,
@@ -161,11 +173,40 @@ object TaskCalendarWidget {
         )
     }
 
+    fun render(
+        context: Context,
+        manager: AppWidgetManager,
+        appWidgetId: Int,
+    ) {
+        val repository = TodoCloudRepository(context.applicationContext)
+        manager.updateAppWidget(
+            appWidgetId,
+            buildViews(
+                context = context,
+                appWidgetId = appWidgetId,
+                tasks = loadCachedTasks(context),
+                loggedIn = repository.savedSession() != null,
+                compact = isCompact(manager, appWidgetId),
+            ),
+        )
+    }
+
     private fun renderAll(context: Context, tasks: List<TaskItem>, loggedIn: Boolean) {
         val manager = AppWidgetManager.getInstance(context)
         val component = ComponentName(context, TaskCalendarWidgetProvider::class.java)
         val ids = manager.getAppWidgetIds(component)
-        ids.forEach { id -> manager.updateAppWidget(id, buildViews(context, id, tasks, loggedIn)) }
+        ids.forEach { id ->
+            manager.updateAppWidget(
+                id,
+                buildViews(
+                    context = context,
+                    appWidgetId = id,
+                    tasks = tasks,
+                    loggedIn = loggedIn,
+                    compact = isCompact(manager, id),
+                ),
+            )
+        }
     }
 
     private fun buildViews(
@@ -173,8 +214,12 @@ object TaskCalendarWidget {
         appWidgetId: Int,
         tasks: List<TaskItem>,
         loggedIn: Boolean,
+        compact: Boolean,
     ): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.widget_task_calendar)
+        val views = RemoteViews(
+            context.packageName,
+            if (compact) R.layout.widget_task_calendar_compact else R.layout.widget_task_calendar,
+        )
         val today = LocalDate.now()
         val endDate = today.plusDays(DAYS_TO_SHOW - 1)
         val datedTasks = tasks.asSequence()
@@ -223,7 +268,7 @@ object TaskCalendarWidget {
             )
         }
 
-        val visibleTasks = datedTasks.take(TASKS_TO_SHOW)
+        val visibleTasks = datedTasks.take(if (compact) COMPACT_TASKS_TO_SHOW else TASKS_TO_SHOW)
         taskRowIds.indices.forEach { index ->
             val entry = visibleTasks.getOrNull(index)
             if (entry == null) {
@@ -255,6 +300,12 @@ object TaskCalendarWidget {
             if (emptyMessage.isEmpty()) View.GONE else View.VISIBLE,
         )
         return views
+    }
+
+    private fun isCompact(manager: AppWidgetManager, appWidgetId: Int): Boolean {
+        val options = manager.getAppWidgetOptions(appWidgetId)
+        val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
+        return height == 0 || height < FULL_LAYOUT_MIN_HEIGHT_DP
     }
 
     private fun openCalendarIntent(
