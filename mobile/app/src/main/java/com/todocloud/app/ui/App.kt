@@ -22,14 +22,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
@@ -62,7 +57,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
@@ -93,7 +87,6 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -638,16 +631,6 @@ fun TodoCloudApp(
                 error = error,
                 onImportScreenshot = { screenshotLauncher.launch("image/*") },
                 onImportText = { showAiTextComposer = true },
-                onRefresh = {
-                    runRequest {
-                        taskHeaderLoading = true
-                        try {
-                            tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
-                        } finally {
-                            taskHeaderLoading = false
-                        }
-                    }
-                },
                 onToggle = { task ->
                     runRequest {
                         val nextCompleted = !task.completed
@@ -1127,7 +1110,6 @@ private fun TaskHomeScreen(
     error: String?,
     onImportScreenshot: () -> Unit,
     onImportText: () -> Unit,
-    onRefresh: () -> Unit,
     onToggle: (TaskItem) -> Unit,
     onStepToggle: (TaskItem, Int) -> Unit,
     onReminderChange: (TaskItem, Int?) -> Unit,
@@ -1150,23 +1132,12 @@ private fun TaskHomeScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 20.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = session.displayName?.let { "你好，$it" } ?: session.email,
-                            style = MaterialTheme.typography.headlineSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    RefreshTaskButton(
-                        loading = loading,
-                        onClick = onRefresh,
-                    )
-                }
+                Text(
+                    text = session.displayName?.let { "你好，$it" } ?: session.email,
+                    style = MaterialTheme.typography.headlineSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 if (showLoadingAnimation) {
                     Box(
                         modifier = Modifier
@@ -1238,42 +1209,6 @@ private fun TaskHomeScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun RefreshTaskButton(
-    loading: Boolean,
-    onClick: () -> Unit,
-) {
-    val transition = rememberInfiniteTransition(label = "refresh-task-icon")
-    val spinningRotation by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "refresh-task-icon-rotation",
-    )
-    val buttonShape = RoundedCornerShape(18.dp)
-
-    IconButton(
-        onClick = onClick,
-        enabled = !loading,
-        modifier = Modifier
-            .size(52.dp)
-            .clip(buttonShape)
-            .background(MaterialTheme.colorScheme.secondaryContainer),
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Refresh,
-            contentDescription = if (loading) "正在刷新任务" else "刷新任务",
-            modifier = Modifier
-                .size(25.dp)
-                .rotate(if (loading) spinningRotation else 0f),
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-        )
     }
 }
 
