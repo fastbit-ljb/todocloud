@@ -13,8 +13,8 @@ android {
         targetSdk = 37
         // Keep this above the earlier alarm test builds so Android Studio can
         // update the installed app without asking to uninstall it.
-        versionCode = 21
-        versionName = "1.2.0"
+        versionCode = 22
+        versionName = "1.3.0"
         buildConfigField("String", "API_BASE_URL", "\"https://dnsgo.xyz/todocloud-api/api/v1\"")
     }
 
@@ -46,7 +46,10 @@ dependencies {
     implementation(libs.androidx.compose.material.icons)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.okhttp)
+    testImplementation(kotlin("test"))
+    testImplementation("junit:junit:4.13.2")
 }

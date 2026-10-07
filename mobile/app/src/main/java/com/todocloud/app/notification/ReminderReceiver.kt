@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.todocloud.app.branding.MascotStateManager
 
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -14,6 +15,7 @@ class ReminderReceiver : BroadcastReceiver() {
         val dueAt = intent.getStringExtra(EXTRA_DUE_AT)
         val reminderOffset = intent.getIntExtra(EXTRA_REMINDER_OFFSET, 0)
         val alarmMode = intent.getBooleanExtra(EXTRA_ALARM_MODE, false)
+        MascotStateManager.showReminderState(context)
         if (alarmMode) {
             ReminderScheduler.markAlarmDismissed(context, taskId, dueAt, reminderOffset)
             ReminderScheduler.forgetStoredTask(context, taskId)

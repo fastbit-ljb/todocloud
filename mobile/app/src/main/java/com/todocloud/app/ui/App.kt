@@ -162,6 +162,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.todocloud.app.BuildConfig
 import com.todocloud.app.R
+import com.todocloud.app.branding.MascotStateManager
 import com.todocloud.app.data.ApiException
 import com.todocloud.app.data.AiTaskStep
 import com.todocloud.app.data.AiParseResult
@@ -421,10 +422,12 @@ private fun oemBackgroundGuidance(): String {
 @androidx.compose.material3.ExperimentalMaterial3Api
 fun TodoCloudApp() {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val repository = remember(context) { TodoCloudRepository(context.applicationContext) }
     val scope = rememberCoroutineScope()
     var session by remember { mutableStateOf(repository.savedSession()) }
     var tasks by remember { mutableStateOf(emptyList<TaskItem>()) }
+    var tasksLoaded by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var taskHeaderLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -499,13 +502,17 @@ fun TodoCloudApp() {
         val currentSession = session
         if (currentSession == null) {
             tasks = emptyList()
+            tasksLoaded = false
             taskHeaderLoading = false
+            MascotStateManager.reset(context)
         } else {
+            tasksLoaded = false
             loading = true
             taskHeaderLoading = true
             error = null
             try {
                 tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
+                tasksLoaded = true
             } catch (exception: ApiException) {
                 handleApiError(exception)
             } catch (_: Exception) {
@@ -515,6 +522,19 @@ fun TodoCloudApp() {
                 taskHeaderLoading = false
             }
         }
+    }
+
+    DisposableEffect(lifecycleOwner, tasks, tasksLoaded) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && tasksLoaded) {
+                // Re-evaluate against the latest task snapshot only after the
+                // user leaves TodoCloud. The process lifecycle applies the
+                // queued alias change once every app window is in background.
+                MascotStateManager.update(context, tasks)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     if (session == null) {
@@ -623,6 +643,9 @@ fun TodoCloudApp() {
                             completed = nextCompleted,
                             steps = nextSteps,
                         )
+                        if (nextCompleted) {
+                            MascotStateManager.recordMeaningfulActivity(context)
+                        }
                         ReminderScheduler.schedule(context, updated)
                         // Replace in place first so the checkbox/strike animation
                         // can finish before the item changes position.
@@ -636,6 +659,7 @@ fun TodoCloudApp() {
                         val nextSteps = task.steps.mapIndexed { index, step ->
                             if (index == stepIndex) step.copy(completed = !step.completed) else step
                         }
+                        val completedStep = !task.steps[stepIndex].completed
                         val nextCompleted = nextSteps.isNotEmpty() && nextSteps.all { it.completed }
                         val updated = repository.updateTask(
                             currentSession.token,
@@ -643,6 +667,9 @@ fun TodoCloudApp() {
                             completed = nextCompleted,
                             steps = nextSteps,
                         )
+                        if (completedStep) {
+                            MascotStateManager.recordMeaningfulActivity(context)
+                        }
                         ReminderScheduler.schedule(context, updated)
                         tasks = tasks.map { if (it.id == updated.id) updated else it }
                         delay(TASK_REORDER_DELAY_MILLIS.toLong())
@@ -699,6 +726,7 @@ fun TodoCloudApp() {
                     onLogout = {
                         scope.launch {
                             repository.logout(currentSession)
+                            MascotStateManager.reset(context)
                             session = null
                         }
                     },
@@ -720,6 +748,7 @@ fun TodoCloudApp() {
                         dueAt,
                         reminderOffsetMinutes,
                     )
+                    MascotStateManager.recordMeaningfulActivity(context)
                     ReminderScheduler.schedule(context, created)
                     tasks = sortTasks(listOf(created) + tasks)
                     showComposer = false
@@ -780,6 +809,9 @@ fun TodoCloudApp() {
                                 steps = candidate.steps.map { TaskStep(it.title) },
                             )
                         }
+                    }
+                    if (imported.isNotEmpty()) {
+                        MascotStateManager.recordMeaningfulActivity(context)
                     }
                     scheduleTasks(imported)
                     tasks = sortTasks(
@@ -1102,21 +1134,19 @@ private fun TaskHomeScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = session.displayName?.let { "你好，$it" } ?: session.email,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = session.displayName?.let { "你好，$it" } ?: session.email,
+                            style = MaterialTheme.typography.headlineSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     RefreshTaskButton(
                         loading = loading,
                         onClick = onRefresh,
                     )
                 }
-                Text(
-                    text = if (homeTasks.isEmpty()) "还没有任务，点击右下角创建第一个任务" else "今天也向目标前进一点",
-                    modifier = Modifier.padding(top = 4.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 if (showLoadingAnimation) {
                     Box(
                         modifier = Modifier

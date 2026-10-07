@@ -1,0 +1,3 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:bottom="16dp" android:drawable="@drawable/mascot_progress" android:left="16dp" android:right="16dp" android:top="16dp" />
+</layer-list>

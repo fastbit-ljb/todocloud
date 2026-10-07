@@ -5,4 +5,8 @@
     <color name="icon_primary_dark">#0F5422</color>
     <color name="icon_paper">#F3FBEF</color>
     <color name="icon_line">#7AAE7D</color>
+    <color name="icon_orange">#FF9448</color>
+    <color name="icon_error">#E45F59</color>
+    <color name="icon_ice">#AEE9FF</color>
+    <color name="icon_ice_deep">#70CBEF</color>
 </resources>
