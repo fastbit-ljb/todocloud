@@ -10,8 +10,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.todocloud.app.branding.MascotStateManager
-import com.todocloud.app.branding.MascotTransitionHost
 import com.todocloud.app.ui.TodoCloudApp
 import com.todocloud.app.ui.theme.TodoCloudTheme
 import com.todocloud.app.notification.ReminderScheduler
@@ -31,12 +29,9 @@ class MainActivity : ComponentActivity() {
         ) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
         }
-        val initialMascotTransition = MascotStateManager.consumePendingTransition(this)
         setContent {
             TodoCloudTheme {
-                MascotTransitionHost(initialMascotTransition) {
-                    TodoCloudApp()
-                }
+                TodoCloudApp()
             }
         }
     }
