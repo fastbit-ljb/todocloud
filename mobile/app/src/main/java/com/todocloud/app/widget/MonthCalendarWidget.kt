@@ -88,9 +88,12 @@ object MonthCalendarWidget {
         val views = RemoteViews(context.packageName, R.layout.widget_task_month)
         val today = LocalDate.now()
         val month = YearMonth.from(today)
-        val tasksByDate = tasks.mapNotNull { task ->
-            parseDueDate(task.dueAt)?.let { date -> date to task }
-        }.groupBy({ it.first }, { it.second })
+        val tasksByDate = tasks.asSequence()
+            .filterNot { it.completed }
+            .mapNotNull { task ->
+                parseDueDate(task.dueAt)?.let { date -> date to task }
+            }
+            .groupBy({ it.first }, { it.second })
         val monthTaskCount = tasksByDate
             .filterKeys { date -> YearMonth.from(date) == month }
             .values
@@ -101,8 +104,8 @@ object MonthCalendarWidget {
             R.id.month_widget_total,
             when {
                 !loggedIn -> "登录后显示"
-                monthTaskCount == 0 -> "本月暂无任务"
-                else -> "本月 $monthTaskCount 项"
+                monthTaskCount == 0 -> "本月已清空"
+                else -> "未完成 $monthTaskCount 项"
             },
         )
         views.setOnClickPendingIntent(

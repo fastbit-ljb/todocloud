@@ -3123,6 +3123,9 @@ private fun CalendarScreen(
     val tasksByDate = visibleCalendarTasks(tasks).mapNotNull { task ->
         task.dueAt?.let { dueAt -> parseDueDate(dueAt)?.let { date -> date to task } }
     }.groupBy({ it.first }, { it.second })
+    val pendingTaskCountsByDate = tasksByDate.mapValues { (_, datedTasks) ->
+        datedTasks.count { !it.completed }
+    }
     val firstDayOffset = visibleMonth.atDay(1).dayOfWeek.value - 1
     val cellCount = ((firstDayOffset + visibleMonth.lengthOfMonth() + 6) / 7) * 7
     val selectedTasks = tasksByDate[selectedDate].orEmpty().sortedBy { it.dueAt }
@@ -3160,7 +3163,7 @@ private fun CalendarScreen(
                 TextButton(onClick = { moveMonth(1) }) { Text("›") }
             }
             Text(
-                "颜色越深表示当天任务越多，格子下方数字是任务数；今天有任务时使用红色。",
+                "颜色越深表示当天未完成任务越多，格子下方数字是未完成任务数；今天有未完成任务时使用红色。",
                 modifier = Modifier.padding(top = 4.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -3189,7 +3192,7 @@ private fun CalendarScreen(
                             if (day in 1..visibleMonth.lengthOfMonth()) {
                                 val date = visibleMonth.atDay(day)
                                 val selected = date == selectedDate
-                                val taskCount = tasksByDate[date].orEmpty().size
+                                val taskCount = pendingTaskCountsByDate[date] ?: 0
                                 val isToday = date == LocalDate.now()
                                 val taskColorFraction = (0.22f + (taskCount - 1).coerceAtLeast(0) * 0.12f)
                                     .coerceAtMost(0.62f)
