@@ -10,14 +10,20 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import com.todocloud.app.ui.TodoCloudApp
 import com.todocloud.app.ui.theme.TodoCloudTheme
 import com.todocloud.app.notification.ReminderScheduler
 
 class MainActivity : ComponentActivity() {
+    private val requestedTab = mutableIntStateOf(0)
+    private val requestedCalendarDate = mutableStateOf<String?>(null)
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyNavigationRequest(intent)
         enableEdgeToEdge()
         ReminderScheduler.createNotificationChannel(this)
         // Restore alarms/notifications before the network-backed task list is
@@ -31,12 +37,29 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             TodoCloudTheme {
-                TodoCloudApp()
+                TodoCloudApp(
+                    requestedTab = requestedTab.intValue,
+                    requestedCalendarDate = requestedCalendarDate.value,
+                )
             }
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applyNavigationRequest(intent)
+    }
+
+    private fun applyNavigationRequest(intent: Intent?) {
+        requestedTab.intValue = intent?.getIntExtra(EXTRA_INITIAL_TAB, 0) ?: 0
+        requestedCalendarDate.value = intent?.getStringExtra(EXTRA_CALENDAR_DATE)
+    }
+
     companion object {
+        const val EXTRA_INITIAL_TAB = "initial_tab"
+        const val EXTRA_CALENDAR_DATE = "calendar_date"
+
         fun intent(context: Context, taskId: Int): Intent =
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or

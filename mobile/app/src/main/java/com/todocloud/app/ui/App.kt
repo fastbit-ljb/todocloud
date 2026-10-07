@@ -172,6 +172,7 @@ import com.todocloud.app.data.TaskStep
 import com.todocloud.app.data.TodoCloudRepository
 import com.todocloud.app.notification.ReminderScheduler
 import com.todocloud.app.notification.ReminderScheduler.ReminderMode
+import com.todocloud.app.widget.TaskCalendarWidget
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -420,7 +421,10 @@ private fun oemBackgroundGuidance(): String {
 
 @Composable
 @androidx.compose.material3.ExperimentalMaterial3Api
-fun TodoCloudApp() {
+fun TodoCloudApp(
+    requestedTab: Int = 0,
+    requestedCalendarDate: String? = null,
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val repository = remember(context) { TodoCloudRepository(context.applicationContext) }
@@ -431,7 +435,7 @@ fun TodoCloudApp() {
     var loading by remember { mutableStateOf(false) }
     var taskHeaderLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var selectedTab by rememberSaveable { mutableStateOf(0) }
+    var selectedTab by rememberSaveable { mutableStateOf(requestedTab.coerceIn(0, 2)) }
     var settingsPage by rememberSaveable { mutableStateOf("main") }
     var showComposer by rememberSaveable { mutableStateOf(false) }
     var showAiTextComposer by rememberSaveable { mutableStateOf(false) }
@@ -441,6 +445,18 @@ fun TodoCloudApp() {
     }
     var reminderMode by remember(context) {
         mutableStateOf(ReminderScheduler.loadReminderMode(context))
+    }
+
+    LaunchedEffect(requestedTab, requestedCalendarDate) {
+        selectedTab = requestedTab.coerceIn(0, 2)
+    }
+
+    LaunchedEffect(session?.token, tasks, tasksLoaded) {
+        if (session == null) {
+            TaskCalendarWidget.clear(context)
+        } else if (tasksLoaded) {
+            TaskCalendarWidget.updateCachedTasks(context, tasks)
+        }
     }
 
     BackHandler(enabled = selectedTab == 2 && settingsPage != "main") {
@@ -698,7 +714,11 @@ fun TodoCloudApp() {
                 },
             )
 
-            1 -> CalendarScreen(paddingValues, tasks)
+            1 -> CalendarScreen(
+                paddingValues = paddingValues,
+                tasks = tasks,
+                requestedDate = requestedCalendarDate,
+            )
             else -> when (settingsPage) {
                 "permissions" -> PermissionSettingsScreen(
                     context = context,
@@ -3156,7 +3176,11 @@ private fun parseInstant(value: String): java.time.Instant? = runCatching {
 }.getOrNull()
 
 @Composable
-private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) {
+private fun CalendarScreen(
+    paddingValues: PaddingValues,
+    tasks: List<TaskItem>,
+    requestedDate: String? = null,
+) {
     var visibleMonthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     var selectedDateText by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     val visibleMonth = remember(visibleMonthText) { YearMonth.parse(visibleMonthText) }
@@ -3167,6 +3191,14 @@ private fun CalendarScreen(paddingValues: PaddingValues, tasks: List<TaskItem>) 
     val firstDayOffset = visibleMonth.atDay(1).dayOfWeek.value - 1
     val cellCount = ((firstDayOffset + visibleMonth.lengthOfMonth() + 6) / 7) * 7
     val selectedTasks = tasksByDate[selectedDate].orEmpty().sortedBy { it.dueAt }
+
+    LaunchedEffect(requestedDate) {
+        val date = requestedDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        if (date != null) {
+            visibleMonthText = YearMonth.from(date).toString()
+            selectedDateText = date.toString()
+        }
+    }
 
     fun moveMonth(delta: Long) {
         val nextMonth = visibleMonth.plusMonths(delta)

@@ -24,7 +24,8 @@
         android:theme="@style/Theme.TodoCloud">
         <activity
             android:name=".MainActivity"
-            android:exported="true" />
+            android:exported="true"
+            android:launchMode="singleTop" />
         <activity-alias
             android:name=".launcher.Daily"
             android:enabled="true"
@@ -146,6 +147,16 @@
         <receiver
             android:name=".notification.ReminderReceiver"
             android:exported="false" />
+        <receiver
+            android:name=".widget.TaskCalendarWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/task_calendar_widget_info" />
+        </receiver>
         <receiver
             android:name=".notification.ReminderBootReceiver"
             android:enabled="true"

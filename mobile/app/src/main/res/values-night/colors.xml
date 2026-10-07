@@ -9,4 +9,11 @@
     <color name="icon_error">#FF8A84</color>
     <color name="icon_ice">#8CD8F4</color>
     <color name="icon_ice_deep">#4AAFD5</color>
+    <color name="widget_background">#172018</color>
+    <color name="widget_surface">#243126</color>
+    <color name="widget_today">#205F2A</color>
+    <color name="widget_primary">#8FD694</color>
+    <color name="widget_text">#E1E9DD</color>
+    <color name="widget_muted">#AAB7A7</color>
+    <color name="widget_on_primary">#0A3814</color>
 </resources>
