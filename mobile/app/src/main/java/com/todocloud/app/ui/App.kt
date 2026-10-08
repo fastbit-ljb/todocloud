@@ -130,6 +130,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.focus.onFocusChanged
@@ -3275,7 +3276,7 @@ private fun IdeaDurationSelector(
                 .fillMaxWidth()
                 .height(58.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(MaterialTheme.colorScheme.surface)
                 .pointerInput(Unit) {
                     fun updateFromPointer(x: Float) {
                         val slotWidthPx = size.width.toFloat() / IDEA_DURATION_OPTIONS.size
@@ -3302,6 +3303,33 @@ private fun IdeaDurationSelector(
         ) {
             val slotWidth = maxWidth / IDEA_DURATION_OPTIONS.size
             val slotWidthPx = with(LocalDensity.current) { slotWidth.toPx() }
+            val indicatorOffsetPx by animateFloatAsState(
+                targetValue = when {
+                    selectedIndex < 0 -> 0f
+                    isDragging -> dragOffsetPx
+                    else -> slotWidthPx * selectedIndex
+                },
+                animationSpec = if (isDragging) {
+                    snap()
+                } else {
+                    spring(dampingRatio = 0.72f, stiffness = 500f)
+                },
+                label = "idea-duration-indicator",
+            )
+            if (selectedIndex >= 0) {
+                val trackWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
+                val progressFraction = ((indicatorOffsetPx + slotWidthPx) / trackWidthPx)
+                    .coerceIn(0f, 1f)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = progressFraction
+                            transformOrigin = TransformOrigin(0f, 0.5f)
+                        }
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                )
+            }
             Row(Modifier.fillMaxSize()) {
                 IDEA_DURATION_OPTIONS.forEachIndexed { index, option ->
                     Box(
@@ -3323,26 +3351,13 @@ private fun IdeaDurationSelector(
                 }
             }
             if (selectedIndex >= 0) {
-                val indicatorOffsetPx by animateFloatAsState(
-                    targetValue = if (isDragging) {
-                        dragOffsetPx
-                    } else {
-                        slotWidthPx * selectedIndex
-                    },
-                    animationSpec = if (isDragging) {
-                        snap()
-                    } else {
-                        spring(dampingRatio = 0.72f, stiffness = 500f)
-                    },
-                    label = "idea-duration-indicator",
-                )
                 Box(
                     Modifier
                         .graphicsLayer { translationX = indicatorOffsetPx }
                         .padding(4.dp)
                         .width(slotWidth - 8.dp)
                         .height(50.dp)
-                        .clip(RoundedCornerShape(15.dp))
+                        .clip(RoundedCornerShape(9.dp))
                         .background(MaterialTheme.colorScheme.primary),
                     contentAlignment = Alignment.Center,
                 ) {
