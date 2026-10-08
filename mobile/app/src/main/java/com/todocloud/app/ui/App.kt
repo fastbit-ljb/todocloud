@@ -14,6 +14,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.StartOffset
@@ -1206,15 +1207,15 @@ private fun FloatingUnderlineTextField(
                 onValueChange = onValueChange,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 88.dp, max = 160.dp)
+                    .height(56.dp)
                     .clip(fieldShape)
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f))
                     .border(
                         width = if (focused) 2.dp else 1.dp,
                         color = underlineColor,
                         shape = fieldShape,
                     )
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .padding(horizontal = 16.dp)
                     .onFocusChanged { focused = it.isFocused }
                     .semantics { contentDescription = label },
                 textStyle = TextStyle(
@@ -1222,12 +1223,12 @@ private fun FloatingUnderlineTextField(
                     fontSize = 18.sp,
                 ),
                 cursorBrush = SolidColor(activeColor),
-                singleLine = false,
-                maxLines = 4,
+                singleLine = true,
+                maxLines = 1,
                 visualTransformation = visualTransformation,
                 keyboardOptions = keyboardOptions,
                 decorationBox = { innerTextField ->
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
                         if (value.isBlank()) {
                             Text(
                                 text = label,
@@ -3137,6 +3138,9 @@ private fun IdeaEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier
+            .animateContentSize(animationSpec = tween(durationMillis = 260))
+            .imePadding(),
         title = { Text(if (idea == null) "记下一个想法" else "编辑想法") },
         text = {
             Column(
