@@ -3275,7 +3275,7 @@ private fun IdeaDurationSelector(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp)
+                .height(54.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .pointerInput(Unit) {
