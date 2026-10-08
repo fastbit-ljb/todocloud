@@ -3221,12 +3221,12 @@ private fun IdeaEditorDialog(
 private data class IdeaDurationOption(val minutes: Int?, val label: String)
 
 private val IDEA_DURATION_OPTIONS = listOf(
-    IdeaDurationOption(null, "不限"),
-    IdeaDurationOption(15, "15分"),
-    IdeaDurationOption(30, "30分"),
-    IdeaDurationOption(45, "45分"),
-    IdeaDurationOption(60, "1时"),
-    IdeaDurationOption(90, "1.5时"),
+    IdeaDurationOption(null, "∞"),
+    IdeaDurationOption(15, "15"),
+    IdeaDurationOption(30, "30"),
+    IdeaDurationOption(45, "45"),
+    IdeaDurationOption(60, "1h"),
+    IdeaDurationOption(90, "1.5h"),
 )
 
 @Composable
@@ -3323,12 +3323,20 @@ private fun IdeaDurationSelector(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = progressFraction
-                            transformOrigin = TransformOrigin(0f, 0.5f)
-                        }
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
-                )
+                        .padding(4.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = progressFraction
+                                transformOrigin = TransformOrigin(0f, 0.5f)
+                            }
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                    )
+                }
             }
             Row(Modifier.fillMaxSize()) {
                 IDEA_DURATION_OPTIONS.forEachIndexed { index, option ->
@@ -3345,7 +3353,7 @@ private fun IdeaDurationSelector(
                         Text(
                             option.label,
                             color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.labelLarge,
+                            style = MaterialTheme.typography.labelMedium,
                         )
                     }
                 }
@@ -3364,7 +3372,7 @@ private fun IdeaDurationSelector(
                     Text(
                         IDEA_DURATION_OPTIONS[selectedIndex].label,
                         color = MaterialTheme.colorScheme.onPrimary,
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.labelMedium,
                     )
                 }
             }
