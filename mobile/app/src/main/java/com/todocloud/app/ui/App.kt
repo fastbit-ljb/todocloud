@@ -3317,8 +3317,9 @@ private fun IdeaDurationSelector(
                 label = "idea-duration-indicator",
             )
             if (selectedIndex >= 0) {
-                val trackWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
-                val progressFraction = ((indicatorOffsetPx + slotWidthPx) / trackWidthPx)
+                val trackInsetPx = with(LocalDensity.current) { 8.dp.toPx() }
+                val innerTrackWidthPx = with(LocalDensity.current) { maxWidth.toPx() } - trackInsetPx
+                val progressFraction = (indicatorOffsetPx / innerTrackWidthPx)
                     .coerceIn(0f, 1f)
                 Box(
                     Modifier
