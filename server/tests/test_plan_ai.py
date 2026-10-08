@@ -53,6 +53,28 @@ class PlanAiTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["title"], "整理照片")
         self.assertEqual(result["items"][0]["steps"], [{"title": "筛选照片"}])
 
+    def test_normalize_allows_direct_prompt_items_when_requested(self) -> None:
+        raw = {
+            "summary": "按你的描述安排。",
+            "items": [
+                {"source_type": "prompt", "source_id": 1, "title": "练习吉他"},
+                {"source_type": "prompt", "source_id": 31, "title": "越界编号"},
+            ],
+        }
+
+        blocked = _normalize_proposal(raw, [], [], self.reference)
+        allowed = _normalize_proposal(
+            raw,
+            [],
+            [],
+            self.reference,
+            allow_prompt_items=True,
+        )
+
+        self.assertEqual(blocked["items"], [])
+        self.assertEqual(len(allowed["items"]), 1)
+        self.assertEqual(allowed["items"][0]["source_type"], "prompt")
+
 
 if __name__ == "__main__":
     unittest.main()

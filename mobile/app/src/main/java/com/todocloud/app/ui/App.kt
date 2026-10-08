@@ -56,6 +56,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -82,6 +83,7 @@ import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.EditNote
@@ -93,7 +95,6 @@ import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -146,8 +147,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -453,7 +456,6 @@ fun TodoCloudApp(
     var showComposer by rememberSaveable { mutableStateOf(false) }
     var showIdeaComposer by rememberSaveable { mutableStateOf(false) }
     var editingIdea by remember { mutableStateOf<InboxIdea?>(null) }
-    var showAiTextComposer by rememberSaveable { mutableStateOf(false) }
     var aiResult by remember { mutableStateOf<AiParseResult?>(null) }
     var planLoading by remember { mutableStateOf(false) }
     var planError by remember { mutableStateOf<String?>(null) }
@@ -494,7 +496,6 @@ fun TodoCloudApp(
             aiResult = null
             showComposer = false
             showIdeaComposer = false
-            showAiTextComposer = false
             error = "登录已过期，请重新登录"
         } else {
             error = exception.message
@@ -606,6 +607,7 @@ fun TodoCloudApp(
                 "idea" -> sourceId in planningIdeaIds || (
                     plan.status == "accepted" && planningTasks.any { it.title == title }
                 )
+                "prompt" -> plan.status == "draft" || planningTasks.any { it.title == title }
                 else -> false
             }
         }
@@ -684,9 +686,10 @@ fun TodoCloudApp(
                         showAddMenu = false
                         screenshotLauncher.launch("image/*")
                     },
-                    onText = {
+                    onIdea = {
                         showAddMenu = false
-                        showAiTextComposer = true
+                        editingIdea = null
+                        showIdeaComposer = true
                     },
                 )
             } else if (selectedTab == 0) {
@@ -805,12 +808,16 @@ fun TodoCloudApp(
                     selectedTab = 0
                     taskSection = "inbox"
                 },
-                onGenerate = { message ->
+                onGenerate = { message, selectedIdeaIds ->
                     scope.launch {
                         planLoading = true
                         planError = null
                         try {
-                            val plan = repository.generatePlan(currentSession.token, message)
+                            val plan = repository.generatePlan(
+                                currentSession.token,
+                                message,
+                                selectedIdeaIds,
+                            )
                             plans = listOf(plan) + plans.filterNot { it.id == plan.id }
                         } catch (exception: ApiException) {
                             if (exception.statusCode == 401) handleApiError(exception)
@@ -954,25 +961,6 @@ fun TodoCloudApp(
                     ideas = listOf(saved) + ideas.filterNot { it.id == saved.id }
                     showIdeaComposer = false
                     editingIdea = null
-                }
-            },
-        )
-        }
-
-        if (showAiTextComposer) {
-        AiTextDialog(
-            loading = loading,
-            error = error,
-            onDismiss = { if (!loading) showAiTextComposer = false },
-            onParse = { text ->
-                runRequest {
-                    taskHeaderLoading = true
-                    try {
-                        aiResult = repository.parseText(currentSession.token, text)
-                        showAiTextComposer = false
-                    } finally {
-                        taskHeaderLoading = false
-                    }
                 }
             },
         )
@@ -1359,7 +1347,7 @@ private fun TaskAddSpeedDial(
     onExpandedChange: (Boolean) -> Unit,
     onManual: () -> Unit,
     onScreenshot: () -> Unit,
-    onText: () -> Unit,
+    onIdea: () -> Unit,
 ) {
     val symbolRotation by animateFloatAsState(
         targetValue = if (expanded) 45f else 0f,
@@ -1393,15 +1381,15 @@ private fun TaskAddSpeedDial(
             modifier = Modifier.align(Alignment.BottomEnd),
         )
         TaskAddAction(
-            icon = Icons.Outlined.TextFields,
-            contentDescription = "从文字提取任务",
+            icon = Icons.Outlined.Inbox,
+            contentDescription = "快速记录想法",
             expanded = expanded,
             enabled = enabled,
             targetX = (-92).dp,
             targetY = 0.dp,
             openDelayMillis = 104,
             closeDelayMillis = 0,
-            onClick = onText,
+            onClick = onIdea,
             modifier = Modifier.align(Alignment.BottomEnd),
         )
 
@@ -1814,23 +1802,34 @@ private fun AiPlanScreen(
     loading: Boolean,
     error: String?,
     onOpenInbox: () -> Unit,
-    onGenerate: (String) -> Unit,
+    onGenerate: (String, Set<Int>) -> Unit,
     onRevise: (Int, String) -> Unit,
     onAccept: (Int) -> Unit,
 ) {
     var message by rememberSaveable(plan?.id) { mutableStateOf("") }
+    var showIdeaPicker by rememberSaveable { mutableStateOf(false) }
+    val ideaKey = ideas.joinToString(",") { it.id.toString() }
+    var selectedIdeaIds by remember(ideaKey) {
+        mutableStateOf<Set<Int>>(ideas.mapTo(linkedSetOf()) { it.id })
+    }
     Column(
         modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp),
     ) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Text(
-                    "默认避开三餐和 23:00–07:00 睡眠；吃饭、交通、就医和真正紧急的固定事项除外。",
-                    modifier = Modifier.padding(start = 10.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+        if (plan != null) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Outlined.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        "默认避开三餐和 23:00–07:00 睡眠；吃饭、交通、就医和真正紧急的固定事项除外。",
+                        modifier = Modifier.padding(start = 10.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
 
@@ -1839,44 +1838,47 @@ private fun AiPlanScreen(
         }
 
         if (plan == null) {
-            Column(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Icon(
-                    if (ideas.isEmpty() && tasks.isEmpty()) Icons.Outlined.Inbox else Icons.Outlined.AutoAwesome,
-                    contentDescription = null,
-                    modifier = Modifier.size(58.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    if (ideas.isEmpty() && tasks.isEmpty()) "计划从一个念头开始" else "让零散想法开始行动",
-                    modifier = Modifier.padding(top = 18.dp),
-                    style = MaterialTheme.typography.headlineSmall,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    if (ideas.isEmpty() && tasks.isEmpty()) {
-                        "先在收件匣留下想法。它可以没有日期，也不代表你承诺一定完成。"
-                    } else {
-                        "AI 会结合收件匣、现有任务和持续时间，整理出一份可以继续对话修改的计划。"
-                    },
-                    modifier = Modifier.padding(top = 10.dp, start = 24.dp, end = 24.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
-                Button(
-                    onClick = {
-                        if (ideas.isEmpty() && tasks.isEmpty()) onOpenInbox()
-                        else onGenerate("请结合我的收件匣和现有任务，生成一份现实可执行的计划。")
-                    },
-                    enabled = !loading,
-                    modifier = Modifier.padding(top = 22.dp),
-                ) {
-                    Text(if (ideas.isEmpty() && tasks.isEmpty()) "去收件匣记录想法" else "生成我的计划")
+            val canGenerate = !loading && (
+                message.isNotBlank() || selectedIdeaIds.isNotEmpty() || tasks.isNotEmpty()
+            )
+            val submitPlan = {
+                val request = message.trim().ifEmpty {
+                    when {
+                        selectedIdeaIds.isNotEmpty() ->
+                            "请结合我这次选中的收件匣想法和现有未完成任务，生成一份现实可执行的计划。"
+                        tasks.isNotEmpty() ->
+                            "请结合现有未完成任务，生成一份现实可执行的计划。"
+                        else -> ""
+                    }
                 }
-                if (loading) CircularProgressIndicator(modifier = Modifier.padding(top = 18.dp))
+                if (request.isNotBlank() && canGenerate) {
+                    onGenerate(request, selectedIdeaIds)
+                }
+            }
+            AiPlanLanding(
+                modifier = Modifier.weight(1f),
+                message = message,
+                onMessageChange = { message = it.take(4000) },
+                ideas = ideas,
+                selectedIdeaIds = selectedIdeaIds,
+                loading = loading,
+                canGenerate = canGenerate,
+                onInboxClick = {
+                    if (ideas.isEmpty()) onOpenInbox() else showIdeaPicker = true
+                },
+                onSubmit = submitPlan,
+            )
+            if (showIdeaPicker) {
+                InboxIdeaPickerDialog(
+                    ideas = ideas,
+                    selectedIdeaIds = selectedIdeaIds,
+                    onSelectionChange = { selectedIdeaIds = it },
+                    onDismiss = { showIdeaPicker = false },
+                    onOpenInbox = {
+                        showIdeaPicker = false
+                        onOpenInbox()
+                    },
+                )
             }
             return@Column
         }
@@ -1966,12 +1968,343 @@ private fun AiPlanScreen(
             }
         } else {
             Button(
-                onClick = { onGenerate("请根据我现在的收件匣和任务重新生成计划。") },
+                onClick = {
+                    onGenerate(
+                        "请根据我现在的收件匣和任务重新生成计划。",
+                        ideas.mapTo(linkedSetOf()) { it.id },
+                    )
+                },
                 enabled = !loading,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
             ) { Text("重新规划") }
         }
     }
+}
+
+@Composable
+private fun AiPlanLanding(
+    modifier: Modifier,
+    message: String,
+    onMessageChange: (String) -> Unit,
+    ideas: List<InboxIdea>,
+    selectedIdeaIds: Set<Int>,
+    loading: Boolean,
+    canGenerate: Boolean,
+    onInboxClick: () -> Unit,
+    onSubmit: () -> Unit,
+) {
+    Column(modifier = modifier.fillMaxWidth().imePadding()) {
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 34.dp, start = 6.dp, end = 6.dp),
+        ) {
+            Text(
+                "你好！",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            TypewriterPlanQuestion(modifier = Modifier.padding(top = 8.dp))
+            Text(
+                if (ideas.isEmpty()) {
+                    "直接告诉我你的安排；也可以点收件匣先记下一个想法。"
+                } else {
+                    "直接告诉我你的安排；点收件匣可以选择哪些想法参与这次规划。"
+                },
+                modifier = Modifier.padding(top = 18.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+
+        if (loading) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text(
+                    "正在整理你的计划…",
+                    modifier = Modifier.padding(start = 10.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        AiPlanPromptField(
+            value = message,
+            onValueChange = onMessageChange,
+            ideaCount = ideas.size,
+            selectedIdeaCount = selectedIdeaIds.size,
+            loading = loading,
+            canSubmit = canGenerate,
+            onInboxClick = onInboxClick,
+            onSubmit = onSubmit,
+        )
+        Text(
+            when {
+                ideas.isEmpty() -> "收件匣为空也可以直接生成计划"
+                selectedIdeaIds.isEmpty() -> "本次不参考收件匣内容"
+                else -> "本次参考 ${selectedIdeaIds.size}/${ideas.size} 个收件匣想法"
+            },
+            modifier = Modifier.padding(top = 7.dp, bottom = 12.dp, start = 10.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}
+
+@Composable
+private fun TypewriterPlanQuestion(modifier: Modifier = Modifier) {
+    val questions = remember {
+        listOf(
+            "你有什么计划吗？",
+            "今天想完成什么？",
+            "有什么想法想变成计划？",
+            "哪些事情需要我帮你安排？",
+        )
+    }
+    var displayedText by remember { mutableStateOf("") }
+    var cursorVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            questions.forEach { question ->
+                displayedText = ""
+                cursorVisible = true
+                question.forEach { character ->
+                    delay(if (character == '，' || character == '？') 150L else 82L)
+                    displayedText += character
+                }
+                repeat(5) {
+                    delay(280L)
+                    cursorVisible = !cursorVisible
+                }
+                delay(380L)
+            }
+        }
+    }
+
+    Text(
+        text = displayedText + if (cursorVisible) "｜" else "",
+        modifier = modifier.fillMaxWidth().heightIn(min = 92.dp),
+        style = MaterialTheme.typography.headlineLarge.copy(
+            fontWeight = FontWeight.SemiBold,
+            lineHeight = 43.sp,
+        ),
+    )
+}
+
+@Composable
+private fun AiPlanPromptField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    ideaCount: Int,
+    selectedIdeaCount: Int,
+    loading: Boolean,
+    canSubmit: Boolean,
+    onInboxClick: () -> Unit,
+    onSubmit: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(modifier = Modifier.size(46.dp)) {
+                IconButton(onClick = onInboxClick, modifier = Modifier.align(Alignment.Center)) {
+                    Icon(
+                        Icons.Outlined.Inbox,
+                        contentDescription = if (ideaCount == 0) "去收件匣记录想法" else "选择收件匣想法",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (ideaCount > 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(19.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            selectedIdeaCount.toString(),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp, vertical = 15.dp),
+                enabled = !loading,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Send,
+                ),
+                keyboardActions = KeyboardActions(
+                    onSend = { if (canSubmit) onSubmit() },
+                ),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (value.isBlank()) {
+                            Text(
+                                "告诉我你的计划…",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+            )
+            IconButton(onClick = onSubmit, enabled = canSubmit) {
+                if (loading) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(
+                        Icons.Outlined.Send,
+                        contentDescription = "生成计划",
+                        tint = if (canSubmit) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InboxIdeaPickerDialog(
+    ideas: List<InboxIdea>,
+    selectedIdeaIds: Set<Int>,
+    onSelectionChange: (Set<Int>) -> Unit,
+    onDismiss: () -> Unit,
+    onOpenInbox: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Outlined.Inbox, contentDescription = null) },
+        title = { Text("选择本次参考的想法") },
+        text = {
+            Column {
+                Text(
+                    "未选中的想法不会交给 AI 参与这次规划。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = { onSelectionChange(emptySet()) }) { Text("清空") }
+                    TextButton(onClick = { onSelectionChange(ideas.mapTo(linkedSetOf()) { it.id }) }) {
+                        Text("全选")
+                    }
+                }
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 350.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(ideas, key = { it.id }) { idea ->
+                        val selected = idea.id in selectedIdeaIds
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .toggleable(
+                                    value = selected,
+                                    role = Role.Checkbox,
+                                    onValueChange = {
+                                        onSelectionChange(
+                                            if (selected) selectedIdeaIds - idea.id
+                                            else selectedIdeaIds + idea.id,
+                                        )
+                                    },
+                                ),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (selected) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                },
+                            ),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(idea.content, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    idea.durationMinutes?.let { duration ->
+                                        Text(
+                                            "持续 ${formatDuration(duration)}",
+                                            modifier = Modifier.padding(top = 3.dp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.labelSmall,
+                                        )
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .padding(start = 10.dp)
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (selected) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.surface,
+                                        )
+                                        .border(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                            CircleShape,
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (selected) {
+                                        Icon(
+                                            Icons.Outlined.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("完成") }
+        },
+        dismissButton = {
+            TextButton(onClick = onOpenInbox) {
+                Icon(Icons.Outlined.EditNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("记录新想法", modifier = Modifier.padding(start = 5.dp))
+            }
+        },
+    )
 }
 
 @Composable
@@ -3097,45 +3430,6 @@ private fun ThemeCardTextField(
             )
         }
     }
-}
-
-@Composable
-private fun AiTextDialog(
-    loading: Boolean,
-    error: String?,
-    onDismiss: () -> Unit,
-    onParse: (String) -> Unit,
-) {
-    var text by rememberSaveable { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("AI 文字提取") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    "输入或粘贴聊天、课程或安排内容，AI 会提取其中的任务和时间。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                ThemeCardTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = "聊天内容",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (error != null && !loading) {
-                    Text(error, color = MaterialTheme.colorScheme.error)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onParse(text.trim()) },
-                enabled = !loading && text.isNotBlank(),
-            ) { Text(if (loading) "创建中…" else "创建计划") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("取消") } },
-    )
 }
 
 @Composable

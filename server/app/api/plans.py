@@ -23,7 +23,7 @@ class PlanStep(BaseModel):
 
 
 class PlanItem(BaseModel):
-    source_type: str = Field(pattern="^(idea|task)$")
+    source_type: str = Field(pattern="^(idea|task|prompt)$")
     source_id: int
     title: str = Field(min_length=1, max_length=200)
     description: str | None = None
@@ -60,6 +60,7 @@ class PlanResponse(BaseModel):
 
 class PlanGenerateRequest(BaseModel):
     message: str = Field(default="请结合我的收件匣和现有任务，生成一份现实可执行的计划。", max_length=4000)
+    idea_ids: list[int] | None = Field(default=None, max_length=100)
     reference_at: str | None = None
     timezone_name: str = Field(default="Asia/Shanghai", max_length=64)
 
@@ -98,12 +99,18 @@ def serialize_task(task: Task) -> dict:
     }
 
 
-async def planning_sources(user_id: int, db: AsyncSession) -> tuple[list[Idea], list[Task]]:
-    ideas_result = await db.execute(
-        select(Idea)
-        .where(Idea.user_id == user_id, Idea.converted_task_id.is_(None))
-        .order_by(Idea.updated_at.desc())
+async def planning_sources(
+    user_id: int,
+    db: AsyncSession,
+    idea_ids: list[int] | None = None,
+) -> tuple[list[Idea], list[Task]]:
+    ideas_query = select(Idea).where(
+        Idea.user_id == user_id,
+        Idea.converted_task_id.is_(None),
     )
+    if idea_ids is not None:
+        ideas_query = ideas_query.where(Idea.id.in_(set(idea_ids)))
+    ideas_result = await db.execute(ideas_query.order_by(Idea.updated_at.desc()))
     tasks_result = await db.execute(
         select(Task)
         .where(Task.user_id == user_id, Task.completed.is_(False))
@@ -156,11 +163,11 @@ async def create_plan(
     db: AsyncSession = Depends(get_db),
 ) -> AiPlan:
     await enforce_rate_limit("ai-plan-user", str(user.id), settings.ai_rate_limit_per_minute)
-    ideas, tasks = await planning_sources(user.id, db)
-    if not ideas and not tasks:
+    ideas, tasks = await planning_sources(user.id, db, payload.idea_ids)
+    if not ideas and not tasks and not payload.message.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="先在收件匣记录一个想法，或创建一个任务，再让 AI 帮你安排",
+            detail="请先告诉 AI 你想安排什么",
         )
     proposal = await run_planner(ideas, tasks, payload)
     messages = [
@@ -233,6 +240,22 @@ async def accept_plan(
                 task.reminder_offset_minutes = item.reminder_offset_minutes
             if item.steps:
                 task.steps = [{"title": step.title, "completed": False} for step in item.steps]
+            changed_tasks.append(task)
+            continue
+
+        if item.source_type == "prompt":
+            task = Task(
+                user_id=user.id,
+                title=item.title,
+                description=item.description,
+                start_at=item.start_at,
+                due_at=item.due_at,
+                duration_minutes=item.duration_minutes,
+                reminder_offset_minutes=item.reminder_offset_minutes,
+                steps=[{"title": step.title, "completed": False} for step in item.steps],
+            )
+            db.add(task)
+            await db.flush()
             changed_tasks.append(task)
             continue
 

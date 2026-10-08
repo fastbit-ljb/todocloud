@@ -61,7 +61,7 @@ IANA 时区：{timezone_name}
   "summary": "一两句话说明这版计划的思路",
   "items": [
     {{
-      "source_type": "idea 或 task",
+      "source_type": "idea、task 或 prompt",
       "source_id": 1,
       "title": "可执行标题",
       "description": null,
@@ -74,7 +74,9 @@ IANA 时区：{timezone_name}
     }}
   ]
 }}
-source_id 必须来自输入；现有任务使用 task，收件匣想法使用 idea。不要重复同一 source_type + source_id。
+现有任务使用 task 且 source_id 必须来自输入；收件匣想法使用 idea 且 source_id 必须来自输入。
+用户在“这次的要求”里直接描述、但不属于输入来源的新事项使用 prompt，source_id 从 1 开始依次编号。
+不要把普通安排要求本身误当作新事项，也不要重复同一 source_type + source_id。
 所有具体时间必须使用 {timezone_name} 当前对应的 UTC 偏移。标题简短，步骤具体，summary 和 note 使用中文。
 """.strip()
 
@@ -96,10 +98,12 @@ def _normalize_proposal(
     ideas: list[dict],
     tasks: list[dict],
     reference_at: datetime,
+    allow_prompt_items: bool = False,
 ) -> dict:
     valid_ids = {
         "idea": {int(item["id"]) for item in ideas},
         "task": {int(item["id"]) for item in tasks},
+        "prompt": set(range(1, 31)) if allow_prompt_items else set(),
     }
     summary = str(raw.get("summary") or "我整理了一版可执行计划，你可以继续告诉我怎么调整。").strip()
     normalized: list[dict] = []
@@ -264,4 +268,10 @@ async def generate_plan(
         conversation or [],
     )
     raw = await asyncio.to_thread(_call_plan_model, prompt)
-    return _normalize_proposal(raw, ideas, tasks, reference)
+    return _normalize_proposal(
+        raw,
+        ideas,
+        tasks,
+        reference,
+        allow_prompt_items=bool(user_message.strip()),
+    )

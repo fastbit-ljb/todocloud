@@ -242,8 +242,8 @@ class TodoCloudRepository(context: Context) {
         return (response as JSONArray).toPlans()
     }
 
-    suspend fun generatePlan(token: String, message: String): AiPlan {
-        val payload = planningPayload(message)
+    suspend fun generatePlan(token: String, message: String, ideaIds: Collection<Int>): AiPlan {
+        val payload = planningPayload(message, ideaIds)
         val response = authorizedRequest(token) { authToken ->
             Request.Builder()
                 .url(baseUrl + "/plans/generate")
@@ -539,8 +539,14 @@ class TodoCloudRepository(context: Context) {
         })
     }
 
-    private fun planningPayload(message: String): JSONObject = JSONObject().apply {
+    private fun planningPayload(
+        message: String,
+        ideaIds: Collection<Int>? = null,
+    ): JSONObject = JSONObject().apply {
         put("message", message)
+        if (ideaIds != null) {
+            put("idea_ids", JSONArray().apply { ideaIds.forEach(::put) })
+        }
         put("reference_at", currentAiReferenceAt())
         put("timezone_name", java.time.ZoneId.systemDefault().id)
     }
