@@ -596,6 +596,23 @@ fun TodoCloudApp(
     }
 
     val currentSession = session ?: return
+    val planningTasks = tasks.filterNot { it.completed }
+    val planningTaskIds = planningTasks.mapTo(mutableSetOf()) { it.id }
+    val planningIdeaIds = ideas.mapTo(mutableSetOf()) { it.id }
+    val hasPlanningSources = planningTaskIds.isNotEmpty() || planningIdeaIds.isNotEmpty()
+    val visiblePlan = plans.firstOrNull()?.takeIf { plan ->
+        hasPlanningSources && (
+            plan.status != "draft" || (
+                plan.items.isNotEmpty() && plan.items.all { item ->
+                    when (item.sourceType) {
+                        "task" -> item.sourceId in planningTaskIds
+                        "idea" -> item.sourceId in planningIdeaIds
+                        else -> false
+                    }
+                }
+            )
+        )
+    }
     val tabs = listOf(
         TabItem("任务") { Icon(Icons.Outlined.Checklist, contentDescription = "任务") },
         TabItem("日历") { Icon(Icons.Outlined.CalendarMonth, contentDescription = "日历") },
@@ -773,8 +790,8 @@ fun TodoCloudApp(
             2 -> AiPlanScreen(
                 paddingValues = paddingValues,
                 ideas = ideas,
-                tasks = tasks,
-                plan = plans.firstOrNull(),
+                tasks = planningTasks,
+                plan = visiblePlan,
                 loading = planLoading,
                 error = planError,
                 onOpenInbox = {
