@@ -3319,24 +3319,30 @@ private fun IdeaDurationSelector(
                 label = "idea-duration-indicator",
             )
             if (selectedIndex >= 0) {
-                val trackInsetPx = with(LocalDensity.current) { 8.dp.toPx() }
-                val innerTrackWidthPx = with(LocalDensity.current) { maxWidth.toPx() } - trackInsetPx
-                val progressFraction = (indicatorOffsetPx / innerTrackWidthPx)
+                val horizontalInsetPx = with(LocalDensity.current) { 4.dp.toPx() }
+                val innerTrackWidthPx = with(LocalDensity.current) { maxWidth.toPx() } - horizontalInsetPx * 2f
+                val progressWidthPx = if (indicatorOffsetPx <= 0f) {
+                    0f
+                } else {
+                    indicatorOffsetPx + slotWidthPx / 2f - horizontalInsetPx
+                }
+                val progressFraction = (progressWidthPx / innerTrackWidthPx)
                     .coerceIn(0f, 1f)
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 4.dp, vertical = 7.dp)
-                        .clip(RoundedCornerShape(9.dp)),
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.CenterStart,
                 ) {
                     Box(
                         Modifier
-                            .fillMaxSize()
+                            .fillMaxWidth()
+                            .height(indicatorSize)
+                            .clip(RoundedCornerShape(9.dp))
                             .graphicsLayer {
                                 scaleX = progressFraction
                                 transformOrigin = TransformOrigin(0f, 0.5f)
                             }
-                            .clip(RoundedCornerShape(9.dp))
                             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
                     )
                 }
