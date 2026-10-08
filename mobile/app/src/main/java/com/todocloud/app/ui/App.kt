@@ -28,7 +28,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -3295,18 +3296,23 @@ private fun IdeaDurationSelector(
                                 .coerceIn(0, IDEA_DURATION_OPTIONS.lastIndex)
                             select(index)
                         }
-                        detectHorizontalDragGestures(
-                            onDragStart = { offset ->
-                                isDragging = true
-                                updateFromPointer(offset.x)
-                            },
-                            onHorizontalDrag = { change, _ ->
-                                change.consume()
-                                updateFromPointer(change.position.x)
-                            },
-                            onDragEnd = { isDragging = false },
-                            onDragCancel = { isDragging = false },
-                        )
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            isDragging = true
+                            updateFromPointer(down.position.x)
+                            try {
+                                while (true) {
+                                    val change = awaitPointerEvent().changes
+                                        .firstOrNull { it.id == down.id }
+                                        ?: break
+                                    if (!change.pressed) break
+                                    updateFromPointer(change.position.x)
+                                    change.consume()
+                                }
+                            } finally {
+                                isDragging = false
+                            }
+                        }
                     },
             ) {
                 val indicatorOffsetPx by animateFloatAsState(
@@ -3321,6 +3327,16 @@ private fun IdeaDurationSelector(
                     spring(dampingRatio = 0.72f, stiffness = 500f)
                 },
                 label = "idea-duration-indicator",
+            )
+            val animatedIndicatorSize by animateDpAsState(
+                targetValue = if (isDragging) slotWidth else indicatorSize,
+                animationSpec = spring(dampingRatio = 0.72f, stiffness = 520f),
+                label = "idea-duration-size",
+            )
+            val animatedIndicatorCorner by animateDpAsState(
+                targetValue = if (isDragging) 16.dp else 9.dp,
+                animationSpec = spring(dampingRatio = 0.78f, stiffness = 560f),
+                label = "idea-duration-corner",
             )
             if (selectedIndex >= 0) {
                 val horizontalInsetPx = with(LocalDensity.current) { 4.dp.toPx() }
@@ -3381,8 +3397,8 @@ private fun IdeaDurationSelector(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(indicatorSize)
-                            .clip(RoundedCornerShape(9.dp))
+                            .size(animatedIndicatorSize)
+                            .clip(RoundedCornerShape(animatedIndicatorCorner))
                             .background(MaterialTheme.colorScheme.primary),
                         contentAlignment = Alignment.Center,
                     ) {
