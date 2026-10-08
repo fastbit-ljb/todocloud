@@ -1198,11 +1198,55 @@ private fun FloatingUnderlineTextField(
     )
     val labelEasing = remember { CubicBezierEasing(0.68f, -0.55f, 0.265f, 1.55f) }
 
+    if (!singleLine) {
+        Column(modifier = modifier) {
+            Text(
+                text = label,
+                color = labelColor,
+                fontSize = 18.sp,
+            )
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 40.dp, max = 112.dp)
+                    .padding(vertical = 8.dp)
+                    .onFocusChanged { focused = it.isFocused }
+                    .semantics { contentDescription = label },
+                textStyle = TextStyle(
+                    color = textColor,
+                    fontSize = 18.sp,
+                ),
+                cursorBrush = SolidColor(activeColor),
+                singleLine = false,
+                maxLines = 4,
+                visualTransformation = visualTransformation,
+                keyboardOptions = keyboardOptions,
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(underlineColor),
+            )
+            supportingText?.let {
+                Text(
+                    text = it,
+                    modifier = Modifier.padding(top = 2.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        return
+    }
+
     Column(modifier = modifier) {
         Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (singleLine) 56.dp else 96.dp),
+                    .height(56.dp),
         ) {
             BasicTextField(
                 value = value,
@@ -1210,10 +1254,10 @@ private fun FloatingUnderlineTextField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .heightIn(min = if (singleLine) 40.dp else 80.dp)
+                    .heightIn(min = 40.dp)
                     // Keep the caret close to the shared underline on every form.
                     .padding(
-                        top = if (singleLine) 8.dp else 24.dp,
+                        top = 8.dp,
                         bottom = INPUT_TEXT_BOTTOM_PADDING_DP.dp,
                     )
                     .onFocusChanged { focused = it.isFocused }
@@ -1238,11 +1282,7 @@ private fun FloatingUnderlineTextField(
                     val characterOffset by animateDpAsState(
                         // Restore the Uiverse-style float animation while keeping
                         // the focused label close to the underline.
-                        targetValue = if (active) {
-                            (if (singleLine) -INPUT_LABEL_FLOAT_OFFSET_DP else -36f).dp
-                        } else {
-                            0.dp
-                        },
+                        targetValue = if (active) (-INPUT_LABEL_FLOAT_OFFSET_DP).dp else 0.dp,
                         animationSpec = tween(
                             durationMillis = 300,
                             delayMillis = index * 50,
