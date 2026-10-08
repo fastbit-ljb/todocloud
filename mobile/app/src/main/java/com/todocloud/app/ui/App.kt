@@ -19,6 +19,8 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
@@ -112,6 +114,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -3236,11 +3240,21 @@ private fun IdeaDurationSelector(
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val currentHaptic by rememberUpdatedState(haptic)
     val isCustom = value != null && selectedIndex < 0
+    var isDragging by remember { mutableStateOf(false) }
+    var dragOffsetPx by remember { mutableFloatStateOf(0f) }
+    var lastSelectedIndex by remember { mutableIntStateOf(selectedIndex) }
+
+    LaunchedEffect(selectedIndex) {
+        if (!isDragging) lastSelectedIndex = selectedIndex
+    }
 
     fun select(index: Int) {
         val next = IDEA_DURATION_OPTIONS[index].minutes
+        if (index != lastSelectedIndex) {
+            lastSelectedIndex = index
+            currentHaptic.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+        }
         if (next != currentValue) {
-            currentHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             currentOnValueChange(next)
         }
     }
@@ -3263,38 +3277,31 @@ private fun IdeaDurationSelector(
                 .clip(RoundedCornerShape(18.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .pointerInput(Unit) {
-                    fun selectAt(x: Float) {
+                    fun updateFromPointer(x: Float) {
+                        val slotWidthPx = size.width.toFloat() / IDEA_DURATION_OPTIONS.size
+                        dragOffsetPx = (x - slotWidthPx / 2f)
+                            .coerceIn(0f, size.width - slotWidthPx)
                         val index = ((x / size.width) * IDEA_DURATION_OPTIONS.size)
                             .toInt()
                             .coerceIn(0, IDEA_DURATION_OPTIONS.lastIndex)
                         select(index)
                     }
                     detectHorizontalDragGestures(
-                        onDragStart = { offset -> selectAt(offset.x) },
+                        onDragStart = { offset ->
+                            isDragging = true
+                            updateFromPointer(offset.x)
+                        },
                         onHorizontalDrag = { change, _ ->
                             change.consume()
-                            selectAt(change.position.x)
+                            updateFromPointer(change.position.x)
                         },
+                        onDragEnd = { isDragging = false },
+                        onDragCancel = { isDragging = false },
                     )
                 },
         ) {
             val slotWidth = maxWidth / IDEA_DURATION_OPTIONS.size
-            if (selectedIndex >= 0) {
-                val indicatorOffset by animateDpAsState(
-                    targetValue = slotWidth * selectedIndex,
-                    animationSpec = tween(durationMillis = 220),
-                    label = "idea-duration-indicator",
-                )
-                Box(
-                    Modifier
-                        .offset(x = indicatorOffset)
-                        .padding(4.dp)
-                        .width(slotWidth - 8.dp)
-                        .height(50.dp)
-                        .clip(RoundedCornerShape(15.dp))
-                        .background(MaterialTheme.colorScheme.primary),
-                )
-            }
+            val slotWidthPx = with(LocalDensity.current) { slotWidth.toPx() }
             Row(Modifier.fillMaxSize()) {
                 IDEA_DURATION_OPTIONS.forEachIndexed { index, option ->
                     Box(
@@ -3309,14 +3316,41 @@ private fun IdeaDurationSelector(
                     ) {
                         Text(
                             option.label,
-                            color = if (index == selectedIndex) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            },
+                            color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.labelLarge,
                         )
                     }
+                }
+            }
+            if (selectedIndex >= 0) {
+                val indicatorOffsetPx by animateFloatAsState(
+                    targetValue = if (isDragging) {
+                        dragOffsetPx
+                    } else {
+                        slotWidthPx * selectedIndex
+                    },
+                    animationSpec = if (isDragging) {
+                        snap()
+                    } else {
+                        spring(dampingRatio = 0.72f, stiffness = 500f)
+                    },
+                    label = "idea-duration-indicator",
+                )
+                Box(
+                    Modifier
+                        .graphicsLayer { translationX = indicatorOffsetPx }
+                        .padding(4.dp)
+                        .width(slotWidth - 8.dp)
+                        .height(50.dp)
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        IDEA_DURATION_OPTIONS[selectedIndex].label,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                 }
             }
         }
