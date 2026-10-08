@@ -599,19 +599,26 @@ fun TodoCloudApp(
     val planningTasks = tasks.filterNot { it.completed }
     val planningTaskIds = planningTasks.mapTo(mutableSetOf()) { it.id }
     val planningIdeaIds = ideas.mapTo(mutableSetOf()) { it.id }
-    val hasPlanningSources = planningTaskIds.isNotEmpty() || planningIdeaIds.isNotEmpty()
     val visiblePlan = plans.firstOrNull()?.takeIf { plan ->
-        hasPlanningSources && (
-            plan.status != "draft" || (
-                plan.items.isNotEmpty() && plan.items.all { item ->
-                    when (item.sourceType) {
-                        "task" -> item.sourceId in planningTaskIds
-                        "idea" -> item.sourceId in planningIdeaIds
-                        else -> false
-                    }
-                }
-            )
-        )
+        fun sourceIsActive(sourceType: String, sourceId: Int, title: String): Boolean {
+            return when (sourceType) {
+                "task" -> sourceId in planningTaskIds
+                "idea" -> sourceId in planningIdeaIds || (
+                    plan.status == "accepted" && planningTasks.any { it.title == title }
+                )
+                else -> false
+            }
+        }
+
+        plan.items.isNotEmpty() && if (plan.status == "draft") {
+            plan.items.all { item ->
+                sourceIsActive(item.sourceType, item.sourceId, item.title)
+            }
+        } else {
+            plan.items.any { item ->
+                sourceIsActive(item.sourceType, item.sourceId, item.title)
+            }
+        }
     }
     val tabs = listOf(
         TabItem("任务") { Icon(Icons.Outlined.Checklist, contentDescription = "任务") },
