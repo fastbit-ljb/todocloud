@@ -3273,39 +3273,43 @@ private fun IdeaDurationSelector(
             }
         }
         BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(54.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .pointerInput(Unit) {
-                    fun updateFromPointer(x: Float) {
-                        val slotWidthPx = size.width.toFloat() / IDEA_DURATION_OPTIONS.size
-                        dragOffsetPx = (x - slotWidthPx / 2f)
-                            .coerceIn(0f, size.width - slotWidthPx)
-                        val index = ((x / size.width) * IDEA_DURATION_OPTIONS.size)
-                            .toInt()
-                            .coerceIn(0, IDEA_DURATION_OPTIONS.lastIndex)
-                        select(index)
-                    }
-                    detectHorizontalDragGestures(
-                        onDragStart = { offset ->
-                            isDragging = true
-                            updateFromPointer(offset.x)
-                        },
-                        onHorizontalDrag = { change, _ ->
-                            change.consume()
-                            updateFromPointer(change.position.x)
-                        },
-                        onDragEnd = { isDragging = false },
-                        onDragCancel = { isDragging = false },
-                    )
-                },
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            val slotWidth = maxWidth / IDEA_DURATION_OPTIONS.size
+            val selectorWidth = maxWidth
+            val slotWidth = selectorWidth / IDEA_DURATION_OPTIONS.size
             val indicatorSize = minOf(slotWidth - 10.dp, 44.dp)
             val slotWidthPx = with(LocalDensity.current) { slotWidth.toPx() }
-            val indicatorOffsetPx by animateFloatAsState(
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(slotWidth)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .pointerInput(Unit) {
+                        fun updateFromPointer(x: Float) {
+                            val pointerSlotWidthPx = size.width.toFloat() / IDEA_DURATION_OPTIONS.size
+                            dragOffsetPx = (x - pointerSlotWidthPx / 2f)
+                                .coerceIn(0f, size.width - pointerSlotWidthPx)
+                            val index = ((x / size.width) * IDEA_DURATION_OPTIONS.size)
+                                .toInt()
+                                .coerceIn(0, IDEA_DURATION_OPTIONS.lastIndex)
+                            select(index)
+                        }
+                        detectHorizontalDragGestures(
+                            onDragStart = { offset ->
+                                isDragging = true
+                                updateFromPointer(offset.x)
+                            },
+                            onHorizontalDrag = { change, _ ->
+                                change.consume()
+                                updateFromPointer(change.position.x)
+                            },
+                            onDragEnd = { isDragging = false },
+                            onDragCancel = { isDragging = false },
+                        )
+                    },
+            ) {
+                val indicatorOffsetPx by animateFloatAsState(
                 targetValue = when {
                     selectedIndex < 0 -> 0f
                     isDragging -> dragOffsetPx
@@ -3320,7 +3324,7 @@ private fun IdeaDurationSelector(
             )
             if (selectedIndex >= 0) {
                 val horizontalInsetPx = with(LocalDensity.current) { 4.dp.toPx() }
-                val innerTrackWidthPx = with(LocalDensity.current) { maxWidth.toPx() } - horizontalInsetPx * 2f
+                val innerTrackWidthPx = with(LocalDensity.current) { selectorWidth.toPx() } - horizontalInsetPx * 2f
                 val progressWidthPx = if (indicatorOffsetPx <= 0f) {
                     0f
                 } else {
@@ -3390,6 +3394,7 @@ private fun IdeaDurationSelector(
                     }
                 }
             }
+        }
         }
         Text(
             if (value == null) "没有时间限制" else "预计 ${formatDuration(value)}",
