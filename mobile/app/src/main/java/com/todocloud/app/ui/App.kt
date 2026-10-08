@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -3302,6 +3303,7 @@ private fun IdeaDurationSelector(
                 },
         ) {
             val slotWidth = maxWidth / IDEA_DURATION_OPTIONS.size
+            val indicatorSize = minOf(slotWidth - 10.dp, 44.dp)
             val slotWidthPx = with(LocalDensity.current) { slotWidth.toPx() }
             val indicatorOffsetPx by animateFloatAsState(
                 targetValue = when {
@@ -3324,8 +3326,8 @@ private fun IdeaDurationSelector(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .padding(4.dp)
-                        .clip(RoundedCornerShape(10.dp)),
+                        .padding(horizontal = 4.dp, vertical = 7.dp)
+                        .clip(RoundedCornerShape(9.dp)),
                 ) {
                     Box(
                         Modifier
@@ -3334,7 +3336,7 @@ private fun IdeaDurationSelector(
                                 scaleX = progressFraction
                                 transformOrigin = TransformOrigin(0f, 0.5f)
                             }
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(9.dp))
                             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
                     )
                 }
@@ -3363,18 +3365,23 @@ private fun IdeaDurationSelector(
                 Box(
                     Modifier
                         .graphicsLayer { translationX = indicatorOffsetPx }
-                        .padding(4.dp)
-                        .width(slotWidth - 8.dp)
-                        .height(50.dp)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(MaterialTheme.colorScheme.primary),
+                        .width(slotWidth)
+                        .fillMaxHeight(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        IDEA_DURATION_OPTIONS[selectedIndex].label,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(indicatorSize)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            IDEA_DURATION_OPTIONS[selectedIndex].label,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
                 }
             }
         }
