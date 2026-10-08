@@ -1199,19 +1199,22 @@ private fun FloatingUnderlineTextField(
     val labelEasing = remember { CubicBezierEasing(0.68f, -0.55f, 0.265f, 1.55f) }
 
     if (!singleLine) {
+        val fieldShape = RoundedCornerShape(16.dp)
         Column(modifier = modifier) {
-            Text(
-                text = label,
-                color = labelColor,
-                fontSize = 18.sp,
-            )
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 40.dp, max = 112.dp)
-                    .padding(vertical = 8.dp)
+                    .heightIn(min = 88.dp, max = 160.dp)
+                    .clip(fieldShape)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(
+                        width = if (focused) 2.dp else 1.dp,
+                        color = underlineColor,
+                        shape = fieldShape,
+                    )
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
                     .onFocusChanged { focused = it.isFocused }
                     .semantics { contentDescription = label },
                 textStyle = TextStyle(
@@ -1223,12 +1226,18 @@ private fun FloatingUnderlineTextField(
                 maxLines = 4,
                 visualTransformation = visualTransformation,
                 keyboardOptions = keyboardOptions,
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(underlineColor),
+                decorationBox = { innerTextField ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
+                        if (value.isBlank()) {
+                            Text(
+                                text = label,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.56f),
+                                fontSize = 18.sp,
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
             )
             supportingText?.let {
                 Text(
