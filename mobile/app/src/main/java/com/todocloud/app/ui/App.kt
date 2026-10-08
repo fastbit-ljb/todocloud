@@ -26,8 +26,10 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -130,6 +132,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -148,6 +151,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.zIndex
 import com.todocloud.app.notification.ReminderAccessibilityService
 import androidx.compose.foundation.layout.offset
@@ -3058,7 +3062,9 @@ private fun IdeaEditorDialog(
     onSave: (String, Int?, String?, String?, List<IdeaDetail>) -> Unit,
 ) {
     var content by rememberSaveable(idea?.id) { mutableStateOf(idea?.content.orEmpty()) }
-    var durationText by rememberSaveable(idea?.id) {
+    var durationMinutes by rememberSaveable(idea?.id) { mutableStateOf(idea?.durationMinutes) }
+    var showCustomDuration by rememberSaveable(idea?.id) { mutableStateOf(false) }
+    var customDurationText by rememberSaveable(idea?.id) {
         mutableStateOf(idea?.durationMinutes?.toString().orEmpty())
     }
     var startAt by remember(idea?.id) { mutableStateOf(idea?.startAt?.let(::parseIdeaDateTime)) }
@@ -3088,12 +3094,16 @@ private fun IdeaEditorDialog(
                     label = "想法内容",
                     singleLine = false,
                 )
-                FloatingUnderlineTextField(
-                    value = durationText,
-                    onValueChange = { durationText = it.filter(Char::isDigit).take(6) },
-                    label = "预计持续分钟数（可不填）",
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    supportingText = "不确定或没有限制时留空即可",
+                IdeaDurationSelector(
+                    value = durationMinutes,
+                    onValueChange = { durationMinutes = it },
+                    onMore = {
+                        customDurationText = durationMinutes
+                            ?.takeUnless { value -> IDEA_DURATION_OPTIONS.any { it.minutes == value } }
+                            ?.toString()
+                            .orEmpty()
+                        showCustomDuration = true
+                    },
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
@@ -3148,7 +3158,7 @@ private fun IdeaEditorDialog(
                 onClick = {
                     onSave(
                         content.trim(),
-                        durationText.toIntOrNull()?.coerceIn(1, 525_600),
+                        durationMinutes,
                         startAt?.atZone(ZoneId.systemDefault())?.toInstant()?.toString(),
                         dueAt?.atZone(ZoneId.systemDefault())?.toInstant()?.toString(),
                         itemTexts.mapNotNull { text ->
@@ -3171,6 +3181,149 @@ private fun IdeaEditorDialog(
                 if (target == "start") startAt = selected else dueAt = selected
                 pickerTarget = null
             },
+        )
+    }
+
+    if (showCustomDuration) {
+        AlertDialog(
+            onDismissRequest = { showCustomDuration = false },
+            title = { Text("自定义持续时间") },
+            text = {
+                FloatingUnderlineTextField(
+                    value = customDurationText,
+                    onValueChange = { customDurationText = it.filter(Char::isDigit).take(6) },
+                    label = "分钟数",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    supportingText = "最长可设置 365 天",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        durationMinutes = customDurationText.toIntOrNull()?.coerceIn(1, 525_600)
+                        showCustomDuration = false
+                    },
+                    enabled = customDurationText.toIntOrNull()?.let { it in 1..525_600 } == true,
+                ) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomDuration = false }) { Text("取消") }
+            },
+        )
+    }
+}
+
+private data class IdeaDurationOption(val minutes: Int?, val label: String)
+
+private val IDEA_DURATION_OPTIONS = listOf(
+    IdeaDurationOption(null, "不限"),
+    IdeaDurationOption(15, "15分"),
+    IdeaDurationOption(30, "30分"),
+    IdeaDurationOption(45, "45分"),
+    IdeaDurationOption(60, "1时"),
+    IdeaDurationOption(90, "1.5时"),
+)
+
+@Composable
+private fun IdeaDurationSelector(
+    value: Int?,
+    onValueChange: (Int?) -> Unit,
+    onMore: () -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    val selectedIndex = IDEA_DURATION_OPTIONS.indexOfFirst { it.minutes == value }
+    val currentValue by rememberUpdatedState(value)
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val currentHaptic by rememberUpdatedState(haptic)
+    val isCustom = value != null && selectedIndex < 0
+
+    fun select(index: Int) {
+        val next = IDEA_DURATION_OPTIONS[index].minutes
+        if (next != currentValue) {
+            currentHaptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            currentOnValueChange(next)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("预计持续时间", style = MaterialTheme.typography.titleSmall)
+            TextButton(onClick = onMore) {
+                Text(if (isCustom) "当前 ${formatDuration(requireNotNull(value))}" else "更多…")
+            }
+        }
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(58.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .pointerInput(Unit) {
+                    fun selectAt(x: Float) {
+                        val index = ((x / size.width) * IDEA_DURATION_OPTIONS.size)
+                            .toInt()
+                            .coerceIn(0, IDEA_DURATION_OPTIONS.lastIndex)
+                        select(index)
+                    }
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset -> selectAt(offset.x) },
+                        onHorizontalDrag = { change, _ ->
+                            change.consume()
+                            selectAt(change.position.x)
+                        },
+                    )
+                },
+        ) {
+            val slotWidth = maxWidth / IDEA_DURATION_OPTIONS.size
+            if (selectedIndex >= 0) {
+                val indicatorOffset by animateDpAsState(
+                    targetValue = slotWidth * selectedIndex,
+                    animationSpec = tween(durationMillis = 220),
+                    label = "idea-duration-indicator",
+                )
+                Box(
+                    Modifier
+                        .offset(x = indicatorOffset)
+                        .padding(4.dp)
+                        .width(slotWidth - 8.dp)
+                        .height(50.dp)
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(MaterialTheme.colorScheme.primary),
+                )
+            }
+            Row(Modifier.fillMaxSize()) {
+                IDEA_DURATION_OPTIONS.forEachIndexed { index, option ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { select(index) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            option.label,
+                            color = if (index == selectedIndex) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+            }
+        }
+        Text(
+            if (value == null) "没有时间限制" else "预计 ${formatDuration(value)}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
         )
     }
 }
