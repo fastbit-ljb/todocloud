@@ -1820,24 +1820,6 @@ private fun AiPlanScreen(
             .consumeWindowInsets(paddingValues)
             .padding(horizontal = 16.dp),
     ) {
-        if (plan != null) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Outlined.AutoAwesome,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        "默认避开三餐和 23:00–07:00 睡眠；吃饭、交通、就医和真正紧急的固定事项除外。",
-                        modifier = Modifier.padding(start = 10.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-        }
-
         error?.let {
             Text(it, modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error)
         }
@@ -1890,33 +1872,29 @@ private fun AiPlanScreen(
 
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(top = 32.dp, bottom = 24.dp),
         ) {
             item {
-                Card {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(
-                            if (plan.status == "accepted") "这份计划已开始执行" else "当前方案",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            plan.summary,
-                            modifier = Modifier.padding(top = 6.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                AiPlanResultHeader(plan)
             }
-            items(plan.items, key = { "${it.sourceType}-${it.sourceId}" }) { item ->
-                PlanItemCard(item)
+            itemsIndexed(
+                items = plan.items,
+                key = { index, item -> "${item.sourceType}-${item.sourceId}-$index" },
+            ) { index, item ->
+                PlanTimelineItem(
+                    item = item,
+                    index = index + 1,
+                    isLast = index == plan.items.lastIndex,
+                )
             }
             if (plan.messages.size > 2) {
                 item {
                     Text(
-                        "调整记录",
-                        modifier = Modifier.padding(top = 6.dp),
-                        style = MaterialTheme.typography.titleMedium,
+                        "修改记录",
+                        modifier = Modifier.padding(start = 6.dp, top = 28.dp, bottom = 10.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
                 items(plan.messages.drop(2).takeLast(8)) { chat ->
@@ -1927,10 +1905,11 @@ private fun AiPlanScreen(
                         Card(
                             colors = CardDefaults.cardColors(
                                 containerColor = if (chat.role == "user") {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else MaterialTheme.colorScheme.surfaceVariant,
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+                                } else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
                             ),
-                            modifier = Modifier.fillMaxWidth(0.86f),
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier.fillMaxWidth(0.88f).padding(bottom = 8.dp),
                         ) {
                             Text(chat.content, modifier = Modifier.padding(12.dp))
                         }
@@ -1940,41 +1919,34 @@ private fun AiPlanScreen(
         }
 
         if (plan.status == "draft") {
-            Column(modifier = Modifier.imePadding()) {
-                FloatingUnderlineTextField(
+            Column(
+                modifier = Modifier.fillMaxWidth().imePadding().padding(bottom = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                AiPlanRevisionField(
                     value = message,
                     onValueChange = { message = it.take(4000) },
-                    label = "告诉 AI 你想怎么调整",
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = false,
+                    loading = loading,
+                    onSubmit = {
+                        val request = message.trim()
+                        if (request.isNotEmpty()) {
+                            onRevise(plan.id, request)
+                            message = ""
+                        }
+                    },
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                Button(
+                    onClick = { onAccept(plan.id) },
+                    enabled = !loading && plan.items.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(18.dp),
                 ) {
-                    Button(
-                        onClick = { onAccept(plan.id) },
-                        enabled = !loading && plan.items.isNotEmpty(),
-                        modifier = Modifier.weight(1f),
-                    ) { Text("采用这份计划") }
-                    IconButton(
-                        onClick = {
-                            val request = message.trim()
-                            if (request.isNotEmpty()) {
-                                onRevise(plan.id, request)
-                                message = ""
-                            }
-                        },
-                        enabled = !loading && message.isNotBlank(),
-                    ) {
-                        if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        else Icon(Icons.Outlined.Send, contentDescription = "发送调整要求")
-                    }
+                    Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Text("采用计划", modifier = Modifier.padding(start = 7.dp))
                 }
             }
         } else {
-            Button(
+            OutlinedButton(
                 onClick = {
                     onGenerate(
                         "请根据我现在的收件匣和任务重新生成计划。",
@@ -1982,8 +1954,125 @@ private fun AiPlanScreen(
                     )
                 },
                 enabled = !loading,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-            ) { Text("重新规划") }
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).height(52.dp),
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                if (loading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(19.dp))
+                    Text("重新规划", modifier = Modifier.padding(start = 7.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiPlanResultHeader(plan: AiPlan) {
+    val accepted = plan.status == "accepted"
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, bottom = 30.dp),
+    ) {
+        Text(
+            if (accepted) "计划正在进行" else "计划准备好了",
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            if (accepted) "接下来，照着安排慢慢完成" else "我这样安排，可以吗？",
+            modifier = Modifier.padding(top = 8.dp),
+            style = MaterialTheme.typography.headlineLarge.copy(
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 43.sp,
+            ),
+        )
+        if (plan.summary.isNotBlank()) {
+            Text(
+                plan.summary,
+                modifier = Modifier.padding(top = 18.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyLarge,
+                lineHeight = 25.sp,
+            )
+        }
+        Text(
+            "${plan.items.size} 项安排",
+            modifier = Modifier.padding(top = 22.dp),
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun AiPlanRevisionField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    loading: Boolean,
+    onSubmit: () -> Unit,
+) {
+    val canSubmit = !loading && value.isNotBlank()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.AutoAwesome,
+                contentDescription = null,
+                modifier = Modifier.padding(horizontal = 12.dp).size(22.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.weight(1f).padding(vertical = 15.dp),
+                enabled = !loading,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Send,
+                ),
+                keyboardActions = KeyboardActions(onSend = { if (canSubmit) onSubmit() }),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (value.isBlank()) {
+                            Text(
+                                "告诉我哪里需要调整…",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+            )
+            IconButton(onClick = onSubmit, enabled = canSubmit) {
+                if (loading) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(
+                        Icons.Outlined.Send,
+                        contentDescription = "发送调整要求",
+                        tint = if (canSubmit) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                    )
+                }
+            }
         }
     }
 }
@@ -2316,17 +2405,41 @@ private fun InboxIdeaPickerDialog(
 }
 
 @Composable
-private fun PlanItemCard(item: PlanItem) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp)) {
-            Text(item.title, style = MaterialTheme.typography.titleMedium)
-            val scheduleText = when {
-                item.startAt != null && item.dueAt != null ->
-                    "${formatPlanDateTime(item.startAt)} — ${formatPlanDateTime(item.dueAt)}"
-                item.startAt != null -> "${formatPlanDateTime(item.startAt)} 开始"
-                item.dueAt != null -> "${formatPlanDateTime(item.dueAt)} 前完成"
-                else -> "暂不排期"
-            }
+private fun PlanTimelineItem(item: PlanItem, index: Int, isLast: Boolean) {
+    val scheduleText = when {
+        item.startAt != null && item.dueAt != null ->
+            "${formatPlanDateTime(item.startAt)} — ${formatPlanDateTime(item.dueAt)}"
+        item.startAt != null -> "${formatPlanDateTime(item.startAt)} 开始"
+        item.dueAt != null -> "${formatPlanDateTime(item.dueAt)} 前完成"
+        else -> "暂不排期"
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 1.dp)
+                .size(32.dp)
+                .clip(RoundedCornerShape(11.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                index.toString().padStart(2, '0'),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Column(
+            modifier = Modifier.weight(1f).padding(start = 14.dp, bottom = 22.dp),
+        ) {
+            Text(
+                item.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(
                 buildString {
                     append(scheduleText)
@@ -2337,16 +2450,35 @@ private fun PlanItemCard(item: PlanItem) {
                 style = MaterialTheme.typography.bodySmall,
             )
             if (item.steps.isNotEmpty()) {
-                Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    item.steps.forEach { step -> Text("• ${step.title}") }
+                Column(
+                    modifier = Modifier.padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    item.steps.forEach { step ->
+                        Text(
+                            "• ${step.title}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
             }
             if (item.note.isNotBlank()) {
                 Text(
                     item.note,
-                    modifier = Modifier.padding(top = 8.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
                     style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 20.sp,
+                )
+            }
+            if (!isLast) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 20.dp)
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.13f)),
                 )
             }
         }
