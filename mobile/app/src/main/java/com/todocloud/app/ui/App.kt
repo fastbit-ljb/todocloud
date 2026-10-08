@@ -3141,6 +3141,7 @@ private fun IdeaEditorDialog(
         modifier = Modifier
             .animateContentSize(animationSpec = tween(durationMillis = 260))
             .imePadding(),
+        properties = DialogProperties(decorFitsSystemWindows = false),
         title = { Text(if (idea == null) "记下一个想法" else "编辑想法") },
         text = {
             Column(
