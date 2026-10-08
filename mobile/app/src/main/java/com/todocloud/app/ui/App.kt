@@ -77,6 +77,7 @@ import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -118,7 +119,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
@@ -428,7 +428,7 @@ fun TodoCloudApp(
     var taskHeaderLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var selectedTab by rememberSaveable { mutableStateOf(requestedTab.coerceIn(0, 2)) }
-    var taskPage by rememberSaveable { mutableStateOf("home") }
+    var showAddMenu by rememberSaveable { mutableStateOf(false) }
     var settingsPage by rememberSaveable { mutableStateOf("main") }
     var showComposer by rememberSaveable { mutableStateOf(false) }
     var showAiTextComposer by rememberSaveable { mutableStateOf(false) }
@@ -442,7 +442,7 @@ fun TodoCloudApp(
 
     LaunchedEffect(requestedTab, requestedCalendarDate) {
         selectedTab = requestedTab.coerceIn(0, 2)
-        taskPage = "home"
+        showAddMenu = false
     }
 
     LaunchedEffect(session?.token, tasks, tasksLoaded) {
@@ -457,8 +457,8 @@ fun TodoCloudApp(
         settingsPage = "main"
     }
 
-    BackHandler(enabled = selectedTab == 0 && taskPage != "home") {
-        taskPage = "home"
+    BackHandler(enabled = selectedTab == 0 && showAddMenu) {
+        showAddMenu = false
     }
 
     fun handleApiError(exception: ApiException) {
@@ -578,7 +578,6 @@ fun TodoCloudApp(
                 title = {
                     Text(
                         when {
-                            selectedTab == 0 && taskPage == "add" -> "添加任务"
                             selectedTab == 0 -> "我的任务"
                             selectedTab == 2 && settingsPage == "permissions" -> "权限"
                             selectedTab == 2 && settingsPage == "sponsor" -> "赞助开发"
@@ -587,11 +586,7 @@ fun TodoCloudApp(
                     )
                 },
                 navigationIcon = {
-                    if (selectedTab == 0 && taskPage != "home") {
-                        IconButton(onClick = { taskPage = "home" }) {
-                            Icon(Icons.Outlined.ArrowBack, contentDescription = "返回任务")
-                        }
-                    } else if (selectedTab == 2 && settingsPage != "main") {
+                    if (selectedTab == 2 && settingsPage != "main") {
                         IconButton(onClick = { settingsPage = "main" }) {
                             Icon(Icons.Outlined.ArrowBack, contentDescription = "返回设置")
                         }
@@ -600,14 +595,14 @@ fun TodoCloudApp(
             )
         },
         bottomBar = {
-            if ((selectedTab != 2 || settingsPage == "main") && taskPage == "home") {
+            if (selectedTab != 2 || settingsPage == "main") {
                 NavigationBar {
                     tabs.forEachIndexed { index, tab ->
                         NavigationBarItem(
                             selected = selectedTab == index,
                             onClick = {
                                 selectedTab = index
-                                taskPage = "home"
+                                showAddMenu = false
                                 if (index != 2) settingsPage = "main"
                             },
                             icon = tab.icon,
@@ -621,37 +616,29 @@ fun TodoCloudApp(
             }
         },
         floatingActionButton = {
-            if (selectedTab == 0 && taskPage == "home") {
-                FloatingActionButton(
-                    onClick = { taskPage = "add" },
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                ) {
-                    Icon(Icons.Outlined.Add, contentDescription = "新建任务")
-                }
+            if (selectedTab == 0) {
+                TaskAddSpeedDial(
+                    expanded = showAddMenu,
+                    enabled = !loading,
+                    onExpandedChange = { showAddMenu = it },
+                    onManual = {
+                        showAddMenu = false
+                        showComposer = true
+                    },
+                    onScreenshot = {
+                        showAddMenu = false
+                        screenshotLauncher.launch("image/*")
+                    },
+                    onText = {
+                        showAddMenu = false
+                        showAiTextComposer = true
+                    },
+                )
             }
         },
     ) { paddingValues ->
         when (selectedTab) {
-            0 -> if (taskPage == "add") {
-                AddTaskMethodScreen(
-                    paddingValues = paddingValues,
-                    enabled = !loading,
-                    onManual = {
-                        taskPage = "home"
-                        showComposer = true
-                    },
-                    onScreenshot = {
-                        taskPage = "home"
-                        screenshotLauncher.launch("image/*")
-                    },
-                    onText = {
-                        taskPage = "home"
-                        showAiTextComposer = true
-                    },
-                )
-            } else {
-                TaskHomeScreen(
+            0 -> TaskHomeScreen(
                     paddingValues = paddingValues,
                     session = currentSession,
                     tasks = tasks,
@@ -723,7 +710,6 @@ fun TodoCloudApp(
                     }
                     },
                 )
-            }
 
             1 -> CalendarScreen(
                 paddingValues = paddingValues,
@@ -1129,133 +1115,201 @@ private fun FloatingUnderlineTextField(
 }
 
 @Composable
-private fun AddTaskMethodScreen(
-    paddingValues: PaddingValues,
+private fun TaskAddSpeedDial(
+    expanded: Boolean,
     enabled: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     onManual: () -> Unit,
     onScreenshot: () -> Unit,
     onText: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(paddingValues)
-            .padding(horizontal = 24.dp, vertical = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        AddMethodIconButton(
-            icon = Icons.Outlined.EditNote,
-            contentDescription = "手动添加任务",
-            containerStart = MaterialTheme.colorScheme.secondaryContainer,
-            containerEnd = MaterialTheme.colorScheme.primaryContainer,
-            iconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            enabled = enabled,
-            onClick = onManual,
-            modifier = Modifier.size(width = 188.dp, height = 160.dp),
+    val haloScale by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0.36f,
+        animationSpec = tween(430, easing = UiverseEase),
+        label = "addMenuHaloScale",
+    )
+    val haloAlpha by animateFloatAsState(
+        targetValue = if (expanded) 0.62f else 0f,
+        animationSpec = tween(if (expanded) 260 else 180, easing = UiverseEase),
+        label = "addMenuHaloAlpha",
+    )
+    val plusAlpha by animateFloatAsState(
+        targetValue = if (expanded) 0f else 1f,
+        animationSpec = tween(150),
+        label = "addMenuPlusAlpha",
+    )
+    val closeAlpha by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = tween(150),
+        label = "addMenuCloseAlpha",
+    )
+
+    Box(modifier = Modifier.size(216.dp)) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = 54.dp, y = 54.dp)
+                .size(176.dp)
+                .graphicsLayer {
+                    scaleX = haloScale
+                    scaleY = haloScale
+                    alpha = haloAlpha
+                }
+                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
         )
 
-        Spacer(Modifier.height(22.dp))
+        TaskAddAction(
+            icon = Icons.Outlined.EditNote,
+            contentDescription = "手动添加任务",
+            expanded = expanded,
+            enabled = enabled,
+            targetX = 0.dp,
+            targetY = (-92).dp,
+            openDelayMillis = 0,
+            closeDelayMillis = 104,
+            onClick = onManual,
+            modifier = Modifier.align(Alignment.BottomEnd),
+        )
+        TaskAddAction(
+            icon = Icons.Outlined.AddPhotoAlternate,
+            contentDescription = "从截图识别任务",
+            expanded = expanded,
+            enabled = enabled,
+            targetX = (-72).dp,
+            targetY = (-64).dp,
+            openDelayMillis = 52,
+            closeDelayMillis = 52,
+            onClick = onScreenshot,
+            modifier = Modifier.align(Alignment.BottomEnd),
+        )
+        TaskAddAction(
+            icon = Icons.Outlined.TextFields,
+            contentDescription = "从文字提取任务",
+            expanded = expanded,
+            enabled = enabled,
+            targetX = (-92).dp,
+            targetY = 0.dp,
+            openDelayMillis = 104,
+            closeDelayMillis = 0,
+            onClick = onText,
+            modifier = Modifier.align(Alignment.BottomEnd),
+        )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
+        FloatingActionButton(
+            onClick = { onExpandedChange(!expanded) },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .size(66.dp)
+                .zIndex(3f)
+                .semantics {
+                    contentDescription = if (expanded) "收起添加菜单" else "展开添加菜单"
+                    role = Role.Button
+                },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ) {
-            AddMethodIconButton(
-                icon = Icons.Outlined.AddPhotoAlternate,
-                contentDescription = "从截图识别任务",
-                containerStart = MaterialTheme.colorScheme.tertiaryContainer,
-                containerEnd = MaterialTheme.colorScheme.surfaceVariant,
-                iconColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                enabled = enabled,
-                onClick = onScreenshot,
-                modifier = Modifier.weight(1f).height(140.dp),
-            )
-            AddMethodIconButton(
-                icon = Icons.Outlined.TextFields,
-                contentDescription = "从文字提取任务",
-                containerStart = MaterialTheme.colorScheme.primaryContainer,
-                containerEnd = MaterialTheme.colorScheme.secondaryContainer,
-                iconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                enabled = enabled,
-                onClick = onText,
-                modifier = Modifier.weight(1f).height(140.dp),
-            )
+            Box(modifier = Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = plusAlpha },
+                )
+                Icon(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = closeAlpha },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun AddMethodIconButton(
+private fun TaskAddAction(
     icon: ImageVector,
     contentDescription: String,
-    containerStart: Color,
-    containerEnd: Color,
-    iconColor: Color,
+    expanded: Boolean,
     enabled: Boolean,
+    targetX: androidx.compose.ui.unit.Dp,
+    targetY: androidx.compose.ui.unit.Dp,
+    openDelayMillis: Int,
+    closeDelayMillis: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val hovered by interactionSource.collectIsHoveredAsState()
-    val scale by animateFloatAsState(
-        targetValue = when {
-            pressed -> 0.94f
-            hovered -> 1.03f
-            else -> 1f
-        },
-        animationSpec = tween(160, easing = UiverseEase),
-        label = "addMethodScale",
+    val delayMillis = if (expanded) openDelayMillis else closeDelayMillis
+    val xOffset by animateDpAsState(
+        targetValue = if (expanded) targetX else 7.dp,
+        animationSpec = tween(430, delayMillis, UiverseEase),
+        label = "addMenuXOffset",
     )
-    val shape = RoundedCornerShape(34.dp)
+    val yOffset by animateDpAsState(
+        targetValue = if (expanded) targetY else 7.dp,
+        animationSpec = tween(430, delayMillis, UiverseEase),
+        label = "addMenuYOffset",
+    )
+    val expansionScale by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0.34f,
+        animationSpec = tween(430, delayMillis, UiverseEase),
+        label = "addMenuExpansionScale",
+    )
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.86f else 1f,
+        animationSpec = tween(130, easing = UiverseEase),
+        label = "addMenuPressScale",
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = if (expanded) 220 else 170,
+            delayMillis = delayMillis,
+            easing = UiverseEase,
+        ),
+        label = "addMenuAlpha",
+    )
 
     Box(
         modifier = modifier
+            .offset(x = xOffset, y = yOffset)
+            .zIndex(2f)
+            .size(52.dp)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                alpha = if (enabled) 1f else 0.5f
-                shadowElevation = 12.dp.toPx()
-                this.shape = shape
+                scaleX = expansionScale * pressScale
+                scaleY = expansionScale * pressScale
+                this.alpha = alpha * if (enabled) 1f else 0.5f
+                shadowElevation = 8.dp.toPx()
+                shape = CircleShape
                 clip = true
             }
-            .background(
-                brush = Brush.linearGradient(listOf(containerStart, containerEnd)),
-                shape = shape,
-            )
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
-                shape = shape,
-            )
+            .background(MaterialTheme.colorScheme.surface, CircleShape)
             .clickable(
-                enabled = enabled,
+                enabled = expanded && enabled,
                 interactionSource = interactionSource,
                 indication = null,
                 role = Role.Button,
                 onClick = onClick,
             )
             .semantics {
-                this.contentDescription = contentDescription
-                role = Role.Button
+                if (expanded) {
+                    this.contentDescription = contentDescription
+                    role = Role.Button
+                }
             },
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(88.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconColor,
-                modifier = Modifier.size(50.dp),
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(25.dp),
+        )
     }
 }
 
