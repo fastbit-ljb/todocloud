@@ -639,7 +639,6 @@ fun TodoCloudApp(
         when (selectedTab) {
             0 -> TaskHomeScreen(
                     paddingValues = paddingValues,
-                    session = currentSession,
                     tasks = tasks,
                     loading = loading,
                     showLoadingAnimation = taskHeaderLoading,
@@ -1292,7 +1291,6 @@ private fun TaskAddAction(
 @Composable
 private fun TaskHomeScreen(
     paddingValues: PaddingValues,
-    session: Session,
     tasks: List<TaskItem>,
     loading: Boolean,
     showLoadingAnimation: Boolean,
@@ -1312,35 +1310,27 @@ private fun TaskHomeScreen(
             modifier = Modifier
                 .fillMaxSize(),
         ) {
-            // Keep the account summary fixed while only the task area below
-            // participates in scrolling.
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 20.dp),
-            ) {
-                Text(
-                    text = session.displayName?.let { "你好，$it" } ?: session.email,
-                    style = MaterialTheme.typography.headlineSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (showLoadingAnimation) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        BouncingTaskLoader()
+            if (showLoadingAnimation || error != null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                ) {
+                    if (showLoadingAnimation) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            BouncingTaskLoader()
+                        }
                     }
-                }
-                error?.let { message ->
-                    Text(
-                        message,
-                        modifier = Modifier.padding(top = 10.dp),
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                    error?.let { message ->
+                        Text(
+                            message,
+                            modifier = Modifier.padding(top = 10.dp),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
 
