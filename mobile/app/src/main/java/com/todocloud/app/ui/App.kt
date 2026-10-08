@@ -1202,7 +1202,7 @@ private fun FloatingUnderlineTextField(
         Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (singleLine) 56.dp else 80.dp),
+                    .height(if (singleLine) 56.dp else 96.dp),
         ) {
             BasicTextField(
                 value = value,
@@ -1210,10 +1210,10 @@ private fun FloatingUnderlineTextField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .heightIn(min = if (singleLine) 40.dp else 64.dp)
+                    .heightIn(min = if (singleLine) 40.dp else 80.dp)
                     // Keep the caret close to the shared underline on every form.
                     .padding(
-                        top = 8.dp,
+                        top = if (singleLine) 8.dp else 24.dp,
                         bottom = INPUT_TEXT_BOTTOM_PADDING_DP.dp,
                     )
                     .onFocusChanged { focused = it.isFocused }
@@ -1238,7 +1238,11 @@ private fun FloatingUnderlineTextField(
                     val characterOffset by animateDpAsState(
                         // Restore the Uiverse-style float animation while keeping
                         // the focused label close to the underline.
-                        targetValue = if (active) (-INPUT_LABEL_FLOAT_OFFSET_DP).dp else 0.dp,
+                        targetValue = if (active) {
+                            (if (singleLine) -INPUT_LABEL_FLOAT_OFFSET_DP else -36f).dp
+                        } else {
+                            0.dp
+                        },
                         animationSpec = tween(
                             durationMillis = 300,
                             delayMillis = index * 50,
@@ -3090,11 +3094,6 @@ private fun IdeaEditorDialog(
                 modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(
-                    "想法不等于承诺。只记录此刻的内容，时间可以以后再决定。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
                 FloatingUnderlineTextField(
                     value = content,
                     onValueChange = { content = it.take(10_000) },
