@@ -21,6 +21,12 @@ class User(Base):
     tasks: Mapped[list["Task"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    ideas: Mapped[list["Idea"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    ai_plans: Mapped[list["AiPlan"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -49,7 +55,9 @@ class Task(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reminder_offset_minutes: Mapped[int | None] = mapped_column(nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -62,6 +70,49 @@ class Task(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="tasks")
+
+
+class Idea(Base):
+    __tablename__ = "ideas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    items: Mapped[list] = mapped_column(JSON, default=list, server_default=text("'[]'"))
+    converted_task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped[User] = relationship(back_populates="ideas")
+
+
+class AiPlan(Base):
+    __tablename__ = "ai_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="draft", server_default="draft")
+    title: Mapped[str] = mapped_column(String(120), default="我的 AI 计划")
+    proposal: Mapped[dict] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    messages: Mapped[list] = mapped_column(JSON, default=list, server_default=text("'[]'"))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped[User] = relationship(back_populates="ai_plans")
 
 
 class Attachment(Base):

@@ -73,16 +73,19 @@ import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.AlertDialog
@@ -155,8 +158,12 @@ import com.todocloud.app.BuildConfig
 import com.todocloud.app.R
 import com.todocloud.app.branding.MascotStateManager
 import com.todocloud.app.data.ApiException
+import com.todocloud.app.data.AiPlan
 import com.todocloud.app.data.AiTaskStep
 import com.todocloud.app.data.AiParseResult
+import com.todocloud.app.data.IdeaDetail
+import com.todocloud.app.data.InboxIdea
+import com.todocloud.app.data.PlanItem
 import com.todocloud.app.data.Session
 import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TaskStep
@@ -422,16 +429,23 @@ fun TodoCloudApp(
     val scope = rememberCoroutineScope()
     var session by remember { mutableStateOf(repository.savedSession()) }
     var tasks by remember { mutableStateOf(emptyList<TaskItem>()) }
+    var ideas by remember { mutableStateOf(emptyList<InboxIdea>()) }
+    var plans by remember { mutableStateOf(emptyList<AiPlan>()) }
     var tasksLoaded by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var taskHeaderLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var selectedTab by rememberSaveable { mutableStateOf(requestedTab.coerceIn(0, 2)) }
+    var selectedTab by rememberSaveable { mutableStateOf(requestedTab.coerceIn(0, 3)) }
+    var taskSection by rememberSaveable { mutableStateOf("tasks") }
     var showAddMenu by rememberSaveable { mutableStateOf(false) }
     var settingsPage by rememberSaveable { mutableStateOf("main") }
     var showComposer by rememberSaveable { mutableStateOf(false) }
+    var showIdeaComposer by rememberSaveable { mutableStateOf(false) }
+    var editingIdea by remember { mutableStateOf<InboxIdea?>(null) }
     var showAiTextComposer by rememberSaveable { mutableStateOf(false) }
     var aiResult by remember { mutableStateOf<AiParseResult?>(null) }
+    var planLoading by remember { mutableStateOf(false) }
+    var planError by remember { mutableStateOf<String?>(null) }
     var defaultReminderOffsetMinutes by remember(context) {
         mutableStateOf(loadDefaultReminderOffset(context))
     }
@@ -440,7 +454,7 @@ fun TodoCloudApp(
     }
 
     LaunchedEffect(requestedTab, requestedCalendarDate) {
-        selectedTab = requestedTab.coerceIn(0, 2)
+        selectedTab = requestedTab.coerceIn(0, 3)
         showAddMenu = false
     }
 
@@ -452,7 +466,7 @@ fun TodoCloudApp(
         }
     }
 
-    BackHandler(enabled = selectedTab == 2 && settingsPage != "main") {
+    BackHandler(enabled = selectedTab == 3 && settingsPage != "main") {
         settingsPage = "main"
     }
 
@@ -468,6 +482,7 @@ fun TodoCloudApp(
             session = null
             aiResult = null
             showComposer = false
+            showIdeaComposer = false
             showAiTextComposer = false
             error = "登录已过期，请重新登录"
         } else {
@@ -515,6 +530,8 @@ fun TodoCloudApp(
         val currentSession = session
         if (currentSession == null) {
             tasks = emptyList()
+            ideas = emptyList()
+            plans = emptyList()
             tasksLoaded = false
             taskHeaderLoading = false
             MascotStateManager.reset(context)
@@ -525,6 +542,8 @@ fun TodoCloudApp(
             error = null
             try {
                 tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
+                ideas = repository.listIdeas(currentSession.token)
+                plans = repository.listPlans(currentSession.token)
                 tasksLoaded = true
             } catch (exception: ApiException) {
                 handleApiError(exception)
@@ -569,6 +588,7 @@ fun TodoCloudApp(
     val tabs = listOf(
         TabItem("任务") { Icon(Icons.Outlined.Checklist, contentDescription = "任务") },
         TabItem("日历") { Icon(Icons.Outlined.CalendarMonth, contentDescription = "日历") },
+        TabItem("AI计划") { Icon(Icons.Outlined.AutoAwesome, contentDescription = "AI计划") },
         TabItem("设置") { Icon(Icons.Outlined.Settings, contentDescription = "设置") },
     )
     Scaffold(
@@ -577,15 +597,16 @@ fun TodoCloudApp(
                 title = {
                     Text(
                         when {
+                            selectedTab == 0 && taskSection == "inbox" -> "收件匣"
                             selectedTab == 0 -> "我的任务"
-                            selectedTab == 2 && settingsPage == "permissions" -> "权限"
-                            selectedTab == 2 && settingsPage == "sponsor" -> "赞助开发"
+                            selectedTab == 3 && settingsPage == "permissions" -> "权限"
+                            selectedTab == 3 && settingsPage == "sponsor" -> "赞助开发"
                             else -> tabs[selectedTab].label
                         },
                     )
                 },
                 navigationIcon = {
-                    if (selectedTab == 2 && settingsPage != "main") {
+                    if (selectedTab == 3 && settingsPage != "main") {
                         IconButton(onClick = { settingsPage = "main" }) {
                             Icon(Icons.Outlined.ArrowBack, contentDescription = "返回设置")
                         }
@@ -594,7 +615,7 @@ fun TodoCloudApp(
             )
         },
         bottomBar = {
-            if (selectedTab != 2 || settingsPage == "main") {
+            if (selectedTab != 3 || settingsPage == "main") {
                 NavigationBar {
                     tabs.forEachIndexed { index, tab ->
                         NavigationBarItem(
@@ -602,7 +623,7 @@ fun TodoCloudApp(
                             onClick = {
                                 selectedTab = index
                                 showAddMenu = false
-                                if (index != 2) settingsPage = "main"
+                                if (index != 3) settingsPage = "main"
                             },
                             icon = tab.icon,
                             label = { Text(tab.label) },
@@ -615,7 +636,7 @@ fun TodoCloudApp(
             }
         },
         floatingActionButton = {
-            if (selectedTab == 0) {
+            if (selectedTab == 0 && taskSection == "tasks") {
                 TaskAddSpeedDial(
                     expanded = showAddMenu,
                     enabled = !loading,
@@ -633,13 +654,27 @@ fun TodoCloudApp(
                         showAiTextComposer = true
                     },
                 )
+            } else if (selectedTab == 0) {
+                IdeaAddButton(
+                    enabled = !loading,
+                    onClick = {
+                        editingIdea = null
+                        showIdeaComposer = true
+                    },
+                )
             }
         },
     ) { paddingValues ->
         when (selectedTab) {
             0 -> TaskHomeScreen(
                     paddingValues = paddingValues,
+                    section = taskSection,
+                    onSectionChange = {
+                        taskSection = it
+                        showAddMenu = false
+                    },
                     tasks = tasks,
+                    ideas = ideas,
                     loading = loading,
                     showLoadingAnimation = taskHeaderLoading,
                     error = error,
@@ -707,12 +742,88 @@ fun TodoCloudApp(
                         tasks = tasks.filterNot { it.id == task.id }
                     }
                     },
+                    onEditIdea = { idea ->
+                        editingIdea = idea
+                        showIdeaComposer = true
+                    },
+                    onDeleteIdea = { idea ->
+                        runRequest {
+                            repository.deleteIdea(currentSession.token, idea.id)
+                            ideas = ideas.filterNot { it.id == idea.id }
+                        }
+                    },
                 )
 
             1 -> CalendarScreen(
                 paddingValues = paddingValues,
                 tasks = tasks,
                 requestedDate = requestedCalendarDate,
+            )
+            2 -> AiPlanScreen(
+                paddingValues = paddingValues,
+                ideas = ideas,
+                tasks = tasks,
+                plan = plans.firstOrNull(),
+                loading = planLoading,
+                error = planError,
+                onOpenInbox = {
+                    selectedTab = 0
+                    taskSection = "inbox"
+                },
+                onGenerate = { message ->
+                    scope.launch {
+                        planLoading = true
+                        planError = null
+                        try {
+                            val plan = repository.generatePlan(currentSession.token, message)
+                            plans = listOf(plan) + plans.filterNot { it.id == plan.id }
+                        } catch (exception: ApiException) {
+                            if (exception.statusCode == 401) handleApiError(exception)
+                            else planError = exception.message
+                        } catch (_: Exception) {
+                            planError = "网络连接失败，请稍后重试"
+                        } finally {
+                            planLoading = false
+                        }
+                    }
+                },
+                onRevise = { planId, message ->
+                    scope.launch {
+                        planLoading = true
+                        planError = null
+                        try {
+                            val revised = repository.revisePlan(currentSession.token, planId, message)
+                            plans = listOf(revised) + plans.filterNot { it.id == revised.id }
+                        } catch (exception: ApiException) {
+                            if (exception.statusCode == 401) handleApiError(exception)
+                            else planError = exception.message
+                        } catch (_: Exception) {
+                            planError = "网络连接失败，请稍后重试"
+                        } finally {
+                            planLoading = false
+                        }
+                    }
+                },
+                onAccept = { planId ->
+                    scope.launch {
+                        planLoading = true
+                        planError = null
+                        try {
+                            val accepted = repository.acceptPlan(currentSession.token, planId)
+                            plans = listOf(accepted.plan) + plans.filterNot { it.id == accepted.plan.id }
+                            tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
+                            ideas = repository.listIdeas(currentSession.token)
+                            MascotStateManager.recordMeaningfulActivity(context)
+                        } catch (exception: ApiException) {
+                            if (exception.statusCode == 401) handleApiError(exception)
+                            else planError = exception.message
+                        } catch (_: Exception) {
+                            planError = "网络连接失败，请稍后重试"
+                        } finally {
+                            planLoading = false
+                        }
+                    }
+                },
             )
             else -> when (settingsPage) {
                 "permissions" -> PermissionSettingsScreen(
@@ -767,6 +878,47 @@ fun TodoCloudApp(
                     ReminderScheduler.schedule(context, created)
                     tasks = sortTasks(listOf(created) + tasks)
                     showComposer = false
+                }
+            },
+        )
+        }
+
+        if (showIdeaComposer) {
+        IdeaEditorDialog(
+            idea = editingIdea,
+            loading = loading,
+            onDismiss = {
+                if (!loading) {
+                    showIdeaComposer = false
+                    editingIdea = null
+                }
+            },
+            onSave = { content, durationMinutes, startAt, dueAt, items ->
+                runRequest {
+                    val existing = editingIdea
+                    val saved = if (existing == null) {
+                        repository.createIdea(
+                            currentSession.token,
+                            content,
+                            durationMinutes,
+                            startAt,
+                            dueAt,
+                            items,
+                        )
+                    } else {
+                        repository.updateIdea(
+                            currentSession.token,
+                            existing.id,
+                            content,
+                            durationMinutes,
+                            startAt,
+                            dueAt,
+                            items,
+                        )
+                    }
+                    ideas = listOf(saved) + ideas.filterNot { it.id == saved.id }
+                    showIdeaComposer = false
+                    editingIdea = null
                 }
             },
         )
@@ -1291,7 +1443,10 @@ private fun TaskAddAction(
 @Composable
 private fun TaskHomeScreen(
     paddingValues: PaddingValues,
+    section: String,
+    onSectionChange: (String) -> Unit,
     tasks: List<TaskItem>,
+    ideas: List<InboxIdea>,
     loading: Boolean,
     showLoadingAnimation: Boolean,
     error: String?,
@@ -1299,6 +1454,8 @@ private fun TaskHomeScreen(
     onStepToggle: (TaskItem, Int) -> Unit,
     onReminderChange: (TaskItem, Int?) -> Unit,
     onDelete: (TaskItem) -> Unit,
+    onEditIdea: (InboxIdea) -> Unit,
+    onDeleteIdea: (InboxIdea) -> Unit,
 ) {
     val homeTasks = remember(tasks) { visibleHomeTasks(tasks) }
     Box(
@@ -1310,6 +1467,11 @@ private fun TaskHomeScreen(
             modifier = Modifier
                 .fillMaxSize(),
         ) {
+            TaskSectionSwitcher(
+                selected = section,
+                onSelected = onSectionChange,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            )
             if (showLoadingAnimation || error != null) {
                 Column(
                     modifier = Modifier
@@ -1334,7 +1496,16 @@ private fun TaskHomeScreen(
                 }
             }
 
-            LazyColumn(
+            if (section == "inbox") {
+                InboxList(
+                    ideas = ideas,
+                    loading = loading,
+                    onEdit = onEditIdea,
+                    onDelete = onDeleteIdea,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
@@ -1376,6 +1547,378 @@ private fun TaskHomeScreen(
                         onDelete = { onDelete(task) },
                     )
                 }
+            }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskSectionSwitcher(
+    selected: String,
+    onSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            listOf(
+                Triple("tasks", "任务", Icons.Outlined.Checklist),
+                Triple("inbox", "收件匣", Icons.Outlined.Inbox),
+            ).forEach { (value, label, icon) ->
+                val active = selected == value
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            if (active) MaterialTheme.colorScheme.primaryContainer
+                            else Color.Transparent,
+                        )
+                        .clickable { onSelected(value) }
+                        .padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Text(label, modifier = Modifier.padding(start = 7.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InboxList(
+    ideas: List<InboxIdea>,
+    loading: Boolean,
+    onEdit: (InboxIdea) -> Unit,
+    onDelete: (InboxIdea) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (ideas.isEmpty() && !loading) {
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(20.dp)) {
+                        Icon(
+                            Icons.Outlined.Inbox,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            "先把念头放在这里",
+                            modifier = Modifier.padding(top = 12.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            "不必现在决定要不要做。记下一瞬间的灵感，等它值得行动时，再让 AI 帮你整理成计划。",
+                            modifier = Modifier.padding(top = 6.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        items(ideas, key = { it.id }) { idea ->
+            IdeaCard(idea = idea, onEdit = { onEdit(idea) }, onDelete = { onDelete(idea) })
+        }
+    }
+}
+
+@Composable
+private fun IdeaCard(
+    idea: InboxIdea,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onEdit)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(
+                    Icons.Outlined.Inbox,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    idea.content,
+                    modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "删除想法")
+                }
+            }
+            val timing = buildList {
+                idea.durationMinutes?.let { add("持续 ${formatDuration(it)}") }
+                idea.startAt?.let { add("最早 ${formatPlanDateTime(it)}") }
+                idea.dueAt?.let { add("最晚 ${formatPlanDateTime(it)}") }
+            }
+            Text(
+                timing.ifEmpty { listOf("还没有时间限制") }.joinToString(" · "),
+                modifier = Modifier.padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (idea.items.isNotEmpty()) {
+                Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    idea.items.take(4).forEach { item ->
+                        Text("• ${item.content}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (idea.items.size > 4) {
+                        Text(
+                            "还有 ${idea.items.size - 4} 项细节",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IdeaAddButton(enabled: Boolean, onClick: () -> Unit) {
+    FloatingActionButton(
+        onClick = { if (enabled) onClick() },
+        modifier = Modifier.size(66.dp).graphicsLayer { alpha = if (enabled) 1f else 0.5f },
+        shape = RoundedCornerShape(20.dp),
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        val color = MaterialTheme.colorScheme.onSecondaryContainer
+        Canvas(Modifier.size(30.dp)) {
+            val arm = 10.dp.toPx()
+            val width = 2.6.dp.toPx()
+            drawLine(color, Offset(center.x - arm, center.y), Offset(center.x + arm, center.y), width, StrokeCap.Round)
+            drawLine(color, Offset(center.x, center.y - arm), Offset(center.x, center.y + arm), width, StrokeCap.Round)
+        }
+    }
+}
+
+private fun formatDuration(minutes: Int): String = when {
+    minutes >= 24 * 60 && minutes % (24 * 60) == 0 -> "${minutes / (24 * 60)} 天"
+    minutes >= 60 && minutes % 60 == 0 -> "${minutes / 60} 小时"
+    else -> "$minutes 分钟"
+}
+
+private fun formatPlanDateTime(value: String): String = runCatching {
+    OffsetDateTime.parse(value)
+        .atZoneSameInstant(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("M月d日 HH:mm", Locale.CHINA))
+}.getOrElse { value }
+
+@Composable
+private fun AiPlanScreen(
+    paddingValues: PaddingValues,
+    ideas: List<InboxIdea>,
+    tasks: List<TaskItem>,
+    plan: AiPlan?,
+    loading: Boolean,
+    error: String?,
+    onOpenInbox: () -> Unit,
+    onGenerate: (String) -> Unit,
+    onRevise: (Int, String) -> Unit,
+    onAccept: (Int) -> Unit,
+) {
+    var message by rememberSaveable(plan?.id) { mutableStateOf("") }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp),
+    ) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    "默认避开三餐和 23:00–07:00 睡眠；吃饭、交通、就医和真正紧急的固定事项除外。",
+                    modifier = Modifier.padding(start = 10.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        error?.let {
+            Text(it, modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error)
+        }
+
+        if (plan == null) {
+            Column(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(
+                    if (ideas.isEmpty() && tasks.isEmpty()) Icons.Outlined.Inbox else Icons.Outlined.AutoAwesome,
+                    contentDescription = null,
+                    modifier = Modifier.size(58.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    if (ideas.isEmpty() && tasks.isEmpty()) "计划从一个念头开始" else "让零散想法开始行动",
+                    modifier = Modifier.padding(top = 18.dp),
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    if (ideas.isEmpty() && tasks.isEmpty()) {
+                        "先在收件匣留下想法。它可以没有日期，也不代表你承诺一定完成。"
+                    } else {
+                        "AI 会结合收件匣、现有任务和持续时间，整理出一份可以继续对话修改的计划。"
+                    },
+                    modifier = Modifier.padding(top = 10.dp, start = 24.dp, end = 24.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                Button(
+                    onClick = {
+                        if (ideas.isEmpty() && tasks.isEmpty()) onOpenInbox()
+                        else onGenerate("请结合我的收件匣和现有任务，生成一份现实可执行的计划。")
+                    },
+                    enabled = !loading,
+                    modifier = Modifier.padding(top = 22.dp),
+                ) {
+                    Text(if (ideas.isEmpty() && tasks.isEmpty()) "去收件匣记录想法" else "生成我的计划")
+                }
+                if (loading) CircularProgressIndicator(modifier = Modifier.padding(top = 18.dp))
+            }
+            return@Column
+        }
+
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item {
+                Card {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            if (plan.status == "accepted") "这份计划已开始执行" else "当前方案",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            plan.summary,
+                            modifier = Modifier.padding(top = 6.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            items(plan.items, key = { "${it.sourceType}-${it.sourceId}" }) { item ->
+                PlanItemCard(item)
+            }
+            if (plan.messages.size > 2) {
+                item {
+                    Text(
+                        "调整记录",
+                        modifier = Modifier.padding(top = 6.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                items(plan.messages.drop(2).takeLast(8)) { chat ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (chat.role == "user") Arrangement.End else Arrangement.Start,
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (chat.role == "user") {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else MaterialTheme.colorScheme.surfaceVariant,
+                            ),
+                            modifier = Modifier.fillMaxWidth(0.86f),
+                        ) {
+                            Text(chat.content, modifier = Modifier.padding(12.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        if (plan.status == "draft") {
+            FloatingUnderlineTextField(
+                value = message,
+                onValueChange = { message = it.take(4000) },
+                label = "告诉 AI 你想怎么调整",
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = false,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = { onAccept(plan.id) },
+                    enabled = !loading && plan.items.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                ) { Text("采用这份计划") }
+                IconButton(
+                    onClick = {
+                        val request = message.trim()
+                        if (request.isNotEmpty()) {
+                            onRevise(plan.id, request)
+                            message = ""
+                        }
+                    },
+                    enabled = !loading && message.isNotBlank(),
+                ) {
+                    if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    else Icon(Icons.Outlined.Send, contentDescription = "发送调整要求")
+                }
+            }
+        } else {
+            Button(
+                onClick = { onGenerate("请根据我现在的收件匣和任务重新生成计划。") },
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+            ) { Text("重新规划") }
+        }
+    }
+}
+
+@Composable
+private fun PlanItemCard(item: PlanItem) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Text(item.title, style = MaterialTheme.typography.titleMedium)
+            val scheduleText = when {
+                item.startAt != null && item.dueAt != null ->
+                    "${formatPlanDateTime(item.startAt)} — ${formatPlanDateTime(item.dueAt)}"
+                item.startAt != null -> "${formatPlanDateTime(item.startAt)} 开始"
+                item.dueAt != null -> "${formatPlanDateTime(item.dueAt)} 前完成"
+                else -> "暂不排期"
+            }
+            Text(
+                buildString {
+                    append(scheduleText)
+                    item.durationMinutes?.let { append(" · ${formatDuration(it)}") }
+                },
+                modifier = Modifier.padding(top = 5.dp),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (item.steps.isNotEmpty()) {
+                Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    item.steps.forEach { step -> Text("• ${step.title}") }
+                }
+            }
+            if (item.note.isNotBlank()) {
+                Text(
+                    item.note,
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
     }
@@ -2508,6 +3051,135 @@ private fun AiTextDialog(
 }
 
 @Composable
+private fun IdeaEditorDialog(
+    idea: InboxIdea?,
+    loading: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String, Int?, String?, String?, List<IdeaDetail>) -> Unit,
+) {
+    var content by rememberSaveable(idea?.id) { mutableStateOf(idea?.content.orEmpty()) }
+    var durationText by rememberSaveable(idea?.id) {
+        mutableStateOf(idea?.durationMinutes?.toString().orEmpty())
+    }
+    var startAt by remember(idea?.id) { mutableStateOf(idea?.startAt?.let(::parseIdeaDateTime)) }
+    var dueAt by remember(idea?.id) { mutableStateOf(idea?.dueAt?.let(::parseIdeaDateTime)) }
+    var itemTexts by remember(idea?.id) {
+        mutableStateOf(idea?.items?.map { it.content }.orEmpty())
+    }
+    var pickerTarget by remember { mutableStateOf<String?>(null) }
+    val windowInvalid = startAt != null && dueAt != null && startAt!!.isAfter(dueAt)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (idea == null) "记下一个想法" else "编辑想法") },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "想法不等于承诺。只记录此刻的内容，时间可以以后再决定。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                FloatingUnderlineTextField(
+                    value = content,
+                    onValueChange = { content = it.take(10_000) },
+                    label = "想法内容",
+                    singleLine = false,
+                )
+                FloatingUnderlineTextField(
+                    value = durationText,
+                    onValueChange = { durationText = it.filter(Char::isDigit).take(6) },
+                    label = "预计持续分钟数（可不填）",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    supportingText = "不确定或没有限制时留空即可",
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { pickerTarget = "start" },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(startAt?.format(DateTimeFormatter.ofPattern("M月d日 HH:mm")) ?: "选择开始时间")
+                    }
+                    OutlinedButton(
+                        onClick = { pickerTarget = "due" },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(dueAt?.format(DateTimeFormatter.ofPattern("M月d日 HH:mm")) ?: "选择截止时间")
+                    }
+                }
+                if (startAt != null || dueAt != null) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { startAt = null }) { Text("清除开始") }
+                        TextButton(onClick = { dueAt = null }) { Text("清除截止") }
+                    }
+                }
+                if (windowInvalid) {
+                    Text("开始时间不能晚于截止时间", color = MaterialTheme.colorScheme.error)
+                }
+                Text("想法子项（可选）", style = MaterialTheme.typography.titleSmall)
+                itemTexts.forEachIndexed { index, value ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FloatingUnderlineTextField(
+                            value = value,
+                            onValueChange = { next ->
+                                itemTexts = itemTexts.toMutableList().also { it[index] = next.take(500) }
+                            },
+                            label = "细节 ${index + 1}",
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(
+                            onClick = {
+                                itemTexts = itemTexts.toMutableList().also { it.removeAt(index) }
+                            },
+                        ) {
+                            Icon(Icons.Outlined.DeleteOutline, contentDescription = "删除子项")
+                        }
+                    }
+                }
+                if (itemTexts.size < 30) {
+                    TextButton(onClick = { itemTexts = itemTexts + "" }) { Text("＋ 添加一个细节") }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        content.trim(),
+                        durationText.toIntOrNull()?.coerceIn(1, 525_600),
+                        startAt?.atZone(ZoneId.systemDefault())?.toInstant()?.toString(),
+                        dueAt?.atZone(ZoneId.systemDefault())?.toInstant()?.toString(),
+                        itemTexts.mapNotNull { text ->
+                            text.trim().takeIf(String::isNotBlank)?.let(::IdeaDetail)
+                        },
+                    )
+                },
+                enabled = !loading && content.isNotBlank() && !windowInvalid,
+            ) { Text("保存到收件匣") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("取消") } },
+    )
+
+    pickerTarget?.let { target ->
+        TaskDateTimePickerDialog(
+            title = if (target == "start") "设置开始时间" else "设置截止时间",
+            initialDateTime = if (target == "start") startAt else dueAt,
+            onDismiss = { pickerTarget = null },
+            onConfirm = { selected ->
+                if (target == "start") startAt = selected else dueAt = selected
+                pickerTarget = null
+            },
+        )
+    }
+}
+
+private fun parseIdeaDateTime(value: String): LocalDateTime? = runCatching {
+    OffsetDateTime.parse(value).atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()
+}.getOrNull()
+
+@Composable
 private fun CreateTaskDialog(
     loading: Boolean,
     onDismiss: () -> Unit,
@@ -2589,6 +3261,7 @@ private fun CreateTaskDialog(
 
 @Composable
 private fun TaskDateTimePickerDialog(
+    title: String = "设置截止时间",
     initialDateTime: LocalDateTime?,
     onDismiss: () -> Unit,
     onConfirm: (LocalDateTime) -> Unit,
@@ -2627,7 +3300,7 @@ private fun TaskDateTimePickerDialog(
                         .padding(horizontal = 24.dp, vertical = 20.dp),
                 ) {
                     Text(
-                        "设置截止时间",
+                        title,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
                         style = MaterialTheme.typography.labelLarge,
                     )

@@ -22,12 +22,47 @@ id                       INTEGER primary key
 user_id                  INTEGER -> users.id
 title                    VARCHAR(200)
 description              TEXT nullable
+start_at                  TIMESTAMPTZ nullable
 due_at                   TIMESTAMPTZ nullable
+duration_minutes          INTEGER nullable
 reminder_offset_minutes  INTEGER nullable
 completed                BOOLEAN
 completed_at             TIMESTAMPTZ nullable
 created_at               TIMESTAMPTZ
 updated_at               TIMESTAMPTZ
+```
+
+### ideas
+
+收件匣保存尚未形成执行承诺的想法。想法没有完成状态；被用户采用的 AI 计划转成任务后，通过 `converted_task_id` 标记来源。
+
+```text
+id                 INTEGER primary key
+user_id            INTEGER -> users.id
+content            TEXT
+duration_minutes   INTEGER nullable
+start_at           TIMESTAMPTZ nullable
+due_at             TIMESTAMPTZ nullable
+items              JSON
+converted_task_id  INTEGER -> tasks.id nullable
+created_at         TIMESTAMPTZ
+updated_at         TIMESTAMPTZ
+```
+
+### ai_plans
+
+保存 AI 计划草案、当前方案和对话历史。只有用户主动采用后，计划才会创建或调整正式任务。
+
+```text
+id           INTEGER primary key
+user_id      INTEGER -> users.id
+status       draft | accepted
+title        VARCHAR(120)
+proposal     JSON
+messages     JSON
+accepted_at  TIMESTAMPTZ nullable
+created_at   TIMESTAMPTZ
+updated_at   TIMESTAMPTZ
 ```
 
 服务启动时会为当前 MVP 自动创建缺失表，并为已有数据库补齐提醒字段。生产环境正式发布前需要切换到 Alembic 迁移，避免仅依赖启动时迁移。

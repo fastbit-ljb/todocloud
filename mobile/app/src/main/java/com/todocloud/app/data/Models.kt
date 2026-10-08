@@ -21,6 +21,57 @@ data class TaskItem(
     val completed: Boolean,
     val completedAt: String?,
     val steps: List<TaskStep> = emptyList(),
+    val startAt: String? = null,
+    val durationMinutes: Int? = null,
+)
+
+data class IdeaDetail(
+    val content: String,
+)
+
+data class InboxIdea(
+    val id: Int,
+    val content: String,
+    val durationMinutes: Int?,
+    val startAt: String?,
+    val dueAt: String?,
+    val items: List<IdeaDetail> = emptyList(),
+)
+
+data class PlanStep(
+    val title: String,
+)
+
+data class PlanItem(
+    val sourceType: String,
+    val sourceId: Int,
+    val title: String,
+    val description: String?,
+    val startAt: String?,
+    val dueAt: String?,
+    val durationMinutes: Int?,
+    val reminderOffsetMinutes: Int?,
+    val steps: List<PlanStep> = emptyList(),
+    val note: String,
+)
+
+data class PlanMessage(
+    val role: String,
+    val content: String,
+)
+
+data class AiPlan(
+    val id: Int,
+    val status: String,
+    val title: String,
+    val summary: String,
+    val items: List<PlanItem>,
+    val messages: List<PlanMessage>,
+)
+
+data class PlanAcceptResult(
+    val plan: AiPlan,
+    val tasks: List<TaskItem>,
 )
 
 data class AiTaskStep(

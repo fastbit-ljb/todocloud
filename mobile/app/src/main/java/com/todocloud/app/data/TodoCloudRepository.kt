@@ -183,6 +183,103 @@ class TodoCloudRepository(context: Context) {
         }
     }
 
+    suspend fun listIdeas(token: String): List<InboxIdea> {
+        val response = authorizedRequest(token) { authToken ->
+            Request.Builder().url(baseUrl + "/ideas").authorized(authToken).get().build()
+        }
+        return (response as JSONArray).toIdeas()
+    }
+
+    suspend fun createIdea(
+        token: String,
+        content: String,
+        durationMinutes: Int?,
+        startAt: String?,
+        dueAt: String?,
+        items: List<IdeaDetail>,
+    ): InboxIdea {
+        val payload = ideaPayload(content, durationMinutes, startAt, dueAt, items)
+        val response = authorizedRequest(token) { authToken ->
+            Request.Builder()
+                .url(baseUrl + "/ideas")
+                .authorized(authToken)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+        }
+        return parseIdea(response as JSONObject)
+    }
+
+    suspend fun updateIdea(
+        token: String,
+        id: Int,
+        content: String,
+        durationMinutes: Int?,
+        startAt: String?,
+        dueAt: String?,
+        items: List<IdeaDetail>,
+    ): InboxIdea {
+        val payload = ideaPayload(content, durationMinutes, startAt, dueAt, items)
+        val response = authorizedRequest(token) { authToken ->
+            Request.Builder()
+                .url("$baseUrl/ideas/$id")
+                .authorized(authToken)
+                .patch(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+        }
+        return parseIdea(response as JSONObject)
+    }
+
+    suspend fun deleteIdea(token: String, id: Int) {
+        authorizedRequest(token) { authToken ->
+            Request.Builder().url("$baseUrl/ideas/$id").authorized(authToken).delete().build()
+        }
+    }
+
+    suspend fun listPlans(token: String): List<AiPlan> {
+        val response = authorizedRequest(token) { authToken ->
+            Request.Builder().url(baseUrl + "/plans").authorized(authToken).get().build()
+        }
+        return (response as JSONArray).toPlans()
+    }
+
+    suspend fun generatePlan(token: String, message: String): AiPlan {
+        val payload = planningPayload(message)
+        val response = authorizedRequest(token) { authToken ->
+            Request.Builder()
+                .url(baseUrl + "/plans/generate")
+                .authorized(authToken)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+        }
+        return parsePlan(response as JSONObject)
+    }
+
+    suspend fun revisePlan(token: String, planId: Int, message: String): AiPlan {
+        val payload = planningPayload(message)
+        val response = authorizedRequest(token) { authToken ->
+            Request.Builder()
+                .url("$baseUrl/plans/$planId/messages")
+                .authorized(authToken)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+        }
+        return parsePlan(response as JSONObject)
+    }
+
+    suspend fun acceptPlan(token: String, planId: Int): PlanAcceptResult {
+        val response = authorizedRequest(token) { authToken ->
+            Request.Builder()
+                .url("$baseUrl/plans/$planId/accept")
+                .authorized(authToken)
+                .post("{}".toRequestBody(jsonMediaType))
+                .build()
+        } as JSONObject
+        return PlanAcceptResult(
+            plan = parsePlan(response.getJSONObject("plan")),
+            tasks = response.getJSONArray("tasks").toTaskItems(),
+        )
+    }
+
     suspend fun parseScreenshot(token: String, imageUri: Uri): AiParseResult {
         val (imageBytes, contentType) = withContext(Dispatchers.IO) {
             prepareScreenshotForUpload(imageUri)
@@ -422,7 +519,94 @@ class TodoCloudRepository(context: Context) {
         completed = json.optBoolean("completed"),
         completedAt = json.optNullableString("completed_at"),
         steps = json.optTaskSteps(),
+        startAt = json.optNullableString("start_at"),
+        durationMinutes = json.optNullableInt("duration_minutes"),
     )
+
+    private fun ideaPayload(
+        content: String,
+        durationMinutes: Int?,
+        startAt: String?,
+        dueAt: String?,
+        items: List<IdeaDetail>,
+    ): JSONObject = JSONObject().apply {
+        put("content", content)
+        put("duration_minutes", durationMinutes ?: JSONObject.NULL)
+        put("start_at", startAt ?: JSONObject.NULL)
+        put("due_at", dueAt ?: JSONObject.NULL)
+        put("items", JSONArray().apply {
+            items.forEach { item -> put(JSONObject().put("content", item.content)) }
+        })
+    }
+
+    private fun planningPayload(message: String): JSONObject = JSONObject().apply {
+        put("message", message)
+        put("reference_at", currentAiReferenceAt())
+        put("timezone_name", java.time.ZoneId.systemDefault().id)
+    }
+
+    private fun parseIdea(json: JSONObject): InboxIdea = InboxIdea(
+        id = json.getInt("id"),
+        content = json.getString("content"),
+        durationMinutes = json.optNullableInt("duration_minutes"),
+        startAt = json.optNullableString("start_at"),
+        dueAt = json.optNullableString("due_at"),
+        items = json.optJSONArray("items")?.let { array ->
+            buildList {
+                for (index in 0 until array.length()) {
+                    val content = array.optJSONObject(index)?.optString("content")?.trim().orEmpty()
+                    if (content.isNotBlank()) add(IdeaDetail(content))
+                }
+            }
+        }.orEmpty(),
+    )
+
+    private fun parsePlan(json: JSONObject): AiPlan {
+        val proposal = json.getJSONObject("proposal")
+        return AiPlan(
+            id = json.getInt("id"),
+            status = json.getString("status"),
+            title = json.getString("title"),
+            summary = proposal.optString("summary"),
+            items = proposal.optJSONArray("items")?.let { array ->
+                buildList {
+                    for (index in 0 until array.length()) {
+                        val item = array.getJSONObject(index)
+                        add(
+                            PlanItem(
+                                sourceType = item.getString("source_type"),
+                                sourceId = item.getInt("source_id"),
+                                title = item.getString("title"),
+                                description = item.optNullableString("description"),
+                                startAt = item.optNullableString("start_at"),
+                                dueAt = item.optNullableString("due_at"),
+                                durationMinutes = item.optNullableInt("duration_minutes"),
+                                reminderOffsetMinutes = item.optNullableInt("reminder_offset_minutes"),
+                                steps = item.optJSONArray("steps")?.let { steps ->
+                                    buildList {
+                                        for (stepIndex in 0 until steps.length()) {
+                                            val title = steps.optJSONObject(stepIndex)
+                                                ?.optString("title")?.trim().orEmpty()
+                                            if (title.isNotBlank()) add(PlanStep(title))
+                                        }
+                                    }
+                                }.orEmpty(),
+                                note = item.optString("note"),
+                            ),
+                        )
+                    }
+                }
+            }.orEmpty(),
+            messages = json.optJSONArray("messages")?.let { array ->
+                buildList {
+                    for (index in 0 until array.length()) {
+                        val item = array.optJSONObject(index) ?: continue
+                        add(PlanMessage(item.optString("role"), item.optString("content")))
+                    }
+                }
+            }.orEmpty(),
+        )
+    }
 
     private fun JSONObject.optTaskSteps(): List<TaskStep> {
         val array = optJSONArray("steps") ?: return emptyList()
@@ -460,6 +644,14 @@ class TodoCloudRepository(context: Context) {
 
     private fun JSONArray.toTaskItems(): List<TaskItem> = buildList {
         for (index in 0 until length()) add(parseTask(getJSONObject(index)))
+    }
+
+    private fun JSONArray.toIdeas(): List<InboxIdea> = buildList {
+        for (index in 0 until length()) add(parseIdea(getJSONObject(index)))
+    }
+
+    private fun JSONArray.toPlans(): List<AiPlan> = buildList {
+        for (index in 0 until length()) add(parsePlan(getJSONObject(index)))
     }
 
     private companion object {

@@ -55,6 +55,28 @@ DELETE /tasks/{task_id}
 
 Android 客户端会根据任务的截止时间和提醒偏移量设置本地 AlarmManager，并通过系统通知渠道提醒用户；已完成任务或已过期提醒不会重复调度。
 
+## 当前已实现：收件匣想法
+
+```text
+GET    /ideas
+POST   /ideas
+PATCH  /ideas/{idea_id}
+DELETE /ideas/{idea_id}
+```
+
+想法只要求 `content`；`duration_minutes`、`start_at`、`due_at` 和 `items` 都是可选项。想法不提供完成状态，也不会直接触发提醒。
+
+## 当前已实现：AI 计划
+
+```text
+GET  /plans
+POST /plans/generate
+POST /plans/{plan_id}/messages
+POST /plans/{plan_id}/accept
+```
+
+AI 结合未转化的收件匣想法和未完成任务生成草案。用户可以通过消息反复要求调整；采用前不会写入正式任务。默认保护早餐 `07:30-08:30`、午餐 `12:00-13:00`、晚餐 `18:00-19:00` 和睡眠 `23:00-07:00`，只有吃饭、旅行交通、就医或真正紧急的固定事项可以例外。
+
 ## 当前已实现：截图 AI 候选
 
 ```text

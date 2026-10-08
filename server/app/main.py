@@ -34,6 +34,12 @@ async def lifespan(_: FastAPI):
             )
         )
         await connection.execute(
+            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS start_at TIMESTAMPTZ")
+        )
+        await connection.execute(
+            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS duration_minutes INTEGER")
+        )
+        await connection.execute(
             text(
                 "UPDATE tasks SET completed_at = updated_at "
                 "WHERE completed = TRUE AND completed_at IS NULL"

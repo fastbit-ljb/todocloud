@@ -21,7 +21,9 @@ class TaskStep(BaseModel):
 class TaskCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=10_000)
+    start_at: datetime | None = None
     due_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=1, le=525_600)
     reminder_offset_minutes: int | None = Field(default=None, ge=0, le=10_080)
     steps: list[TaskStep] = Field(default_factory=list, max_length=30)
 
@@ -29,7 +31,9 @@ class TaskCreateRequest(BaseModel):
 class TaskUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=10_000)
+    start_at: datetime | None = None
     due_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=1, le=525_600)
     reminder_offset_minutes: int | None = Field(default=None, ge=0, le=10_080)
     completed: bool | None = None
     steps: list[TaskStep] | None = Field(default=None, max_length=30)
@@ -41,7 +45,9 @@ class TaskResponse(BaseModel):
     id: int
     title: str
     description: str | None
+    start_at: datetime | None
     due_at: datetime | None
+    duration_minutes: int | None
     reminder_offset_minutes: int | None
     completed: bool
     completed_at: datetime | None
@@ -77,10 +83,17 @@ async def create_task(
         user_id=user.id,
         title=payload.title.strip(),
         description=payload.description,
+        start_at=payload.start_at,
         due_at=payload.due_at,
+        duration_minutes=payload.duration_minutes,
         reminder_offset_minutes=payload.reminder_offset_minutes,
         steps=[step.model_dump() for step in payload.steps],
     )
+    if task.start_at and task.due_at and task.start_at > task.due_at:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="开始时间不能晚于截止时间",
+        )
     db.add(task)
     await db.commit()
     await db.refresh(task)
@@ -107,6 +120,11 @@ async def update_task(
             elif not value:
                 task.completed_at = None
         setattr(task, field, value)
+    if task.start_at and task.due_at and task.start_at > task.due_at:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="开始时间不能晚于截止时间",
+        )
     await db.commit()
     await db.refresh(task)
     return task
