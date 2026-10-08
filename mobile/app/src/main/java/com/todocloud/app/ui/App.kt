@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -1813,7 +1814,11 @@ private fun AiPlanScreen(
         mutableStateOf<Set<Int>>(ideas.mapTo(linkedSetOf()) { it.id })
     }
     Column(
-        modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .consumeWindowInsets(paddingValues)
+            .padding(horizontal = 16.dp),
     ) {
         if (plan != null) {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -1935,35 +1940,37 @@ private fun AiPlanScreen(
         }
 
         if (plan.status == "draft") {
-            FloatingUnderlineTextField(
-                value = message,
-                onValueChange = { message = it.take(4000) },
-                label = "告诉 AI 你想怎么调整",
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = false,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Button(
-                    onClick = { onAccept(plan.id) },
-                    enabled = !loading && plan.items.isNotEmpty(),
-                    modifier = Modifier.weight(1f),
-                ) { Text("采用这份计划") }
-                IconButton(
-                    onClick = {
-                        val request = message.trim()
-                        if (request.isNotEmpty()) {
-                            onRevise(plan.id, request)
-                            message = ""
-                        }
-                    },
-                    enabled = !loading && message.isNotBlank(),
+            Column(modifier = Modifier.imePadding()) {
+                FloatingUnderlineTextField(
+                    value = message,
+                    onValueChange = { message = it.take(4000) },
+                    label = "告诉 AI 你想怎么调整",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    else Icon(Icons.Outlined.Send, contentDescription = "发送调整要求")
+                    Button(
+                        onClick = { onAccept(plan.id) },
+                        enabled = !loading && plan.items.isNotEmpty(),
+                        modifier = Modifier.weight(1f),
+                    ) { Text("采用这份计划") }
+                    IconButton(
+                        onClick = {
+                            val request = message.trim()
+                            if (request.isNotEmpty()) {
+                                onRevise(plan.id, request)
+                                message = ""
+                            }
+                        },
+                        enabled = !loading && message.isNotBlank(),
+                    ) {
+                        if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        else Icon(Icons.Outlined.Send, contentDescription = "发送调整要求")
+                    }
                 }
             }
         } else {
@@ -1993,102 +2000,102 @@ private fun AiPlanLanding(
     onInboxClick: () -> Unit,
     onSubmit: () -> Unit,
 ) {
-    Column(modifier = modifier.fillMaxWidth().imePadding()) {
+    Box(modifier = modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 34.dp, start = 6.dp, end = 6.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 34.dp, start = 6.dp, end = 6.dp),
         ) {
-            Text(
-                "你好！",
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            TypewriterPlanQuestion(modifier = Modifier.padding(top = 8.dp))
-            Text(
-                if (ideas.isEmpty()) {
-                    "直接告诉我你的安排；也可以点收件匣先记下一个想法。"
-                } else {
-                    "直接告诉我你的安排；点收件匣可以选择哪些想法参与这次规划。"
-                },
-                modifier = Modifier.padding(top = 18.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            TypewriterPlanPrompt()
         }
 
-        if (loading) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                Text(
-                    "正在整理你的计划…",
-                    modifier = Modifier.padding(start = 10.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+        Column(
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding(),
+        ) {
+            if (loading) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text(
+                        "正在整理你的计划…",
+                        modifier = Modifier.padding(start = 10.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
-        }
 
-        AiPlanPromptField(
-            value = message,
-            onValueChange = onMessageChange,
-            ideaCount = ideas.size,
-            selectedIdeaCount = selectedIdeaIds.size,
-            loading = loading,
-            canSubmit = canGenerate,
-            onInboxClick = onInboxClick,
-            onSubmit = onSubmit,
-        )
-        Text(
-            when {
-                ideas.isEmpty() -> "收件匣为空也可以直接生成计划"
-                selectedIdeaIds.isEmpty() -> "本次不参考收件匣内容"
-                else -> "本次参考 ${selectedIdeaIds.size}/${ideas.size} 个收件匣想法"
-            },
-            modifier = Modifier.padding(top = 7.dp, bottom = 12.dp, start = 10.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelSmall,
-        )
+            AiPlanPromptField(
+                modifier = Modifier.padding(bottom = 12.dp),
+                value = message,
+                onValueChange = onMessageChange,
+                ideaCount = ideas.size,
+                selectedIdeaCount = selectedIdeaIds.size,
+                loading = loading,
+                canSubmit = canGenerate,
+                onInboxClick = onInboxClick,
+                onSubmit = onSubmit,
+            )
+        }
     }
 }
 
 @Composable
-private fun TypewriterPlanQuestion(modifier: Modifier = Modifier) {
+private fun TypewriterPlanPrompt() {
+    val greetings = remember {
+        listOf(
+            "你好！",
+            "嗨！",
+            "欢迎回来！",
+            "见到你真好！",
+        )
+    }
     val questions = remember {
         listOf(
             "你有什么计划吗？",
             "今天想完成什么？",
             "有什么想法想变成计划？",
             "哪些事情需要我帮你安排？",
+            "接下来想做些什么？",
         )
     }
-    var displayedText by remember { mutableStateOf("") }
+    val greeting = remember { greetings.random() }
+    val question = remember { questions.random() }
+    var displayedGreeting by remember { mutableStateOf("") }
+    var displayedQuestion by remember { mutableStateOf("") }
+    var activeLine by remember { mutableIntStateOf(0) }
     var cursorVisible by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
-        while (true) {
-            questions.forEach { question ->
-                displayedText = ""
-                cursorVisible = true
-                question.forEach { character ->
-                    delay(if (character == '，' || character == '？') 150L else 82L)
-                    displayedText += character
-                }
-                repeat(5) {
-                    delay(280L)
-                    cursorVisible = !cursorVisible
-                }
-                delay(380L)
-            }
+        delay(120L)
+        greeting.forEach { character ->
+            delay(if (character == '！') 140L else 88L)
+            displayedGreeting += character
         }
+        delay(260L)
+        activeLine = 1
+        question.forEach { character ->
+            delay(if (character == '，' || character == '？') 150L else 82L)
+            displayedQuestion += character
+        }
+        repeat(4) {
+            delay(280L)
+            cursorVisible = !cursorVisible
+        }
+        cursorVisible = false
     }
 
     Text(
-        text = displayedText + if (cursorVisible) "｜" else "",
-        modifier = modifier.fillMaxWidth().heightIn(min = 92.dp),
+        text = displayedGreeting + if (activeLine == 0 && cursorVisible) "｜" else "",
+        modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp),
+        color = MaterialTheme.colorScheme.primary,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Text(
+        text = displayedQuestion + if (activeLine == 1 && cursorVisible) "｜" else "",
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 92.dp),
         style = MaterialTheme.typography.headlineLarge.copy(
             fontWeight = FontWeight.SemiBold,
             lineHeight = 43.sp,
@@ -2098,6 +2105,7 @@ private fun TypewriterPlanQuestion(modifier: Modifier = Modifier) {
 
 @Composable
 private fun AiPlanPromptField(
+    modifier: Modifier = Modifier,
     value: String,
     onValueChange: (String) -> Unit,
     ideaCount: Int,
@@ -2108,7 +2116,7 @@ private fun AiPlanPromptField(
     onSubmit: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
