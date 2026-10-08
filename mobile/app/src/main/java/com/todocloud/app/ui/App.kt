@@ -14,7 +14,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.StartOffset
@@ -3138,9 +3137,7 @@ private fun IdeaEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier
-            .animateContentSize(animationSpec = tween(durationMillis = 260))
-            .imePadding(),
+        modifier = Modifier.imePadding(),
         properties = DialogProperties(decorFitsSystemWindows = false),
         title = { Text(if (idea == null) "记下一个想法" else "编辑想法") },
         text = {
