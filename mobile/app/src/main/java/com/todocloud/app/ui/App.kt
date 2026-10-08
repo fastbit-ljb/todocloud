@@ -3125,7 +3125,7 @@ private fun AiTextDialog(
             TextButton(
                 onClick = { onParse(text.trim()) },
                 enabled = !loading && text.isNotBlank(),
-            ) { Text(if (loading) "提取中…" else "开始提取") }
+            ) { Text(if (loading) "创建中…" else "创建计划") }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("取消") } },
     )
