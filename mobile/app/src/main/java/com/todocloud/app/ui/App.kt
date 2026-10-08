@@ -68,7 +68,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Alarm
@@ -77,7 +76,6 @@ import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Checklist
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -117,6 +115,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
@@ -1123,41 +1122,13 @@ private fun TaskAddSpeedDial(
     onScreenshot: () -> Unit,
     onText: () -> Unit,
 ) {
-    val haloScale by animateFloatAsState(
-        targetValue = if (expanded) 1f else 0.36f,
-        animationSpec = tween(430, easing = UiverseEase),
-        label = "addMenuHaloScale",
-    )
-    val haloAlpha by animateFloatAsState(
-        targetValue = if (expanded) 0.62f else 0f,
-        animationSpec = tween(if (expanded) 260 else 180, easing = UiverseEase),
-        label = "addMenuHaloAlpha",
-    )
-    val plusAlpha by animateFloatAsState(
-        targetValue = if (expanded) 0f else 1f,
-        animationSpec = tween(150),
-        label = "addMenuPlusAlpha",
-    )
-    val closeAlpha by animateFloatAsState(
-        targetValue = if (expanded) 1f else 0f,
-        animationSpec = tween(150),
-        label = "addMenuCloseAlpha",
+    val symbolRotation by animateFloatAsState(
+        targetValue = if (expanded) 45f else 0f,
+        animationSpec = tween(360, easing = CubicBezierEasing(0.22f, 0.8f, 0.24f, 1f)),
+        label = "addMenuSymbolRotation",
     )
 
     Box(modifier = Modifier.size(216.dp)) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .offset(x = 54.dp, y = 54.dp)
-                .size(176.dp)
-                .graphicsLayer {
-                    scaleX = haloScale
-                    scaleY = haloScale
-                    alpha = haloAlpha
-                }
-                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-        )
-
         TaskAddAction(
             icon = Icons.Outlined.EditNote,
             contentDescription = "手动添加任务",
@@ -1209,21 +1180,26 @@ private fun TaskAddSpeedDial(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ) {
-            Box(modifier = Modifier.size(30.dp), contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Outlined.Add,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = plusAlpha },
-                )
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = closeAlpha },
-                )
+            val symbolColor = MaterialTheme.colorScheme.onSecondaryContainer
+            Canvas(modifier = Modifier.size(30.dp)) {
+                val armLength = 10.dp.toPx()
+                val lineWidth = 2.6.dp.toPx()
+                withTransform({ rotate(symbolRotation, pivot = center) }) {
+                    drawLine(
+                        color = symbolColor,
+                        start = Offset(center.x - armLength, center.y),
+                        end = Offset(center.x + armLength, center.y),
+                        strokeWidth = lineWidth,
+                        cap = StrokeCap.Round,
+                    )
+                    drawLine(
+                        color = symbolColor,
+                        start = Offset(center.x, center.y - armLength),
+                        end = Offset(center.x, center.y + armLength),
+                        strokeWidth = lineWidth,
+                        cap = StrokeCap.Round,
+                    )
+                }
             }
         }
     }
