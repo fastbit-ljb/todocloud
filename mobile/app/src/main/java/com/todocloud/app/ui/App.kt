@@ -523,6 +523,31 @@ fun TodoCloudApp(
         items.forEach { ReminderScheduler.schedule(context, it) }
     }
 
+    suspend fun removeIdeasConvertedToTasks(
+        token: String,
+        currentIdeas: List<InboxIdea>,
+        acceptedPlans: List<AiPlan>,
+    ): List<InboxIdea> {
+        val currentIdeaIds = currentIdeas.mapTo(mutableSetOf()) { it.id }
+        val convertedIdeaIds = acceptedPlans
+            .asSequence()
+            .filter { it.status == "accepted" }
+            .flatMap { it.items.asSequence() }
+            .filter { it.sourceType == "idea" && it.sourceId in currentIdeaIds }
+            .map { it.sourceId }
+            .toSet()
+        convertedIdeaIds.forEach { ideaId ->
+            try {
+                repository.deleteIdea(token, ideaId)
+            } catch (exception: ApiException) {
+                // Newer servers already hide converted ideas atomically.
+                // Older servers still need the explicit delete request.
+                if (exception.statusCode != 404) throw exception
+            }
+        }
+        return currentIdeas.filterNot { it.id in convertedIdeaIds }
+    }
+
     val screenshotLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent(),
     ) { uri ->
@@ -555,8 +580,14 @@ fun TodoCloudApp(
             error = null
             try {
                 tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
-                ideas = repository.listIdeas(currentSession.token)
-                plans = repository.listPlans(currentSession.token)
+                val loadedIdeas = repository.listIdeas(currentSession.token)
+                val loadedPlans = repository.listPlans(currentSession.token)
+                plans = loadedPlans
+                ideas = removeIdeasConvertedToTasks(
+                    token = currentSession.token,
+                    currentIdeas = loadedIdeas,
+                    acceptedPlans = loadedPlans,
+                )
                 tasksLoaded = true
             } catch (exception: ApiException) {
                 handleApiError(exception)
@@ -847,6 +878,11 @@ fun TodoCloudApp(
                         try {
                             val accepted = repository.acceptPlan(currentSession.token, planId)
                             plans = listOf(accepted.plan) + plans.filterNot { it.id == accepted.plan.id }
+                            ideas = removeIdeasConvertedToTasks(
+                                token = currentSession.token,
+                                currentIdeas = ideas,
+                                acceptedPlans = listOf(accepted.plan),
+                            )
                             tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
                             ideas = repository.listIdeas(currentSession.token)
                             MascotStateManager.recordMeaningfulActivity(context)
