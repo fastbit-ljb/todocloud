@@ -73,6 +73,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -221,6 +222,13 @@ private data class CardShatterRequest(
     val task: TaskItem,
     val cardLayer: GraphicsLayer,
     val boundsInRoot: Rect,
+)
+
+private data class TaskViewportAnchor(
+    val firstVisibleItemIndex: Int,
+    val firstVisibleItemScrollOffset: Int,
+    val movingTaskId: Int,
+    val originalTaskIndex: Int,
 )
 
 private fun sortTasks(tasks: List<TaskItem>): List<TaskItem> = tasks.sortedWith { left, right ->
@@ -1564,6 +1572,38 @@ private fun TaskHomeScreen(
     onDeleteIdea: (InboxIdea) -> Unit,
 ) {
     val homeTasks = remember(tasks) { visibleHomeTasks(tasks) }
+    val taskListState = rememberLazyListState()
+    val taskOrder = remember(homeTasks) { homeTasks.map { it.id } }
+    var pendingReorderAnchor by remember { mutableStateOf<TaskViewportAnchor?>(null) }
+
+    fun captureViewportForReorder(taskId: Int, taskIndex: Int) {
+        pendingReorderAnchor = TaskViewportAnchor(
+            firstVisibleItemIndex = taskListState.firstVisibleItemIndex,
+            firstVisibleItemScrollOffset = taskListState.firstVisibleItemScrollOffset,
+            movingTaskId = taskId,
+            originalTaskIndex = taskIndex,
+        )
+    }
+
+    LaunchedEffect(taskOrder) {
+        pendingReorderAnchor?.let { anchor ->
+            val reorderedTaskIndex = homeTasks.indexOfFirst { it.id == anchor.movingTaskId }
+            if (reorderedTaskIndex >= 0 && reorderedTaskIndex != anchor.originalTaskIndex) {
+                taskListState.requestScrollToItem(
+                    index = anchor.firstVisibleItemIndex.coerceAtMost(homeTasks.lastIndex),
+                    scrollOffset = anchor.firstVisibleItemScrollOffset,
+                )
+                pendingReorderAnchor = null
+            }
+        }
+    }
+    LaunchedEffect(pendingReorderAnchor) {
+        val anchor = pendingReorderAnchor ?: return@LaunchedEffect
+        delay(15_000L)
+        if (pendingReorderAnchor == anchor) {
+            pendingReorderAnchor = null
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1612,6 +1652,7 @@ private fun TaskHomeScreen(
                 )
             } else {
                 LazyColumn(
+                state = taskListState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
@@ -1647,8 +1688,21 @@ private fun TaskHomeScreen(
                         ),
                         task = task,
                         entryIndex = index,
-                        onToggle = { onToggle(task) },
-                        onStepToggle = { index -> onStepToggle(task, index) },
+                        onToggle = {
+                            captureViewportForReorder(task.id, index)
+                            onToggle(task)
+                        },
+                        onStepToggle = { stepIndex ->
+                            val nextCompleted = task.steps
+                                .mapIndexed { currentIndex, step ->
+                                    if (currentIndex == stepIndex) !step.completed else step.completed
+                                }
+                                .let { nextSteps -> nextSteps.isNotEmpty() && nextSteps.all { it } }
+                            if (nextCompleted != task.completed) {
+                                captureViewportForReorder(task.id, index)
+                            }
+                            onStepToggle(task, stepIndex)
+                        },
                         onReminderChange = { offsetMinutes -> onReminderChange(task, offsetMinutes) },
                         onDelete = { onDelete(task) },
                     )
