@@ -29,6 +29,22 @@ class PlanAiTests(unittest.TestCase):
         self.assertIn("赶火车或飞机", prompt)
         self.assertIn("想法不是承诺", prompt)
 
+    def test_prompt_expands_plan_requests_into_concrete_work(self) -> None:
+        prompt = _build_plan_prompt(
+            [],
+            [],
+            self.reference,
+            "Asia/Shanghai",
+            "给我制定一天的考研学习计划",
+            None,
+            [],
+        )
+
+        self.assertIn("直接产出并排好可执行内容", prompt)
+        self.assertIn("禁止输出“制定规划、列出科目、细化计划", prompt)
+        self.assertIn("英语、数学或专业课等具体复习/练习时段", prompt)
+        self.assertIn("不要用准备计划代替真正执行", prompt)
+
     def test_normalize_filters_unknown_and_duplicate_sources(self) -> None:
         raw = {
             "summary": "留出吃饭和休息时间。",
