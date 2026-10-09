@@ -224,13 +224,6 @@ private data class CardShatterRequest(
     val boundsInRoot: Rect,
 )
 
-private data class TaskViewportAnchor(
-    val firstVisibleItemIndex: Int,
-    val firstVisibleItemScrollOffset: Int,
-    val movingTaskId: Int,
-    val originalTaskIndex: Int,
-)
-
 private fun sortTasks(tasks: List<TaskItem>): List<TaskItem> = tasks.sortedWith { left, right ->
     if (left.completed != right.completed) {
         return@sortedWith left.completed.compareTo(right.completed)
@@ -749,7 +742,7 @@ fun TodoCloudApp(
                     loading = loading,
                     showLoadingAnimation = taskHeaderLoading,
                     error = error,
-                    onToggle = { task ->
+                    onToggle = { task, prepareForReorder ->
                     runRequest {
                         val nextCompleted = !task.completed
                         val nextSteps = task.steps.takeIf { it.isNotEmpty() }
@@ -768,10 +761,11 @@ fun TodoCloudApp(
                         // can finish before the item changes position.
                         tasks = tasks.map { if (it.id == updated.id) updated else it }
                         delay(TASK_REORDER_DELAY_MILLIS.toLong())
+                        prepareForReorder()
                         tasks = sortTasks(tasks)
                     }
                 },
-                    onStepToggle = { task, stepIndex ->
+                    onStepToggle = { task, stepIndex, prepareForReorder ->
                     runRequest {
                         val nextSteps = task.steps.mapIndexed { index, step ->
                             if (index == stepIndex) step.copy(completed = !step.completed) else step
@@ -790,6 +784,7 @@ fun TodoCloudApp(
                         ReminderScheduler.schedule(context, updated)
                         tasks = tasks.map { if (it.id == updated.id) updated else it }
                         delay(TASK_REORDER_DELAY_MILLIS.toLong())
+                        prepareForReorder()
                         tasks = sortTasks(tasks)
                     }
                 },
@@ -1564,8 +1559,8 @@ private fun TaskHomeScreen(
     loading: Boolean,
     showLoadingAnimation: Boolean,
     error: String?,
-    onToggle: (TaskItem) -> Unit,
-    onStepToggle: (TaskItem, Int) -> Unit,
+    onToggle: (TaskItem, () -> Unit) -> Unit,
+    onStepToggle: (TaskItem, Int, () -> Unit) -> Unit,
     onReminderChange: (TaskItem, Int?) -> Unit,
     onDelete: (TaskItem) -> Unit,
     onEditIdea: (InboxIdea) -> Unit,
@@ -1573,36 +1568,16 @@ private fun TaskHomeScreen(
 ) {
     val homeTasks = remember(tasks) { visibleHomeTasks(tasks) }
     val taskListState = rememberLazyListState()
-    val taskOrder = remember(homeTasks) { homeTasks.map { it.id } }
-    var pendingReorderAnchor by remember { mutableStateOf<TaskViewportAnchor?>(null) }
 
-    fun captureViewportForReorder(taskId: Int, taskIndex: Int) {
-        pendingReorderAnchor = TaskViewportAnchor(
-            firstVisibleItemIndex = taskListState.firstVisibleItemIndex,
-            firstVisibleItemScrollOffset = taskListState.firstVisibleItemScrollOffset,
-            movingTaskId = taskId,
-            originalTaskIndex = taskIndex,
+    fun prepareViewportForReorder() {
+        if (homeTasks.isEmpty()) return
+        // Queue the index-based anchor before publishing the reordered list.
+        // Doing this after the list changes cancels long-distance placement
+        // animations and makes the cards between the two positions snap.
+        taskListState.requestScrollToItem(
+            index = taskListState.firstVisibleItemIndex.coerceAtMost(homeTasks.lastIndex),
+            scrollOffset = taskListState.firstVisibleItemScrollOffset,
         )
-    }
-
-    LaunchedEffect(taskOrder) {
-        pendingReorderAnchor?.let { anchor ->
-            val reorderedTaskIndex = homeTasks.indexOfFirst { it.id == anchor.movingTaskId }
-            if (reorderedTaskIndex >= 0 && reorderedTaskIndex != anchor.originalTaskIndex) {
-                taskListState.requestScrollToItem(
-                    index = anchor.firstVisibleItemIndex.coerceAtMost(homeTasks.lastIndex),
-                    scrollOffset = anchor.firstVisibleItemScrollOffset,
-                )
-                pendingReorderAnchor = null
-            }
-        }
-    }
-    LaunchedEffect(pendingReorderAnchor) {
-        val anchor = pendingReorderAnchor ?: return@LaunchedEffect
-        delay(15_000L)
-        if (pendingReorderAnchor == anchor) {
-            pendingReorderAnchor = null
-        }
     }
     Box(
         modifier = Modifier
@@ -1684,13 +1659,12 @@ private fun TaskHomeScreen(
                 itemsIndexed(homeTasks, key = { _, task -> task.id }) { index, task ->
                     TaskCard(
                         modifier = Modifier.animateItem(
-                            placementSpec = tween(durationMillis = 480, easing = UiverseEase),
+                            placementSpec = tween(durationMillis = 560, easing = UiverseEase),
                         ),
                         task = task,
                         entryIndex = index,
                         onToggle = {
-                            captureViewportForReorder(task.id, index)
-                            onToggle(task)
+                            onToggle(task, ::prepareViewportForReorder)
                         },
                         onStepToggle = { stepIndex ->
                             val nextCompleted = task.steps
@@ -1698,10 +1672,11 @@ private fun TaskHomeScreen(
                                     if (currentIndex == stepIndex) !step.completed else step.completed
                                 }
                                 .let { nextSteps -> nextSteps.isNotEmpty() && nextSteps.all { it } }
-                            if (nextCompleted != task.completed) {
-                                captureViewportForReorder(task.id, index)
+                            onStepToggle(task, stepIndex) {
+                                if (nextCompleted != task.completed) {
+                                    prepareViewportForReorder()
+                                }
                             }
-                            onStepToggle(task, stepIndex)
                         },
                         onReminderChange = { offsetMinutes -> onReminderChange(task, offsetMinutes) },
                         onDelete = { onDelete(task) },
