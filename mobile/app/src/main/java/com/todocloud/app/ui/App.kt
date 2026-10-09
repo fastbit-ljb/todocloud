@@ -602,26 +602,19 @@ fun TodoCloudApp(
     val planningTaskIds = planningTasks.mapTo(mutableSetOf()) { it.id }
     val planningIdeaIds = ideas.mapTo(mutableSetOf()) { it.id }
     val visiblePlan = plans.firstOrNull()?.takeIf { plan ->
-        fun sourceIsActive(sourceType: String, sourceId: Int, title: String): Boolean {
+        fun sourceIsActive(sourceType: String, sourceId: Int): Boolean {
             return when (sourceType) {
                 "task" -> sourceId in planningTaskIds
-                "idea" -> sourceId in planningIdeaIds || (
-                    plan.status == "accepted" && planningTasks.any { it.title == title }
-                )
-                "prompt" -> plan.status == "draft" || planningTasks.any { it.title == title }
+                "idea" -> sourceId in planningIdeaIds
+                "prompt" -> true
                 else -> false
             }
         }
 
-        plan.items.isNotEmpty() && if (plan.status == "draft") {
+        plan.status == "draft" && plan.items.isNotEmpty() &&
             plan.items.all { item ->
-                sourceIsActive(item.sourceType, item.sourceId, item.title)
+                sourceIsActive(item.sourceType, item.sourceId)
             }
-        } else {
-            plan.items.any { item ->
-                sourceIsActive(item.sourceType, item.sourceId, item.title)
-            }
-        }
     }
     val tabs = listOf(
         TabItem("任务") { Icon(Icons.Outlined.Checklist, contentDescription = "任务") },
@@ -1918,51 +1911,30 @@ private fun AiPlanScreen(
             }
         }
 
-        if (plan.status == "draft") {
-            Column(
-                modifier = Modifier.fillMaxWidth().imePadding().padding(bottom = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                AiPlanRevisionField(
-                    value = message,
-                    onValueChange = { message = it.take(4000) },
-                    loading = loading,
-                    onSubmit = {
-                        val request = message.trim()
-                        if (request.isNotEmpty()) {
-                            onRevise(plan.id, request)
-                            message = ""
-                        }
-                    },
-                )
-                Button(
-                    onClick = { onAccept(plan.id) },
-                    enabled = !loading && plan.items.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(18.dp),
-                ) {
-                    Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Text("采用计划", modifier = Modifier.padding(start = 7.dp))
-                }
-            }
-        } else {
-            OutlinedButton(
-                onClick = {
-                    onGenerate(
-                        "请根据我现在的收件匣和任务重新生成计划。",
-                        ideas.mapTo(linkedSetOf()) { it.id },
-                    )
+        Column(
+            modifier = Modifier.fillMaxWidth().imePadding().padding(bottom = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            AiPlanRevisionField(
+                value = message,
+                onValueChange = { message = it.take(4000) },
+                loading = loading,
+                onSubmit = {
+                    val request = message.trim()
+                    if (request.isNotEmpty()) {
+                        onRevise(plan.id, request)
+                        message = ""
+                    }
                 },
-                enabled = !loading,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).height(52.dp),
+            )
+            Button(
+                onClick = { onAccept(plan.id) },
+                enabled = !loading && plan.items.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(18.dp),
             ) {
-                if (loading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(19.dp))
-                    Text("重新规划", modifier = Modifier.padding(start = 7.dp))
-                }
+                Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(20.dp))
+                Text("采用计划", modifier = Modifier.padding(start = 7.dp))
             }
         }
     }
@@ -1970,18 +1942,17 @@ private fun AiPlanScreen(
 
 @Composable
 private fun AiPlanResultHeader(plan: AiPlan) {
-    val accepted = plan.status == "accepted"
     Column(
         modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, bottom = 30.dp),
     ) {
         Text(
-            if (accepted) "计划正在进行" else "计划准备好了",
+            "计划准备好了",
             color = MaterialTheme.colorScheme.primary,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            if (accepted) "接下来，照着安排慢慢完成" else "我这样安排，可以吗？",
+            "我这样安排，可以吗？",
             modifier = Modifier.padding(top = 8.dp),
             style = MaterialTheme.typography.headlineLarge.copy(
                 fontWeight = FontWeight.SemiBold,
