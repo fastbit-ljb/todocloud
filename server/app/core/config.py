@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30
     login_rate_limit_per_minute: int = 10
     ai_rate_limit_per_minute: int = 5
+    # Android update check (GET /app/version)
+    app_release_repo: str = "fastbit-ljb/todocloud"
+    app_min_supported_version: str = ""  # e.g. "1.3.0" forces older apps to update
+    app_latest_version_override: str = ""  # set to bypass GitHub, e.g. "1.3.3"
+    app_download_url_override: str = ""
+    app_release_notes_override: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

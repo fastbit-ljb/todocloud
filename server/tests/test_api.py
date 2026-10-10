@@ -303,6 +303,20 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await conn.close()
 
+    async def test_app_version_is_public(self) -> None:
+        from unittest import mock
+
+        from app import app_version
+        from tests.test_app_version import RELEASE
+
+        app_version.reset_cache()
+        with mock.patch.object(app_version, "_fetch_latest_release", return_value=RELEASE):
+            response = await self.client.get("/app/version")
+        app_version.reset_cache()
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["latest_version"], "1.3.2")
+        self.assertEqual(response.json()["download_url"], "https://example.invalid/app.apk")
+
     async def test_idea_crud(self) -> None:
         auth = self._auth(await self._register())
         created = await self.client.post(
