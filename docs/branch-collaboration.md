@@ -88,6 +88,10 @@ codex exec -C D:\L\Study\TodoList-codex -s workspace-write `
 3. 这种模式下 Codex 读不到 `gh` 的登录凭据（保存在 Windows 凭据管理器），所以不做任何需要 GitHub 写权限的事。
 4. Kiro 必须复核 Codex 的结论：查看结果文件，必要时用 `git -C D:\L\Study\TodoList-codex status` 确认没有改动，再向仓库所有者汇报。
 5. 一次完整的 Gradle 测试加构建大约需要 6 分钟，并消耗仓库所有者 ChatGPT 账号的额度。紧急排障时，Kiro 可以自己直接执行。
+6. 非交互沙箱里构建的调试包不保证能覆盖安装手机上现有的应用：沙箱读不到 `C:\Users\liujiabo\.android\debug.keystore`（会另生成一张调试证书，例如 `ba5011e6...`，或因拿不到 `debug.keystore.lock` 而构建失败）。手机上的应用使用证书 `8af07bcd...938aec`。因此：
+   - 真机验证：由 Kiro 在自己的工作目录构建 APK，再让 Codex 安装这个已构建好的文件（任务说明里写明"不要构建，只安装指定路径的 APK"）。
+   - 正式发布：使用仓库所有者复制到 Codex 工作目录的 `mobile/keystore.properties` 构建签名 Release（见 4.2）。
+   - 安装前必须用 `apksigner verify --print-certs` 确认证书 SHA-256 是 `8af07bcd5ca4f95d9877d0b54fdd472b96aff91dd465f4de9f51261637938aec`，不一致就停止，绝不为了装上而卸载或清除数据。
 
 ### 4.2 仓库所有者用 Codex 发布 Release
 
