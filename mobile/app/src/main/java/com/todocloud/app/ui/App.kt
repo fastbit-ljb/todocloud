@@ -76,6 +76,8 @@ fun TodoCloudApp(
     var aiResult by remember { mutableStateOf<AiParseResult?>(null) }
     var planLoading by remember { mutableStateOf(false) }
     var planError by remember { mutableStateOf<String?>(null) }
+    // Question/answer turns shown before a plan exists; not stored on the server.
+    var planConversation by remember { mutableStateOf(emptyList<com.todocloud.app.data.PlanMessage>()) }
     var defaultReminderOffsetMinutes by remember(context) {
         mutableStateOf(loadDefaultReminderOffset(context))
     }
@@ -447,21 +449,36 @@ fun TodoCloudApp(
                 plan = visiblePlan,
                 loading = planLoading,
                 error = planError,
+                conversation = planConversation,
                 onOpenInbox = {
                     selectedTab = 0
                     taskSection = "inbox"
                 },
-                onGenerate = { message, selectedIdeaIds ->
+                onGenerate = { message, selectedIdeaIds, forcePlan ->
                     scope.launch {
                         planLoading = true
                         planError = null
                         try {
-                            val plan = repository.generatePlan(
+                            val result = repository.chatPlan(
                                 currentSession.token,
                                 message,
                                 selectedIdeaIds,
+                                planConversation,
+                                forcePlan,
                             )
-                            plans = listOf(plan) + plans.filterNot { it.id == plan.id }
+                            when (result) {
+                                is com.todocloud.app.data.PlanChatResult.Answer -> {
+                                    planConversation = (
+                                        planConversation +
+                                            com.todocloud.app.data.PlanMessage("user", message) +
+                                            com.todocloud.app.data.PlanMessage("assistant", result.reply)
+                                        ).takeLast(12)
+                                }
+                                is com.todocloud.app.data.PlanChatResult.Created -> {
+                                    planConversation = emptyList()
+                                    plans = listOf(result.plan) + plans.filterNot { it.id == result.plan.id }
+                                }
+                            }
                         } catch (exception: ApiException) {
                             if (exception.statusCode == 401) handleApiError(exception)
                             else planError = exception.message

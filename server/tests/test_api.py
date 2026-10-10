@@ -166,6 +166,76 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 404, f"{method} {path}")
         self.assertEqual(len((await self.client.get("/tasks", headers=alice)).json()), 1)
 
+    async def test_plan_chat_answers_questions_and_plans_on_request(self) -> None:
+        from unittest import mock
+
+        auth = self._auth(await self._register())
+        task = (await self.client.post("/tasks", headers=auth, json={"title": "写周报"})).json()
+        replies = []
+
+        def fake_model(prompt: str) -> dict:
+            replies.append(prompt)
+            return replies_queue.pop(0)
+
+        replies_queue = [
+            {"intent": "answer", "reply": "你只有一项任务，今天就能做完。"},
+            {
+                "intent": "plan",
+                "summary": "下午写周报",
+                "items": [
+                    {"source_type": "task", "source_id": task["id"], "title": "写周报",
+                     "start_at": "2026-10-12T14:00:00+08:00", "duration_minutes": 60}
+                ],
+            },
+            {"intent": "answer", "reply": "不紧，留了午休。"},
+        ]
+        with mock.patch("app.plan_ai._call_plan_model", side_effect=fake_model):
+            question = await self.client.post(
+                "/plans/chat", headers=auth, json={"message": "我今天任务多吗？"}
+            )
+            self.assertEqual(question.status_code, 200, question.text)
+            self.assertEqual(question.json()["kind"], "answer")
+            self.assertIsNone(question.json()["plan"])
+            self.assertEqual((await self.client.get("/plans", headers=auth)).json(), [])
+
+            history = [
+                {"role": "user", "content": "我今天任务多吗？"},
+                {"role": "assistant", "content": question.json()["reply"]},
+            ]
+            created = await self.client.post(
+                "/plans/chat", headers=auth,
+                json={"message": "那帮我排一下", "history": history},
+            )
+            self.assertEqual(created.json()["kind"], "plan")
+            plan = created.json()["plan"]
+            self.assertEqual(plan["proposal"]["items"][0]["source_id"], task["id"])
+            self.assertIn("我今天任务多吗", replies[1])  # earlier turns reach the model
+
+            revised = await self.client.post(
+                f"/plans/{plan['id']}/messages", headers=auth, json={"message": "这样排紧不紧？"}
+            )
+        self.assertEqual(revised.status_code, 200, revised.text)
+        body = revised.json()
+        self.assertEqual(body["proposal"], plan["proposal"])  # question left the plan alone
+        self.assertEqual(body["messages"][-1], {"role": "assistant", "content": "不紧，留了午休。"})
+        self.assertIn("拿不准时选", replies[0])
+        self.assertIn("拿不准时选", replies[2])
+
+    async def test_legacy_generate_still_always_plans(self) -> None:
+        from unittest import mock
+
+        auth = self._auth(await self._register())
+        with mock.patch(
+            "app.plan_ai._call_plan_model",
+            return_value={"intent": "answer", "reply": "忽略", "summary": "计划", "items": []},
+        ) as model:
+            response = await self.client.post(
+                "/plans/generate", headers=auth, json={"message": "随便问问"}
+            )
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["status"], "draft")
+        self.assertIn('intent 必须是 "plan"', model.call_args.args[0])
+
     async def test_idea_crud(self) -> None:
         auth = self._auth(await self._register())
         created = await self.client.post(

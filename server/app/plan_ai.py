@@ -23,11 +23,22 @@ def _build_plan_prompt(
     user_message: str,
     previous_proposal: dict | None,
     conversation: list[dict],
+    force_plan: bool = True,
 ) -> str:
     previous_text = json.dumps(previous_proposal, ensure_ascii=False) if previous_proposal else "无"
     conversation_text = json.dumps(conversation[-12:], ensure_ascii=False)
+    if force_plan:
+        intent_rules = '用户已明确要求生成计划：intent 必须是 "plan"。'
+    else:
+        intent_rules = """先判断用户这次的意图，再决定输出：
+1. intent = "plan"：用户明确要你安排、规划、排期、生成或调整计划（例如“帮我排一下明天”“把阅读挪到晚上”“按这些生成计划”）。此时按下面的规则输出 items。
+2. intent = "answer"：用户在提问、咨询、征求意见、闲聊，或只是想了解信息（例如“我这周任务多吗”“考研英语怎么复习”“这个计划是不是太满了”）。此时不要输出 items，在 reply 中直接、具体地回答，可以结合收件匣和任务给建议；如果适合，最后用一句话提示用户可以让你把它排成计划。
+3. 拿不准时选 "answer"，并在 reply 中问清楚用户是否需要你直接安排。
+4. 上一版计划存在时，intent = "answer" 表示保持原计划不变，只回答问题。"""
     return f"""
-你是有生活常识、会留白的个人计划助手。请把用户收件匣中的想法和现有未完成任务整理成一份现实可执行的计划。
+你是有生活常识、会留白的个人计划助手，帮助有一堆待办但懒得规划的用户。你既能回答关于时间安排的问题，也能在用户需要时把收件匣中的想法和现有未完成任务整理成一份现实可执行的计划。
+
+{intent_rules}
 
 当前用户当地时间：{reference_at.isoformat(timespec='seconds')}
 IANA 时区：{timezone_name}
@@ -65,7 +76,9 @@ IANA 时区：{timezone_name}
 
 只返回 JSON，不要附加解释，格式必须是：
 {{
-  "summary": "一两句话说明这版计划的思路",
+  "intent": "plan 或 answer",
+  "reply": "intent 为 answer 时的中文回答；intent 为 plan 时可为空",
+  "summary": "intent 为 plan 时，一两句话说明这版计划的思路",
   "items": [
     {{
       "source_type": "idea、task 或 prompt",
@@ -167,6 +180,32 @@ def _normalize_proposal(
     return {"summary": summary[:1000], "items": normalized}
 
 
+ANSWER_FALLBACK = "我没太确定你是想咨询还是想让我直接安排。如果需要排成计划，告诉我“帮我安排”就好。"
+
+
+def _normalize_turn(
+    raw: dict,
+    ideas: list[dict],
+    tasks: list[dict],
+    reference_at: datetime,
+    force_plan: bool,
+    allow_prompt_items: bool,
+) -> dict:
+    """Decide between answering and planning from the model output.
+
+    Without force_plan, anything other than an explicit "plan" intent with at
+    least one usable item is treated as an answer, so a question never turns
+    into a plan by accident.
+    """
+    intent = str(raw.get("intent") or "").strip().lower()
+    if force_plan or intent == "plan":
+        proposal = _normalize_proposal(raw, ideas, tasks, reference_at, allow_prompt_items)
+        if force_plan or proposal["items"]:
+            return {"intent": "plan", "reply": proposal["summary"], "proposal": proposal}
+    reply = str(raw.get("reply") or raw.get("summary") or "").strip() or ANSWER_FALLBACK
+    return {"intent": "answer", "reply": reply[:4000], "proposal": None}
+
+
 def _call_plan_model(prompt: str) -> dict:
     if not settings.ai_api_key:
         raise AiNotConfiguredError("服务端尚未配置 AI_API_KEY")
@@ -255,7 +294,7 @@ def _call_plan_model(prompt: str) -> dict:
     raise AiParseError("AI 计划服务暂时不可用，请稍后重试") from last_error
 
 
-async def generate_plan(
+async def plan_turn(
     ideas: list[dict],
     tasks: list[dict],
     reference_at: str | None,
@@ -263,7 +302,9 @@ async def generate_plan(
     user_message: str,
     previous_proposal: dict | None = None,
     conversation: list[dict] | None = None,
+    force_plan: bool = False,
 ) -> dict:
+    """One planning-conversation turn: {"intent", "reply", "proposal" (None for answers)}."""
     reference = _localize_reference(reference_at, timezone_name)
     prompt = _build_plan_prompt(
         ideas,
@@ -273,12 +314,37 @@ async def generate_plan(
         user_message,
         previous_proposal,
         conversation or [],
+        force_plan=force_plan,
     )
     raw = await asyncio.to_thread(_call_plan_model, prompt)
-    return _normalize_proposal(
+    return _normalize_turn(
         raw,
         ideas,
         tasks,
         reference,
+        force_plan=force_plan,
         allow_prompt_items=bool(user_message.strip()),
     )
+
+
+async def generate_plan(
+    ideas: list[dict],
+    tasks: list[dict],
+    reference_at: str | None,
+    timezone_name: str,
+    user_message: str,
+    previous_proposal: dict | None = None,
+    conversation: list[dict] | None = None,
+) -> dict:
+    """Always produce a plan (the pre-1.3.2 behaviour of /plans/generate)."""
+    turn = await plan_turn(
+        ideas,
+        tasks,
+        reference_at,
+        timezone_name,
+        user_message,
+        previous_proposal,
+        conversation,
+        force_plan=True,
+    )
+    return turn["proposal"]

@@ -70,6 +70,9 @@ import androidx.compose.ui.unit.sp
 import com.todocloud.app.data.AiPlan
 import com.todocloud.app.data.InboxIdea
 import com.todocloud.app.data.PlanItem
+import com.todocloud.app.data.PlanMessage
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.OutlinedButton
 import com.todocloud.app.data.TaskItem
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -82,8 +85,9 @@ internal fun AiPlanScreen(
     plan: AiPlan?,
     loading: Boolean,
     error: String?,
+    conversation: List<PlanMessage>,
     onOpenInbox: () -> Unit,
-    onGenerate: (String, Set<Int>) -> Unit,
+    onGenerate: (message: String, ideaIds: Set<Int>, forcePlan: Boolean) -> Unit,
     onRevise: (Int, String) -> Unit,
     onAccept: (Int) -> Unit,
 ) {
@@ -109,7 +113,9 @@ internal fun AiPlanScreen(
                 message.isNotBlank() || selectedIdeaIds.isNotEmpty() || tasks.isNotEmpty()
             )
             val submitPlan = {
-                val request = message.trim().ifEmpty {
+                val typed = message.trim()
+                // An empty box means "just plan my stuff"; typed text may be a question.
+                val request = typed.ifEmpty {
                     when {
                         selectedIdeaIds.isNotEmpty() ->
                             "请结合我这次选中的收件匣想法和现有未完成任务，生成一份现实可执行的计划。"
@@ -119,7 +125,8 @@ internal fun AiPlanScreen(
                     }
                 }
                 if (request.isNotBlank() && canGenerate) {
-                    onGenerate(request, selectedIdeaIds)
+                    onGenerate(request, selectedIdeaIds, typed.isEmpty())
+                    message = ""
                 }
             }
             AiPlanLanding(
@@ -130,6 +137,10 @@ internal fun AiPlanScreen(
                 selectedIdeaIds = selectedIdeaIds,
                 loading = loading,
                 canGenerate = canGenerate,
+                conversation = conversation,
+                onPlanFromConversation = {
+                    onGenerate("请根据上面的对话，帮我生成一份现实可执行的计划。", selectedIdeaIds, true)
+                },
                 onInboxClick = {
                     if (ideas.isEmpty()) onOpenInbox() else showIdeaPicker = true
                 },
@@ -344,19 +355,38 @@ internal fun AiPlanLanding(
     selectedIdeaIds: Set<Int>,
     loading: Boolean,
     canGenerate: Boolean,
+    conversation: List<PlanMessage>,
+    onPlanFromConversation: () -> Unit,
     onInboxClick: () -> Unit,
     onSubmit: () -> Unit,
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(top = 34.dp, start = 6.dp, end = 6.dp),
-        ) {
-            TypewriterPlanPrompt()
+        if (conversation.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 34.dp, start = 6.dp, end = 6.dp),
+            ) {
+                TypewriterPlanPrompt()
+            }
         }
 
         Column(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding(),
         ) {
+            if (conversation.isNotEmpty()) {
+                PlanConversation(
+                    messages = conversation,
+                    modifier = Modifier.weight(1f, fill = false).padding(top = 16.dp),
+                )
+                OutlinedButton(
+                    onClick = onPlanFromConversation,
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                    shape = RoundedCornerShape(18.dp),
+                ) {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("直接帮我排成计划", modifier = Modifier.padding(start = 7.dp))
+                }
+            }
             if (loading) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
@@ -365,7 +395,7 @@ internal fun AiPlanLanding(
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     Text(
-                        "正在整理你的计划…",
+                        "AI 正在思考…",
                         modifier = Modifier.padding(start = 10.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
@@ -384,6 +414,38 @@ internal fun AiPlanLanding(
                 onInboxClick = onInboxClick,
                 onSubmit = onSubmit,
             )
+        }
+    }
+}
+
+@Composable
+internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = Modifier) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    }
+    LazyColumn(state = listState, modifier = modifier.fillMaxWidth()) {
+        items(messages) { chat ->
+            val fromUser = chat.role == "user"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start,
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (fromUser) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+                        } else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+                    ),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier
+                        .fillMaxWidth(0.88f)
+                        .padding(bottom = 8.dp)
+                        .semantics { contentDescription = (if (fromUser) "我：" else "AI：") + chat.content },
+                ) {
+                    Text(chat.content, modifier = Modifier.padding(12.dp))
+                }
+            }
         }
     }
 }
