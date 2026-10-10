@@ -236,6 +236,73 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["status"], "draft")
         self.assertIn('intent 必须是 "plan"', model.call_args.args[0])
 
+    async def test_plan_chat_with_images(self) -> None:
+        import io
+        import json as jsonlib
+        from unittest import mock
+
+        from PIL import Image
+
+        def png() -> bytes:
+            buffer = io.BytesIO()
+            Image.new("RGB", (8, 8), "white").save(buffer, format="PNG")
+            return buffer.getvalue()
+
+        auth = self._auth(await self._register())
+        payload = jsonlib.dumps({"message": "按这张课表帮我排复习"})
+        calls = []
+
+        def fake_model(prompt, parts=None):
+            calls.append((prompt, parts))
+            return {"intent": "answer", "reply": "周三下午有空。"}
+
+        with mock.patch("app.plan_ai._call_plan_model", side_effect=fake_model), \
+                mock.patch(
+                    "app.api.plans.store_image",
+                    side_effect=lambda user_id, name, *_: f"{user_id}/{next(_counter)}-{name}",
+                ) as stored:
+            ok = await self.client.post(
+                "/plans/chat/images",
+                headers=auth,
+                data={"payload": payload},
+                files=[("files", ("a.png", png(), "image/png")), ("files", ("b.png", png(), "image/png"))],
+            )
+            too_many = await self.client.post(
+                "/plans/chat/images",
+                headers=auth,
+                data={"payload": payload},
+                files=[("files", (f"{i}.png", png(), "image/png")) for i in range(4)],
+            )
+            wrong_type = await self.client.post(
+                "/plans/chat/images",
+                headers=auth,
+                data={"payload": payload},
+                files=[("files", ("a.gif", b"GIF89a", "image/gif"))],
+            )
+            bad_payload = await self.client.post(
+                "/plans/chat/images",
+                headers=auth,
+                data={"payload": "{}"},
+                files=[("files", ("a.png", png(), "image/png"))],
+            )
+        self.assertEqual(ok.status_code, 200, ok.text)
+        self.assertEqual(ok.json()["kind"], "answer")
+        prompt, parts = calls[0]
+        self.assertIn("附带了 2 张图片", prompt)
+        self.assertEqual(len(parts), 2)
+        self.assertTrue(parts[0]["image_url"]["url"].startswith("data:image/"))
+        self.assertEqual(stored.call_count, 2)
+        self.assertEqual(too_many.status_code, 400)
+        self.assertEqual(wrong_type.status_code, 415)
+        self.assertEqual(bad_payload.status_code, 422)
+        self.assertEqual(len(calls), 1)  # rejected uploads never reach the model
+
+        conn = await pg.connect()
+        try:
+            self.assertEqual(await conn.fetchval("SELECT count(*) FROM attachments"), 2)
+        finally:
+            await conn.close()
+
     async def test_idea_crud(self) -> None:
         auth = self._auth(await self._register())
         created = await self.client.post(

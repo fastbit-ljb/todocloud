@@ -1,7 +1,8 @@
+import asyncio
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,9 +11,10 @@ from app.api.dependencies import get_current_user
 from app.api.tasks import TaskResponse
 from app.core.config import settings
 from app.core.rate_limit import enforce_rate_limit
-from app.db.models import AiPlan, Idea, Task, User
+from app.db.models import AiPlan, Attachment, Idea, Task, User
 from app.db.session import get_db
 from app.plan_ai import plan_turn
+from app.storage import store_image
 
 
 router = APIRouter(prefix="/plans")
@@ -143,6 +145,7 @@ async def run_planner(
     previous_proposal: dict | None = None,
     messages: list[dict] | None = None,
     force_plan: bool = True,
+    images: list[tuple[bytes, str]] | None = None,
 ) -> dict:
     """Returns {"intent", "reply", "proposal"}; proposal is None for an answer."""
     try:
@@ -155,6 +158,7 @@ async def run_planner(
             previous_proposal,
             messages,
             force_plan=force_plan,
+            images=images or None,
         )
     except AiNotConfiguredError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
@@ -214,20 +218,106 @@ async def chat(
     db: AsyncSession = Depends(get_db),
 ) -> PlanChatResponse:
     """Answer a question, or create a draft plan when the user actually wants one."""
+    return await _chat(payload, user, db)
+
+
+@router.post("/chat/images", response_model=PlanChatResponse)
+async def chat_with_images(
+    payload: str = Form(..., description="PlanChatRequest as JSON"),
+    files: list[UploadFile] = File(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PlanChatResponse:
+    """Same as /chat, with up to three images read by the model for this turn."""
+    return await _chat(_parse_form_payload(payload, PlanChatRequest), user, db, files)
+
+
+MAX_PLAN_IMAGES = 3
+MAX_PLAN_IMAGE_BYTES = 10 * 1024 * 1024
+PLAN_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+async def store_plan_images(
+    files: list[UploadFile], user: User, db: AsyncSession
+) -> list[tuple[bytes, str]]:
+    """Validate and store uploaded images as attachments; returns (bytes, type) for the model."""
+    if len(files) > MAX_PLAN_IMAGES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"一次最多上传 {MAX_PLAN_IMAGES} 张图片",
+        )
+    images: list[tuple[bytes, str, str]] = []
+    for upload in files:
+        if upload.content_type not in PLAN_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="只支持 JPG、PNG 或 WebP 图片",
+            )
+        data = await upload.read()
+        if not data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="图片内容为空")
+        if len(data) > MAX_PLAN_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="每张图片不能超过 10 MB",
+            )
+        images.append((data, upload.content_type, upload.filename or "plan-image"))
+    for data, content_type, filename in images:
+        try:
+            object_key = await asyncio.to_thread(store_image, user.id, filename, content_type, data)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="图片存储服务暂不可用"
+            ) from exc
+        db.add(
+            Attachment(
+                user_id=user.id,
+                object_key=object_key,
+                original_name=filename,
+                content_type=content_type,
+                size_bytes=len(data),
+            )
+        )
+    return [(data, content_type) for data, content_type, _ in images]
+
+
+def _user_text(message: str, image_count: int) -> str:
+    return f"{message}\n（附图 {image_count} 张）" if image_count else message
+
+
+def _parse_form_payload(raw: str, model: type[BaseModel]):
+    try:
+        return model.model_validate_json(raw)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()
+        ) from exc
+
+
+async def _chat(
+    payload: PlanChatRequest,
+    user: User,
+    db: AsyncSession,
+    files: list[UploadFile] | None = None,
+) -> PlanChatResponse:
     await enforce_rate_limit("ai-plan-user", str(user.id), settings.ai_rate_limit_per_minute)
     message = payload.message.strip()
     if not message:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先告诉 AI 你想问什么或安排什么")
+    images = await store_plan_images(files or [], user, db)
     ideas, tasks = await planning_sources(user.id, db, payload.idea_ids)
     history = [item.model_dump() for item in payload.history]
+    user_text = _user_text(message, len(images))
     turn = await run_planner(
         ideas,
         tasks,
         payload,
-        messages=history + [{"role": "user", "content": message}],
+        messages=history + [{"role": "user", "content": user_text}],
         force_plan=payload.force_plan,
+        images=images,
     )
     if turn["proposal"] is None:
+        await db.commit()  # keeps any stored image attachments
         return PlanChatResponse(kind="answer", reply=turn["reply"])
 
     plan = AiPlan(
@@ -236,7 +326,7 @@ async def chat(
         title="我的 AI 计划",
         proposal=turn["proposal"],
         messages=[
-            {"role": "user", "content": message},
+            {"role": "user", "content": user_text},
             {"role": "assistant", "content": turn["proposal"]["summary"]},
         ],
     )
@@ -255,15 +345,37 @@ async def revise_plan(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AiPlan:
+    return await _revise(plan_id, payload, user, db)
+
+
+@router.post("/{plan_id}/messages/images", response_model=PlanResponse)
+async def revise_plan_with_images(
+    plan_id: int,
+    payload: str = Form(..., description="PlanReviseRequest as JSON"),
+    files: list[UploadFile] = File(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AiPlan:
+    return await _revise(plan_id, _parse_form_payload(payload, PlanReviseRequest), user, db, files)
+
+
+async def _revise(
+    plan_id: int,
+    payload: PlanReviseRequest,
+    user: User,
+    db: AsyncSession,
+    files: list[UploadFile] | None = None,
+) -> AiPlan:
     await enforce_rate_limit("ai-plan-user", str(user.id), settings.ai_rate_limit_per_minute)
     plan = await db.scalar(select(AiPlan).where(AiPlan.id == plan_id, AiPlan.user_id == user.id))
     if plan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="计划不存在")
     if plan.status != "draft":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已采用的计划不能继续修改")
+    images = await store_plan_images(files or [], user, db)
     ideas, tasks = await planning_sources(user.id, db)
     history = list(plan.messages or [])
-    history.append({"role": "user", "content": payload.message.strip()})
+    history.append({"role": "user", "content": _user_text(payload.message.strip(), len(images))})
     turn = await run_planner(
         ideas,
         tasks,
@@ -271,6 +383,7 @@ async def revise_plan(
         dict(plan.proposal or {}),
         history,
         force_plan=payload.force_plan,
+        images=images,
     )
     if turn["proposal"] is None:
         # A question about the plan: answer it and leave the plan untouched.

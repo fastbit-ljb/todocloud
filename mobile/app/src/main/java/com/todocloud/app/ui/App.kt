@@ -454,7 +454,7 @@ fun TodoCloudApp(
                     selectedTab = 0
                     taskSection = "inbox"
                 },
-                onGenerate = { message, selectedIdeaIds, forcePlan ->
+                onGenerate = { message, selectedIdeaIds, forcePlan, images ->
                     scope.launch {
                         planLoading = true
                         planError = null
@@ -465,12 +465,14 @@ fun TodoCloudApp(
                                 selectedIdeaIds,
                                 planConversation,
                                 forcePlan,
+                                images,
                             )
+                            val shownMessage = if (images.isEmpty()) message else "$message\n（附图 ${images.size} 张）"
                             when (result) {
                                 is com.todocloud.app.data.PlanChatResult.Answer -> {
                                     planConversation = (
                                         planConversation +
-                                            com.todocloud.app.data.PlanMessage("user", message) +
+                                            com.todocloud.app.data.PlanMessage("user", shownMessage) +
                                             com.todocloud.app.data.PlanMessage("assistant", result.reply)
                                         ).takeLast(12)
                                 }
@@ -489,12 +491,12 @@ fun TodoCloudApp(
                         }
                     }
                 },
-                onRevise = { planId, message ->
+                onRevise = { planId, message, images ->
                     scope.launch {
                         planLoading = true
                         planError = null
                         try {
-                            val revised = repository.revisePlan(currentSession.token, planId, message)
+                            val revised = repository.revisePlan(currentSession.token, planId, message, images)
                             plans = listOf(revised) + plans.filterNot { it.id == revised.id }
                         } catch (exception: ApiException) {
                             if (exception.statusCode == 401) handleApiError(exception)
