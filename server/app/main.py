@@ -2,49 +2,18 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
 
 from app.api.router import api_router
 from app.core.config import settings
-from app.db.base import Base
+from app.db.migrate import upgrade_to_head
 from app.db.session import engine
 from app.core.rate_limit import close_rate_limit
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-        await connection.execute(
-            text(
-                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "
-                "reminder_offset_minutes INTEGER"
-            )
-        )
-        await connection.execute(
-            text(
-                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "
-                "completed_at TIMESTAMPTZ"
-            )
-        )
-        await connection.execute(
-            text(
-                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "
-                "steps JSONB NOT NULL DEFAULT '[]'::jsonb"
-            )
-        )
-        await connection.execute(
-            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS start_at TIMESTAMPTZ")
-        )
-        await connection.execute(
-            text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS duration_minutes INTEGER")
-        )
-        await connection.execute(
-            text(
-                "UPDATE tasks SET completed_at = updated_at "
-                "WHERE completed = TRUE AND completed_at IS NULL"
-            )
-        )
+    # Schema changes live in server/migrations (Alembic); see docs/development.md.
+    await upgrade_to_head(engine)
     yield
     await close_rate_limit()
     await engine.dispose()
