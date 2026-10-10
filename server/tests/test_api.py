@@ -257,7 +257,10 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
             return {"intent": "answer", "reply": "周三下午有空。"}
 
         with mock.patch("app.plan_ai._call_plan_model", side_effect=fake_model), \
-                mock.patch("app.api.plans.store_image", return_value="1/x.png") as stored:
+                mock.patch(
+                    "app.api.plans.store_image",
+                    side_effect=lambda user_id, name, *_: f"{user_id}/{next(_counter)}-{name}",
+                ) as stored:
             ok = await self.client.post(
                 "/plans/chat/images",
                 headers=auth,
