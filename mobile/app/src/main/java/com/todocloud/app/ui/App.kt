@@ -1788,8 +1788,26 @@ private fun IdeaCard(
                     modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
                     style = MaterialTheme.typography.titleMedium,
                 )
-                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                // 删除会立即同步到服务端且无法撤销，先确认，避免误触丢失想法
+                var confirmingDelete by remember { mutableStateOf(false) }
+                IconButton(onClick = { confirmingDelete = true }, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Outlined.DeleteOutline, contentDescription = "删除想法")
+                }
+                if (confirmingDelete) {
+                    AlertDialog(
+                        onDismissRequest = { confirmingDelete = false },
+                        title = { Text("删除这条想法？") },
+                        text = { Text("删除后无法恢复。") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                confirmingDelete = false
+                                onDelete()
+                            }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmingDelete = false }) { Text("取消") }
+                        },
+                    )
                 }
             }
             val timing = buildList {
