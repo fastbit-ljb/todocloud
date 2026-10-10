@@ -1,5 +1,8 @@
 package com.todocloud.app.ui
 
+import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
@@ -81,6 +84,9 @@ internal fun SettingsHomeScreen(
     onReminderModeChange: (ReminderMode) -> Unit,
     onOpenPermissions: () -> Unit,
     onOpenSponsor: () -> Unit,
+    updateAvailableVersion: String?,
+    checkingUpdate: Boolean,
+    onCheckUpdate: () -> Unit,
     onLogout: () -> Unit,
 ) {
     var showDefaultReminderPicker by rememberSaveable { mutableStateOf(false) }
@@ -181,6 +187,20 @@ internal fun SettingsHomeScreen(
             onClick = onOpenSponsor,
         )
         Text("关于 TodoCloud", style = MaterialTheme.typography.titleMedium)
+        SettingsEntry(
+            title = if (updateAvailableVersion != null) "检查更新 · 新版本 $updateAvailableVersion" else "检查更新",
+            description = when {
+                checkingUpdate -> "正在检查…"
+                updateAvailableVersion != null -> "点击查看更新内容并下载"
+                else -> "当前版本 ${BuildConfig.VERSION_NAME}"
+            },
+            icon = {
+                BadgedBox(badge = { if (updateAvailableVersion != null) Badge() }) {
+                    Icon(Icons.Outlined.SystemUpdate, contentDescription = null)
+                }
+            },
+            onClick = { if (!checkingUpdate) onCheckUpdate() },
+        )
         Text(
             "当前版本 ${BuildConfig.VERSION_NAME}\n任务、提醒与云端同步",
             color = MaterialTheme.colorScheme.onSurfaceVariant,

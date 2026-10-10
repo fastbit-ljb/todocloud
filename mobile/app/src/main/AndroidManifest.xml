@@ -180,6 +180,9 @@
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".update.UpdateCheckReceiver"
+            android:exported="false" />
         <service
             android:name=".notification.ReminderAccessibilityService"
             android:exported="true"

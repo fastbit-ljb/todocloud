@@ -13,5 +13,9 @@ class ReminderBootReceiver : BroadcastReceiver() {
             Intent.ACTION_TIMEZONE_CHANGED,
             -> ReminderScheduler.restoreScheduledTasks(context)
         }
+        // Repeating alarms are cleared by a reboot or an app update.
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            com.todocloud.app.update.UpdateNotifier.scheduleDailyCheck(context, replace = true)
+        }
     }
 }
