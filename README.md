@@ -62,4 +62,5 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - [API 约定](docs/api-contract.md)
 - [数据模型](docs/data-model.md)
 - [开发说明](docs/development.md)
+- [协作分工与分支规范](docs/branch-collaboration.md)（Kiro / Codex 必读）
 
