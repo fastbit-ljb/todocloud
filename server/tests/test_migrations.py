@@ -27,6 +27,7 @@ class MigrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_fresh_database_matches_production_schema(self) -> None:
         await upgrade_to_head(self.engine)
+        self.assertEqual(await self._version(), "0001_baseline")
         fresh = await pg.schema_snapshot()
 
         await pg.reset_schema()
@@ -34,7 +35,6 @@ class MigrationTests(unittest.IsolatedAsyncioTestCase):
         production = await pg.schema_snapshot()
 
         self.assertEqual(fresh, production)
-        self.assertEqual(await self._version(), "0001_baseline")
 
     async def test_production_database_upgrades_without_changes(self) -> None:
         await pg.run_sql_file("prod_schema_2026_10.sql")
