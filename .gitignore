@@ -26,3 +26,13 @@ server/.env
 .DS_Store
 Thumbs.db
 *.log
+
+# Local build outputs and tool state
+artifacts/
+.gradle-home/
+.kiro/
+
+# Android signing (never commit keystores or their passwords)
+keystore.properties
+*.jks
+*.keystore
