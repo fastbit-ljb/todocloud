@@ -47,6 +47,30 @@ pip install -e .
 uvicorn app.main:app --reload
 ```
 
+### 数据库迁移（Alembic）
+
+表结构由 `server/migrations/` 管理，服务启动时会自动执行 `alembic upgrade head`（`app/db/migrate.py`，带 PostgreSQL advisory lock，多实例同时启动也只会执行一次）。`0001_baseline` 对应 2026-10 线上的表结构，并且是幂等的：在已有数据库上只登记版本号，不改结构。
+
+修改 `app/db/models.py` 后必须新增迁移，否则 CI 里的 `test_models_match_migrated_schema` 会失败：
+
+```powershell
+cd server
+alembic revision -m "add xxx column"   # 在生成的文件里写 op.add_column(...) 等
+alembic upgrade head
+```
+
+线上部署包含迁移时，先在 `/opt/todocloud/backups/` 下用 `pg_dump` 做完整备份再更新。
+
+### 服务端测试
+
+```powershell
+cd server
+pip install -e . pytest httpx
+python -m pytest -q
+```
+
+依赖数据库的测试需要 `TEST_DATABASE_URL`（库名必须以 `_test` 结尾，测试会清空它的 `public` schema）和可用的 Redis，没有时自动跳过；CI 会用临时的 PostgreSQL 和 Redis 全部跑一遍。
+
 ## Docker 服务
 
 ```powershell
