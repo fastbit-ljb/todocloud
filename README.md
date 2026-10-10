@@ -11,12 +11,15 @@ TodoCloud 是一个 Android 待办事项应用，支持云端登录、任务同�
 
 ## 当前状态
 
-这是项目第一版骨架，已经包含：
+当前发布版本为 v1.3.0，已实现：
 
-- Android Compose 应用入口和底部导航占位页面
-- FastAPI 健康检查接口
-- PostgreSQL、Redis、MinIO 和 API 服务的 Docker Compose 配置
-- 项目架构、API 约定、数据模型和本地开发说明
+- 账号注册登录、任务增删改查与云端同步
+- 收件匣（想法）与 AI 计划：把选中的想法和已有任务排成可编辑的日程
+- 日历视图、桌面日历小部件、可自定义的提前提醒和闹钟式提醒
+- 从截图或聊天文字由 AI 提取待确认任务
+- 服务端部署在 Docker Compose 上（PostgreSQL、Redis、MinIO、Celery worker）
+
+术语定义见 [CONTEXT.md](CONTEXT.md)。
 
 ## 目录
 

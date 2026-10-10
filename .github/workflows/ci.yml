@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "kiro/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android unit tests + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests and debug/release build
+        # No keystore.properties in CI, so the release APK is unsigned by design.
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: mobile/app/build/reports/tests/
+
+  server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . "pytest==8.4.2"
+      - name: Test
+        run: python -m pytest -q
