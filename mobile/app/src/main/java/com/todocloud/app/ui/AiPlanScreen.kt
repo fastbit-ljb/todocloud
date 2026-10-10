@@ -1,5 +1,22 @@
 package com.todocloud.app.ui
 
+import android.content.Context
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
 import android.webkit.WebView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -87,11 +104,18 @@ internal fun AiPlanScreen(
     error: String?,
     conversation: List<PlanMessage>,
     onOpenInbox: () -> Unit,
-    onGenerate: (message: String, ideaIds: Set<Int>, forcePlan: Boolean) -> Unit,
-    onRevise: (Int, String) -> Unit,
+    onGenerate: (message: String, ideaIds: Set<Int>, forcePlan: Boolean, images: List<Uri>) -> Unit,
+    onRevise: (Int, String, List<Uri>) -> Unit,
     onAccept: (Int) -> Unit,
 ) {
     var message by rememberSaveable(plan?.id) { mutableStateOf("") }
+    var images by remember(plan?.id) { mutableStateOf<List<Uri>>(emptyList()) }
+    val pickImages = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_PLAN_IMAGES),
+    ) { picked -> images = (images + picked).distinct().take(MAX_PLAN_IMAGES) }
+    val onAddImages = {
+        pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
     var showIdeaPicker by rememberSaveable { mutableStateOf(false) }
     val ideaKey = ideas.joinToString(",") { it.id.toString() }
     var selectedIdeaIds by remember(ideaKey) {
@@ -110,13 +134,15 @@ internal fun AiPlanScreen(
 
         if (plan == null) {
             val canGenerate = !loading && (
-                message.isNotBlank() || selectedIdeaIds.isNotEmpty() || tasks.isNotEmpty()
+                message.isNotBlank() || images.isNotEmpty() || selectedIdeaIds.isNotEmpty() || tasks.isNotEmpty()
             )
             val submitPlan = {
                 val typed = message.trim()
                 // An empty box means "just plan my stuff"; typed text may be a question.
                 val request = typed.ifEmpty {
                     when {
+                        images.isNotEmpty() ->
+                            "请看看这些图片，结合我的收件匣和任务给出建议，需要的话帮我安排。"
                         selectedIdeaIds.isNotEmpty() ->
                             "请结合我这次选中的收件匣想法和现有未完成任务，生成一份现实可执行的计划。"
                         tasks.isNotEmpty() ->
@@ -125,8 +151,9 @@ internal fun AiPlanScreen(
                     }
                 }
                 if (request.isNotBlank() && canGenerate) {
-                    onGenerate(request, selectedIdeaIds, typed.isEmpty())
+                    onGenerate(request, selectedIdeaIds, typed.isEmpty() && images.isEmpty(), images)
                     message = ""
+                    images = emptyList()
                 }
             }
             AiPlanLanding(
@@ -138,8 +165,11 @@ internal fun AiPlanScreen(
                 loading = loading,
                 canGenerate = canGenerate,
                 conversation = conversation,
+                images = images,
+                onAddImages = onAddImages,
+                onRemoveImage = { uri -> images = images - uri },
                 onPlanFromConversation = {
-                    onGenerate("请根据上面的对话，帮我生成一份现实可执行的计划。", selectedIdeaIds, true)
+                    onGenerate("请根据上面的对话，帮我生成一份现实可执行的计划。", selectedIdeaIds, true, emptyList())
                 },
                 onInboxClick = {
                     if (ideas.isEmpty()) onOpenInbox() else showIdeaPicker = true
@@ -213,6 +243,7 @@ internal fun AiPlanScreen(
             modifier = Modifier.fillMaxWidth().imePadding().padding(bottom = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            PlanImageBar(images = images, loading = loading, onAdd = onAddImages, onRemove = { uri -> images = images - uri })
             AiPlanRevisionField(
                 value = message,
                 onValueChange = { message = it.take(4000) },
@@ -220,8 +251,9 @@ internal fun AiPlanScreen(
                 onSubmit = {
                     val request = message.trim()
                     if (request.isNotEmpty()) {
-                        onRevise(plan.id, request)
+                        onRevise(plan.id, request, images)
                         message = ""
+                        images = emptyList()
                     }
                 },
             )
@@ -356,6 +388,9 @@ internal fun AiPlanLanding(
     loading: Boolean,
     canGenerate: Boolean,
     conversation: List<PlanMessage>,
+    images: List<Uri>,
+    onAddImages: () -> Unit,
+    onRemoveImage: (Uri) -> Unit,
     onPlanFromConversation: () -> Unit,
     onInboxClick: () -> Unit,
     onSubmit: () -> Unit,
@@ -403,6 +438,7 @@ internal fun AiPlanLanding(
                 }
             }
 
+            PlanImageBar(images = images, loading = loading, onAdd = onAddImages, onRemove = onRemoveImage)
             AiPlanPromptField(
                 modifier = Modifier.padding(bottom = 12.dp),
                 value = message,
@@ -417,6 +453,82 @@ internal fun AiPlanLanding(
         }
     }
 }
+
+private const val MAX_PLAN_IMAGES = 3
+
+/** "Add image" button plus removable thumbnails of the images attached to the next message. */
+@Composable
+internal fun PlanImageBar(
+    images: List<Uri>,
+    loading: Boolean,
+    onAdd: () -> Unit,
+    onRemove: (Uri) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        images.forEachIndexed { index, uri ->
+            PlanImageThumbnail(uri = uri, index = index, onRemove = { onRemove(uri) })
+        }
+        if (images.size < MAX_PLAN_IMAGES) {
+            TextButton(onClick = onAdd, enabled = !loading) {
+                Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(
+                    if (images.isEmpty()) "添加图片" else "再加一张",
+                    modifier = Modifier.padding(start = 6.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlanImageThumbnail(uri: Uri, index: Int, onRemove: () -> Unit) {
+    val context = LocalContext.current
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, uri) {
+        value = withContext(Dispatchers.IO) { decodeThumbnail(context, uri) }
+    }
+    Box(
+        modifier = Modifier
+            .size(56.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        bitmap?.let {
+            Image(
+                bitmap = it,
+                contentDescription = "已添加的图片 ${index + 1}",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier.align(Alignment.TopEnd).size(24.dp),
+        ) {
+            Icon(
+                Icons.Outlined.Close,
+                contentDescription = "移除图片 ${index + 1}",
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .size(18.dp)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape),
+            )
+        }
+    }
+}
+
+private fun decodeThumbnail(context: Context, uri: Uri): ImageBitmap? = runCatching {
+    val resolver = context.contentResolver
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 168) sample *= 2
+    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }?.asImageBitmap()
+}.getOrNull()
 
 @Composable
 internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = Modifier) {

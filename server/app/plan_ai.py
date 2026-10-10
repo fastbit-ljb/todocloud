@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -6,7 +7,13 @@ from datetime import datetime
 from urllib import error as urlerror
 from urllib import request
 
-from app.ai_parser import AiNotConfiguredError, AiParseError, _extract_json, _localize_reference
+from app.ai_parser import (
+    AiNotConfiguredError,
+    AiParseError,
+    _extract_json,
+    _localize_reference,
+    _prepare_image_for_ai,
+)
 from app.core.config import settings
 
 
@@ -24,6 +31,7 @@ def _build_plan_prompt(
     previous_proposal: dict | None,
     conversation: list[dict],
     force_plan: bool = True,
+    image_count: int = 0,
 ) -> str:
     previous_text = json.dumps(previous_proposal, ensure_ascii=False) if previous_proposal else "无"
     conversation_text = json.dumps(conversation[-12:], ensure_ascii=False)
@@ -35,11 +43,18 @@ def _build_plan_prompt(
 2. intent = "answer"：用户在提问、咨询、征求意见、闲聊，或只是想了解信息（例如“我这周任务多吗”“考研英语怎么复习”“这个计划是不是太满了”）。此时不要输出 items，在 reply 中直接、具体地回答，可以结合收件匣和任务给建议；如果适合，最后用一句话提示用户可以让你把它排成计划。
 3. 拿不准时选 "answer"，并在 reply 中问清楚用户是否需要你直接安排。
 4. 上一版计划存在时，intent = "answer" 表示保持原计划不变，只回答问题。"""
+    image_rules = ""
+    if image_count:
+        image_rules = f"""
+用户这次附带了 {image_count} 张图片（可能是课程表、待办清单、聊天记录、通知或日程截图）。
+请仔细读取图片内容并结合文字理解用户意图：回答问题时引用图片中的信息；生成计划时，把图片中识别出的、尚不在收件匣和任务里的具体事项作为 prompt 新事项安排，图片中的固定时间（上课、会议、考试、车次）要严格遵守。
+看不清或无法判断的内容不要编造，在 reply 或 note 中说明。
+"""
     return f"""
 你是有生活常识、会留白的个人计划助手，帮助有一堆待办但懒得规划的用户。你既能回答关于时间安排的问题，也能在用户需要时把收件匣中的想法和现有未完成任务整理成一份现实可执行的计划。
 
 {intent_rules}
-
+{image_rules}
 当前用户当地时间：{reference_at.isoformat(timespec='seconds')}
 IANA 时区：{timezone_name}
 
@@ -206,7 +221,7 @@ def _normalize_turn(
     return {"intent": "answer", "reply": reply[:4000], "proposal": None}
 
 
-def _call_plan_model(prompt: str) -> dict:
+def _call_plan_model(prompt: str, image_parts: list[dict] | None = None) -> dict:
     if not settings.ai_api_key:
         raise AiNotConfiguredError("服务端尚未配置 AI_API_KEY")
     endpoint = settings.ai_api_base_url.rstrip("/") + "/chat/completions"
@@ -214,6 +229,9 @@ def _call_plan_model(prompt: str) -> dict:
     fallback = settings.ai_fallback_model.strip()
     if fallback and fallback not in models:
         models.append(fallback)
+    user_content: object = (
+        [{"type": "text", "text": prompt}, *image_parts] if image_parts else prompt
+    )
 
     last_error: Exception | None = None
     for model_index, model in enumerate(models):
@@ -222,7 +240,7 @@ def _call_plan_model(prompt: str) -> dict:
             "max_tokens": 8192,
             "messages": [
                 {"role": "system", "content": "你是尊重生活节律、善于留白的个人计划助手。"},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": user_content},
             ],
         }
         if "generativelanguage.googleapis.com" in settings.ai_api_base_url:
@@ -303,8 +321,12 @@ async def plan_turn(
     previous_proposal: dict | None = None,
     conversation: list[dict] | None = None,
     force_plan: bool = False,
+    images: list[tuple[bytes, str]] | None = None,
 ) -> dict:
-    """One planning-conversation turn: {"intent", "reply", "proposal" (None for answers)}."""
+    """One planning-conversation turn: {"intent", "reply", "proposal" (None for answers)}.
+
+    ``images`` are (bytes, content_type) pairs sent with this turn only.
+    """
     reference = _localize_reference(reference_at, timezone_name)
     prompt = _build_plan_prompt(
         ideas,
@@ -315,8 +337,17 @@ async def plan_turn(
         previous_proposal,
         conversation or [],
         force_plan=force_plan,
+        image_count=len(images or []),
     )
-    raw = await asyncio.to_thread(_call_plan_model, prompt)
+    if images:
+        parts = []
+        for image_bytes, content_type in images:
+            data, data_type = await asyncio.to_thread(_prepare_image_for_ai, image_bytes, content_type)
+            encoded = base64.b64encode(data).decode("ascii")
+            parts.append({"type": "image_url", "image_url": {"url": f"data:{data_type};base64,{encoded}"}})
+        raw = await asyncio.to_thread(_call_plan_model, prompt, parts)
+    else:
+        raw = await asyncio.to_thread(_call_plan_model, prompt)
     return _normalize_turn(
         raw,
         ideas,

@@ -64,6 +64,13 @@ class PlanIntentTests(unittest.TestCase):
         # Existing planning rules are still part of both prompts.
         for prompt in (free, forced):
             self.assertIn("午餐 12:00-13:00", prompt)
+            self.assertNotIn("附带了", prompt)
+
+    def test_prompt_mentions_images_only_when_attached(self) -> None:
+        args = (self.ideas, self.tasks, self.reference, "Asia/Shanghai", "按课表排", None, [])
+        prompt = _build_plan_prompt(*args, force_plan=False, image_count=2)
+        self.assertIn("附带了 2 张图片", prompt)
+        self.assertIn("不要编造", prompt)
 
 
 if __name__ == "__main__":

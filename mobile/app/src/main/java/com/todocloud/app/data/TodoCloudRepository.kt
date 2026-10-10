@@ -18,6 +18,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
@@ -260,6 +261,7 @@ class TodoCloudRepository(context: Context) {
         ideaIds: Collection<Int>,
         history: List<PlanMessage>,
         forcePlan: Boolean,
+        images: List<Uri> = emptyList(),
     ): PlanChatResult {
         val payload = planningPayload(message, ideaIds).apply {
             put("force_plan", forcePlan)
@@ -272,23 +274,53 @@ class TodoCloudRepository(context: Context) {
                 },
             )
         }
+        val body = planRequestBody(payload, images)
+        val path = if (images.isEmpty()) "/plans/chat" else "/plans/chat/images"
         val response = authorizedRequest(token) { authToken ->
             Request.Builder()
-                .url(baseUrl + "/plans/chat")
+                .url(baseUrl + path)
                 .authorized(authToken)
-                .post(payload.toString().toRequestBody(jsonMediaType))
+                .post(body)
                 .build()
         } as JSONObject
         return parsePlanChat(response)
     }
 
-    suspend fun revisePlan(token: String, planId: Int, message: String): AiPlan {
+    /** JSON body without images; multipart (payload JSON + up to 3 compressed images) with them. */
+    private suspend fun planRequestBody(payload: JSONObject, images: List<Uri>): RequestBody {
+        if (images.isEmpty()) return payload.toString().toRequestBody(jsonMediaType)
+        val prepared = withContext(Dispatchers.IO) {
+            images.take(MAX_PLAN_IMAGES).map(::prepareScreenshotForUpload)
+        }
+        return MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("payload", payload.toString())
+            .apply {
+                prepared.forEachIndexed { index, (bytes, contentType) ->
+                    addFormDataPart(
+                        "files",
+                        "plan-$index.${contentType.substringAfter('/', "jpg")}",
+                        bytes.toRequestBody(contentType.toMediaTypeOrNull() ?: "image/jpeg".toMediaType()),
+                    )
+                }
+            }
+            .build()
+    }
+
+    suspend fun revisePlan(
+        token: String,
+        planId: Int,
+        message: String,
+        images: List<Uri> = emptyList(),
+    ): AiPlan {
         val payload = planningPayload(message)
+        val body = planRequestBody(payload, images)
+        val suffix = if (images.isEmpty()) "messages" else "messages/images"
         val response = authorizedRequest(token) { authToken ->
             Request.Builder()
-                .url("$baseUrl/plans/$planId/messages")
+                .url("$baseUrl/plans/$planId/$suffix")
                 .authorized(authToken)
-                .post(payload.toString().toRequestBody(jsonMediaType))
+                .post(body)
                 .build()
         }
         return parsePlan(response as JSONObject)
@@ -701,6 +733,7 @@ class TodoCloudRepository(context: Context) {
     private companion object {
         const val MAX_AUTH_ATTEMPTS = 3
         const val MAX_AI_IMAGE_EDGE = 2048
+        const val MAX_PLAN_IMAGES = 3
         const val MAX_AI_IMAGE_BYTES = 1_500_000
         const val KEY_TOKEN = "token"
         const val KEY_REFRESH_TOKEN = "refresh_token"
