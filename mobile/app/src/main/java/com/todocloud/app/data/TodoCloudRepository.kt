@@ -254,6 +254,34 @@ class TodoCloudRepository(context: Context) {
         return parsePlan(response as JSONObject)
     }
 
+    suspend fun chatPlan(
+        token: String,
+        message: String,
+        ideaIds: Collection<Int>,
+        history: List<PlanMessage>,
+        forcePlan: Boolean,
+    ): PlanChatResult {
+        val payload = planningPayload(message, ideaIds).apply {
+            put("force_plan", forcePlan)
+            put(
+                "history",
+                JSONArray().apply {
+                    history.takeLast(12).forEach { item ->
+                        put(JSONObject().put("role", item.role).put("content", item.content.take(4000)))
+                    }
+                },
+            )
+        }
+        val response = authorizedRequest(token) { authToken ->
+            Request.Builder()
+                .url(baseUrl + "/plans/chat")
+                .authorized(authToken)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+        } as JSONObject
+        return parsePlanChat(response)
+    }
+
     suspend fun revisePlan(token: String, planId: Int, message: String): AiPlan {
         val payload = planningPayload(message)
         val response = authorizedRequest(token) { authToken ->
@@ -566,6 +594,16 @@ class TodoCloudRepository(context: Context) {
             }
         }.orEmpty(),
     )
+
+    private fun parsePlanChat(json: JSONObject): PlanChatResult {
+        val reply = json.optString("reply")
+        val plan = json.optJSONObject("plan")
+        return if (json.optString("kind") == "plan" && plan != null) {
+            PlanChatResult.Created(reply, parsePlan(plan))
+        } else {
+            PlanChatResult.Answer(reply)
+        }
+    }
 
     private fun parsePlan(json: JSONObject): AiPlan {
         val proposal = json.getJSONObject("proposal")

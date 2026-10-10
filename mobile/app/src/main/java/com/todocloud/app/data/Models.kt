@@ -74,6 +74,15 @@ data class PlanAcceptResult(
     val tasks: List<TaskItem>,
 )
 
+/** Result of one AI planning conversation turn: either an answer or a new draft plan. */
+sealed interface PlanChatResult {
+    val reply: String
+
+    data class Answer(override val reply: String) : PlanChatResult
+
+    data class Created(override val reply: String, val plan: AiPlan) : PlanChatResult
+}
+
 data class AiTaskStep(
     val title: String,
 )

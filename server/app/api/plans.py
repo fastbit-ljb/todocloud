@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.rate_limit import enforce_rate_limit
 from app.db.models import AiPlan, Idea, Task, User
 from app.db.session import get_db
-from app.plan_ai import generate_plan
+from app.plan_ai import plan_turn
 
 
 router = APIRouter(prefix="/plans")
@@ -69,6 +69,23 @@ class PlanReviseRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     reference_at: str | None = None
     timezone_name: str = Field(default="Asia/Shanghai", max_length=64)
+    force_plan: bool = False
+
+
+class PlanChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    idea_ids: list[int] | None = Field(default=None, max_length=100)
+    reference_at: str | None = None
+    timezone_name: str = Field(default="Asia/Shanghai", max_length=64)
+    # Earlier question/answer turns the client is still showing (not stored server-side).
+    history: list[PlanMessage] = Field(default_factory=list, max_length=12)
+    force_plan: bool = False
+
+
+class PlanChatResponse(BaseModel):
+    kind: str  # "answer" or "plan"
+    reply: str
+    plan: "PlanResponse | None" = None
 
 
 class PlanAcceptResponse(BaseModel):
@@ -122,12 +139,14 @@ async def planning_sources(
 async def run_planner(
     ideas: list[Idea],
     tasks: list[Task],
-    payload: PlanGenerateRequest | PlanReviseRequest,
+    payload: PlanGenerateRequest | PlanReviseRequest | PlanChatRequest,
     previous_proposal: dict | None = None,
     messages: list[dict] | None = None,
+    force_plan: bool = True,
 ) -> dict:
+    """Returns {"intent", "reply", "proposal"}; proposal is None for an answer."""
     try:
-        return await generate_plan(
+        return await plan_turn(
             [serialize_idea(item) for item in ideas],
             [serialize_task(item) for item in tasks],
             payload.reference_at,
@@ -135,6 +154,7 @@ async def run_planner(
             payload.message.strip(),
             previous_proposal,
             messages,
+            force_plan=force_plan,
         )
     except AiNotConfiguredError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
@@ -169,7 +189,7 @@ async def create_plan(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="请先告诉 AI 你想安排什么",
         )
-    proposal = await run_planner(ideas, tasks, payload)
+    proposal = (await run_planner(ideas, tasks, payload))["proposal"]
     messages = [
         {"role": "user", "content": payload.message.strip()},
         {"role": "assistant", "content": proposal["summary"]},
@@ -185,6 +205,47 @@ async def create_plan(
     await db.commit()
     await db.refresh(plan)
     return plan
+
+
+@router.post("/chat", response_model=PlanChatResponse)
+async def chat(
+    payload: PlanChatRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PlanChatResponse:
+    """Answer a question, or create a draft plan when the user actually wants one."""
+    await enforce_rate_limit("ai-plan-user", str(user.id), settings.ai_rate_limit_per_minute)
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先告诉 AI 你想问什么或安排什么")
+    ideas, tasks = await planning_sources(user.id, db, payload.idea_ids)
+    history = [item.model_dump() for item in payload.history]
+    turn = await run_planner(
+        ideas,
+        tasks,
+        payload,
+        messages=history + [{"role": "user", "content": message}],
+        force_plan=payload.force_plan,
+    )
+    if turn["proposal"] is None:
+        return PlanChatResponse(kind="answer", reply=turn["reply"])
+
+    plan = AiPlan(
+        user_id=user.id,
+        status="draft",
+        title="我的 AI 计划",
+        proposal=turn["proposal"],
+        messages=[
+            {"role": "user", "content": message},
+            {"role": "assistant", "content": turn["proposal"]["summary"]},
+        ],
+    )
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+    return PlanChatResponse(
+        kind="plan", reply=turn["reply"], plan=PlanResponse.model_validate(plan)
+    )
 
 
 @router.post("/{plan_id}/messages", response_model=PlanResponse)
@@ -203,9 +264,20 @@ async def revise_plan(
     ideas, tasks = await planning_sources(user.id, db)
     history = list(plan.messages or [])
     history.append({"role": "user", "content": payload.message.strip()})
-    proposal = await run_planner(ideas, tasks, payload, dict(plan.proposal or {}), history)
-    history.append({"role": "assistant", "content": proposal["summary"]})
-    plan.proposal = proposal
+    turn = await run_planner(
+        ideas,
+        tasks,
+        payload,
+        dict(plan.proposal or {}),
+        history,
+        force_plan=payload.force_plan,
+    )
+    if turn["proposal"] is None:
+        # A question about the plan: answer it and leave the plan untouched.
+        history.append({"role": "assistant", "content": turn["reply"]})
+    else:
+        history.append({"role": "assistant", "content": turn["proposal"]["summary"]})
+        plan.proposal = turn["proposal"]
     plan.messages = history
     await db.commit()
     await db.refresh(plan)
