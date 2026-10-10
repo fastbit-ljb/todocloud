@@ -22,6 +22,19 @@ https://dnsgo.xyz/todocloud-api/api/v1
 
 Android 任务页同时提供“从截图识别任务”和“语音/文字提取任务”。后者先使用设备系统语音识别生成可编辑文字，再调用 `/ai/parse-text`；设备没有语音服务或用户不授予录音权限时，可直接输入文字。
 
+### Release 签名
+
+`assembleRelease` 从 `mobile/keystore.properties` 读取签名配置（该文件已被 `.gitignore` 忽略，不要提交）：
+
+```properties
+storeFile=C:/path/to/your.keystore
+storePassword=...
+keyAlias=...
+keyPassword=...
+```
+
+没有这个文件时仍能构建，但产出的是未签名的 `app-release-unsigned.apk`。正式版必须继续使用与旧版相同的证书（当前为 Android Debug 证书，SHA-256 `8af07bcd5ca4f95d9877d0b54fdd472b96aff91dd465f4de9f51261637938aec`），否则已安装的用户无法覆盖升级。签名后的 APK 位于 `mobile/app/build/outputs/apk/release/app-release.apk`，可用 `apksigner verify --print-certs` 核对证书。
+
 ## 服务端
 
 服务端要求 Python 3.12。首次运行：
