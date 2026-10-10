@@ -106,7 +106,7 @@ codex exec -C D:\L\Study\TodoList-codex -s workspace-write `
 3. 用 build-tools 36.0.0 的 apksigner verify --print-certs、zipalign -c 4、aapt dump badging 核对：签名有效，证书 SHA-256 为 8af07bcd5ca4f95d9877d0b54fdd472b96aff91dd465f4de9f51261637938aec，包名 com.todocloud.app，versionName/versionCode 与 build.gradle.kts 一致。任何一项不符就停止。
 4. 手机已连接时：adb -s a1b797ec install -r 安装并启动，确认没有崩溃，不清数据、不卸载。
 5. git tag -a v<版本> -m "TodoCloud <版本>" origin/main，然后 git push origin tag v<版本>。
-6. gh release create v<版本> 'mobile/app/build/outputs/apk/release/app-release.apk#TodoCloud-v<版本>.apk' --repo fastbit-ljb/todocloud --title "TodoCloud <版本>" --notes-file <发布说明文件> --verify-tag --latest
+6. Copy-Item 'mobile/app/build/outputs/apk/release/app-release.apk' 'mobile/app/build/outputs/apk/release/TodoCloud-v<版本>.apk' -Force；确认复制后的 SHA-256 与原 APK 一致；再运行 gh release create v<版本> 'mobile/app/build/outputs/apk/release/TodoCloud-v<版本>.apk' --repo fastbit-ljb/todocloud --title "TodoCloud <版本>" --notes-file <发布说明文件> --verify-tag --latest
 7. gh release view 核对：非草稿、非预发布，附件存在且大小不为 0，附件 SHA-256 与本地文件一致。用中文汇报结果。
 ```
 
