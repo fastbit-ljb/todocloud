@@ -13,6 +13,10 @@ Summary for Codex / GPT agents:
   Git state and CI, and explain procedures or review results.
 - When Kiro runs you non-interactively (`codex exec`), stay in the read-only or workspace-write
   sandbox, do not edit tracked files unless told to, and report exact command output.
+- Debug APKs you build in that sandbox are signed with a different debug key and will not
+  install over the app on the device. Install only APKs whose certificate SHA-256 is
+  `8af07bcd5ca4f95d9877d0b54fdd472b96aff91dd465f4de9f51261637938aec` (check with
+  `apksigner verify --print-certs`); never uninstall or clear data to make an install succeed.
 - Tagging and publishing a GitHub Release happen only when the repository owner runs you
   interactively, following section 4.2 of the policy. Never do them when driven by Kiro.
 - Unless the repository owner explicitly asks, do NOT change features, UI or server business code,
