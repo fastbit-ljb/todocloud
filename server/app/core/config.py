@@ -3,6 +3,9 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+DEFAULT_JWT_SECRET = "replace-this-before-deployment"
+
+
 class Settings(BaseSettings):
     app_name: str = "TodoCloud API"
     environment: str = "development"
@@ -17,7 +20,7 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_model: str = "gemini-3-flash-preview"
     ai_fallback_model: str = "gemini-3.6-flash"
-    jwt_secret: str = "replace-this-before-deployment"
+    jwt_secret: str = DEFAULT_JWT_SECRET
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
     login_rate_limit_per_minute: int = 10
@@ -30,9 +33,25 @@ class Settings(BaseSettings):
     )
 
 
+def validate_settings(settings: Settings) -> Settings:
+    """Refuse to run production with a forgeable JWT secret.
+
+    Raised as a plain RuntimeError rather than a pydantic validation error,
+    because pydantic's message echoes every input field (database password,
+    AI key) into the logs.
+    """
+    if settings.environment.strip().lower() == "production":
+        secret = settings.jwt_secret.strip()
+        if not secret or secret == DEFAULT_JWT_SECRET:
+            raise RuntimeError(
+                "JWT_SECRET must be set to a random value when ENVIRONMENT=production"
+            )
+    return settings
+
+
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return validate_settings(Settings())
 
 
 settings = get_settings()

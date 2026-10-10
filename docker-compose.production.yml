@@ -16,12 +16,14 @@ services:
     ports: !override
       - "127.0.0.1:18000:8000"
     environment:
+      ENVIRONMENT: production
       DATABASE_URL: postgresql+asyncpg://todocloud:${POSTGRES_PASSWORD}@postgres:5432/todocloud
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
 
   worker:
     environment:
+      ENVIRONMENT: production
       DATABASE_URL: postgresql+asyncpg://todocloud:${POSTGRES_PASSWORD}@postgres:5432/todocloud
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
