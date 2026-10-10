@@ -2,6 +2,8 @@
 
 > 本文件用于在新的 Codex 会话中恢复项目上下文。不要在这里写入密码、私钥、验证码、API Key 或其他敏感凭据。
 
+> **当前分工（2026-10-10 起）**：Kiro 是主要维护者，Codex 默认只负责构建、测试、ADB 安装、查看日志和复核。详见 [`docs/branch-collaboration.md`](branch-collaboration.md)。下面的历史记录中如有与之冲突的内容，以该规范为准。
+
 ## 项目定位
 
 TodoCloud 是一个 Android 待办事项应用，目标功能包括：
