@@ -5,11 +5,13 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.todocloud.app.branding.MascotStateManager
+import com.todocloud.app.update.UpdateNotifier
 
 class TodoCloudApplication : Application(), DefaultLifecycleObserver {
     override fun onCreate() {
         super<Application>.onCreate()
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+        UpdateNotifier.scheduleDailyCheck(this)
     }
 
     override fun onStart(owner: LifecycleOwner) {

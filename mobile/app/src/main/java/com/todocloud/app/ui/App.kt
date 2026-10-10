@@ -231,6 +231,52 @@ fun TodoCloudApp(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    var updatePrompt by remember { mutableStateOf<com.todocloud.app.update.AppVersionInfo?>(null) }
+    var updateAvailableVersion by remember(context) {
+        mutableStateOf(
+            com.todocloud.app.update.UpdateStore(context).latestKnownVersion?.takeIf {
+                com.todocloud.app.update.UpdatePolicy.isNewer(it, com.todocloud.app.update.UpdateChecker.currentVersion)
+            },
+        )
+    }
+    var checkingUpdate by remember { mutableStateOf(false) }
+
+    // Launch-time update check: silent on failure, dialog at most once a day per version.
+    LaunchedEffect(Unit) {
+        val info = com.todocloud.app.update.UpdateChecker.fetch() ?: return@LaunchedEffect
+        val store = com.todocloud.app.update.UpdateStore(context)
+        val current = com.todocloud.app.update.UpdateChecker.currentVersion
+        store.latestKnownVersion = info.latestVersion
+        updateAvailableVersion = info.latestVersion.takeIf {
+            com.todocloud.app.update.UpdatePolicy.isNewer(it, current)
+        }
+        if (com.todocloud.app.update.UpdatePolicy.shouldShowDialog(
+                info, current, store.skippedVersion, store.lastPromptDay, com.todocloud.app.update.UpdateStore.today(),
+            )
+        ) {
+            updatePrompt = info
+        }
+    }
+
+    updatePrompt?.let { info ->
+        UpdateDialog(
+            info = info,
+            onDownload = {
+                rememberUpdateDecision(context, info, skip = false)
+                openUpdateDownload(context, info)
+                updatePrompt = null
+            },
+            onLater = {
+                rememberUpdateDecision(context, info, skip = false)
+                updatePrompt = null
+            },
+            onSkip = {
+                rememberUpdateDecision(context, info, skip = true)
+                updatePrompt = null
+            },
+        )
+    }
+
     if (session == null) {
         LoginScreen(
             loading = loading,
@@ -558,6 +604,30 @@ fun TodoCloudApp(
                     },
                     onOpenPermissions = { settingsPage = "permissions" },
                     onOpenSponsor = { settingsPage = "sponsor" },
+                    updateAvailableVersion = updateAvailableVersion,
+                    checkingUpdate = checkingUpdate,
+                    onCheckUpdate = {
+                        scope.launch {
+                            checkingUpdate = true
+                            val info = com.todocloud.app.update.UpdateChecker.fetch()
+                            checkingUpdate = false
+                            val current = com.todocloud.app.update.UpdateChecker.currentVersion
+                            when {
+                                info == null -> android.widget.Toast
+                                    .makeText(context, "暂时无法检查更新，请稍后再试", android.widget.Toast.LENGTH_SHORT).show()
+                                com.todocloud.app.update.UpdatePolicy.isNewer(info.latestVersion, current) -> {
+                                    com.todocloud.app.update.UpdateStore(context).latestKnownVersion = info.latestVersion
+                                    updateAvailableVersion = info.latestVersion
+                                    updatePrompt = info // a manual check always shows the dialog
+                                }
+                                else -> {
+                                    updateAvailableVersion = null
+                                    android.widget.Toast
+                                        .makeText(context, "已是最新版本 $current", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    },
                     onLogout = {
                         scope.launch {
                             repository.logout(currentSession)
