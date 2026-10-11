@@ -1,7 +1,7 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -93,6 +93,29 @@ class PlanChatResponse(BaseModel):
 class PlanAcceptResponse(BaseModel):
     plan: PlanResponse
     tasks: list[TaskResponse]
+
+
+class PlanAcceptRequest(BaseModel):
+    # The items to adopt, possibly with edited times. Omitted = every proposed item (old clients).
+    items: list[PlanItem] | None = Field(default=None, max_length=100)
+
+
+class PlanUndoResponse(BaseModel):
+    plan: PlanResponse
+    deleted_task_ids: list[int]
+    tasks: list[TaskResponse]  # existing tasks whose schedule was put back
+
+
+# An accepted plan can be undone for this long; the app offers it right after accepting.
+PLAN_UNDO_WINDOW = timedelta(hours=24)
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
 
 
 def serialize_idea(idea: Idea) -> dict:
@@ -400,6 +423,7 @@ async def _revise(
 @router.post("/{plan_id}/accept", response_model=PlanAcceptResponse)
 async def accept_plan(
     plan_id: int,
+    payload: PlanAcceptRequest | None = Body(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> PlanAcceptResponse:
@@ -411,13 +435,36 @@ async def accept_plan(
 
     changed_tasks: list[Task] = []
     proposal = PlanProposal.model_validate(plan.proposal)
-    for item in proposal.items:
+    selected = proposal.items
+    if payload is not None and payload.items is not None:
+        # Only items that are in this plan may be adopted; their times may be edited.
+        proposed_keys = {(item.source_type, item.source_id) for item in proposal.items}
+        if any((item.source_type, item.source_id) not in proposed_keys for item in payload.items):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="包含不属于这份计划的安排"
+            )
+        if not payload.items:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请至少选择一项安排")
+        selected = payload.items
+    # What accepting changed, so /undo can put it back exactly.
+    record: dict = {"created_task_ids": [], "converted_idea_ids": [], "task_snapshots": []}
+    for item in selected:
         if item.source_type == "task":
             task = await db.scalar(
                 select(Task).where(Task.id == item.source_id, Task.user_id == user.id)
             )
             if task is None or task.completed:
                 continue
+            record["task_snapshots"].append(
+                {
+                    "id": task.id,
+                    "start_at": _iso(task.start_at),
+                    "due_at": _iso(task.due_at),
+                    "duration_minutes": task.duration_minutes,
+                    "reminder_offset_minutes": task.reminder_offset_minutes,
+                    "steps": list(task.steps or []),
+                }
+            )
             task.start_at = item.start_at
             task.due_at = item.due_at
             task.duration_minutes = item.duration_minutes
@@ -441,6 +488,7 @@ async def accept_plan(
             )
             db.add(task)
             await db.flush()
+            record["created_task_ids"].append(task.id)
             changed_tasks.append(task)
             continue
 
@@ -472,8 +520,17 @@ async def accept_plan(
         db.add(task)
         await db.flush()
         idea.converted_task_id = task.id
+        record["created_task_ids"].append(task.id)
+        record["converted_idea_ids"].append(idea.id)
         changed_tasks.append(task)
 
+    # The plan keeps what was actually adopted; the full proposal is kept for /undo.
+    record["original_items"] = [item.model_dump(mode="json") for item in proposal.items]
+    plan.proposal = {
+        "summary": proposal.summary,
+        "items": [item.model_dump(mode="json") for item in selected],
+        "accept_record": record,
+    }
     plan.status = "accepted"
     plan.accepted_at = datetime.now(timezone.utc)
     await db.commit()
@@ -481,3 +538,63 @@ async def accept_plan(
         await db.refresh(task)
     await db.refresh(plan)
     return PlanAcceptResponse(plan=PlanResponse.model_validate(plan), tasks=changed_tasks)
+
+
+@router.post("/{plan_id}/undo", response_model=PlanUndoResponse)
+async def undo_accept(
+    plan_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PlanUndoResponse:
+    """Reverse an accept: delete the tasks it created, give ideas back to the inbox,
+    restore the schedules it changed, and make the plan a draft again."""
+    plan = await db.scalar(select(AiPlan).where(AiPlan.id == plan_id, AiPlan.user_id == user.id))
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="计划不存在")
+    record = (plan.proposal or {}).get("accept_record")
+    if plan.status != "accepted" or not isinstance(record, dict):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="这份计划不能撤回")
+    if plan.accepted_at and datetime.now(timezone.utc) - plan.accepted_at > PLAN_UNDO_WINDOW:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="采用超过 24 小时的计划不能撤回")
+
+    idea_ids = [int(value) for value in record.get("converted_idea_ids", [])]
+    if idea_ids:
+        ideas = await db.execute(select(Idea).where(Idea.user_id == user.id, Idea.id.in_(idea_ids)))
+        for idea in ideas.scalars():
+            idea.converted_task_id = None
+
+    deleted_ids: list[int] = []
+    created_ids = [int(value) for value in record.get("created_task_ids", [])]
+    if created_ids:
+        created = await db.execute(select(Task).where(Task.user_id == user.id, Task.id.in_(created_ids)))
+        for task in created.scalars():
+            deleted_ids.append(task.id)
+            await db.delete(task)
+
+    restored: list[Task] = []
+    for snapshot in record.get("task_snapshots", []):
+        task = await db.scalar(
+            select(Task).where(Task.id == int(snapshot["id"]), Task.user_id == user.id)
+        )
+        if task is None:
+            continue
+        task.start_at = _parse_dt(snapshot.get("start_at"))
+        task.due_at = _parse_dt(snapshot.get("due_at"))
+        task.duration_minutes = snapshot.get("duration_minutes")
+        task.reminder_offset_minutes = snapshot.get("reminder_offset_minutes")
+        task.steps = list(snapshot.get("steps") or [])
+        restored.append(task)
+
+    plan.proposal = {
+        "summary": (plan.proposal or {}).get("summary", ""),
+        "items": record.get("original_items") or (plan.proposal or {}).get("items", []),
+    }
+    plan.status = "draft"
+    plan.accepted_at = None
+    await db.commit()
+    for task in restored:
+        await db.refresh(task)
+    await db.refresh(plan)
+    return PlanUndoResponse(
+        plan=PlanResponse.model_validate(plan), deleted_task_ids=deleted_ids, tasks=restored
+    )
