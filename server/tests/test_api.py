@@ -236,6 +236,97 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["status"], "draft")
         self.assertIn('intent 必须是 "plan"', model.call_args.args[0])
 
+    async def _draft_plan(self, auth: dict) -> tuple[dict, dict, dict]:
+        """A draft plan with one existing task, one inbox idea and one new prompt item."""
+        from unittest import mock
+
+        task = (
+            await self.client.post(
+                "/tasks", headers=auth,
+                json={"title": "写周报", "due_at": "2026-10-20T10:00:00+08:00",
+                      "reminder_offset_minutes": 10, "steps": [{"title": "列提纲", "completed": True}]},
+            )
+        ).json()
+        idea = (await self.client.post("/ideas", headers=auth, json={"content": "整理书桌"})).json()
+        raw = {
+            "intent": "plan",
+            "summary": "明天三件事",
+            "items": [
+                {"source_type": "task", "source_id": task["id"], "title": "写周报",
+                 "start_at": "2026-10-12T09:00:00+08:00", "due_at": "2026-10-12T10:00:00+08:00",
+                 "duration_minutes": 60, "steps": [{"title": "写初稿"}]},
+                {"source_type": "idea", "source_id": idea["id"], "title": "整理书桌",
+                 "start_at": "2026-10-12T15:00:00+08:00", "duration_minutes": 30},
+                {"source_type": "prompt", "source_id": 1, "title": "买牛奶",
+                 "start_at": "2026-10-12T18:00:00+08:00", "duration_minutes": 15},
+            ],
+        }
+        with mock.patch("app.plan_ai._call_plan_model", return_value=raw):
+            created = await self.client.post(
+                "/plans/chat", headers=auth,
+                json={"message": "帮我排明天，还要买牛奶", "force_plan": True},
+            )
+        self.assertEqual(created.json()["kind"], "plan", created.text)
+        return created.json()["plan"], task, idea
+
+    async def test_accept_selected_items_with_edits_then_undo(self) -> None:
+        auth = self._auth(await self._register())
+        plan, task, idea = await self._draft_plan(auth)
+        items = plan["proposal"]["items"]
+        self.assertEqual(len(items), 3)
+
+        # Adopt the task (moved to 11:00) and the new prompt item; leave the idea out.
+        edited_task = {**items[0], "start_at": "2026-10-12T11:00:00+08:00",
+                       "due_at": "2026-10-12T12:00:00+08:00"}
+        accepted = await self.client.post(
+            f"/plans/{plan['id']}/accept", headers=auth, json={"items": [edited_task, items[2]]}
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        body = accepted.json()
+        self.assertEqual(body["plan"]["status"], "accepted")
+        self.assertEqual(len(body["plan"]["proposal"]["items"]), 2)
+        self.assertNotIn("accept_record", body["plan"]["proposal"])
+        tasks = {item["title"]: item for item in (await self.client.get("/tasks", headers=auth)).json()}
+        self.assertEqual(set(tasks), {"写周报", "买牛奶"})
+        self.assertTrue(tasks["写周报"]["due_at"].startswith("2026-10-12T04:00:00"))
+        self.assertEqual(len((await self.client.get("/ideas", headers=auth)).json()), 1)  # idea untouched
+
+        undone = await self.client.post(f"/plans/{plan['id']}/undo", headers=auth)
+        self.assertEqual(undone.status_code, 200, undone.text)
+        undo = undone.json()
+        self.assertEqual(undo["plan"]["status"], "draft")
+        self.assertEqual(len(undo["plan"]["proposal"]["items"]), 3)  # full proposal is back
+        self.assertEqual(undo["deleted_task_ids"], [tasks["买牛奶"]["id"]])
+        after = (await self.client.get("/tasks", headers=auth)).json()
+        self.assertEqual([item["id"] for item in after], [task["id"]])
+        self.assertEqual(after[0]["due_at"], task["due_at"])
+        self.assertEqual(after[0]["reminder_offset_minutes"], 10)
+        self.assertEqual(after[0]["steps"], [{"title": "列提纲", "completed": True}])
+
+        # Undo twice is refused; the draft can be accepted again (all items by default).
+        self.assertEqual((await self.client.post(f"/plans/{plan['id']}/undo", headers=auth)).status_code, 409)
+        again = await self.client.post(f"/plans/{plan['id']}/accept", headers=auth)
+        self.assertEqual(again.status_code, 200, again.text)
+        self.assertEqual((await self.client.get("/ideas", headers=auth)).json(), [])  # idea converted
+
+        undone_again = await self.client.post(f"/plans/{plan['id']}/undo", headers=auth)
+        self.assertEqual(undone_again.status_code, 200, undone_again.text)
+        self.assertEqual([item["id"] for item in (await self.client.get("/ideas", headers=auth)).json()],
+                         [idea["id"]])  # idea back in the inbox
+
+    async def test_accept_rejects_foreign_or_empty_selection(self) -> None:
+        auth = self._auth(await self._register())
+        plan, _, _ = await self._draft_plan(auth)
+        foreign = {**plan["proposal"]["items"][0], "source_id": 999_999}
+        response = await self.client.post(
+            f"/plans/{plan['id']}/accept", headers=auth, json={"items": [foreign]}
+        )
+        self.assertEqual(response.status_code, 422)
+        empty = await self.client.post(f"/plans/{plan['id']}/accept", headers=auth, json={"items": []})
+        self.assertEqual(empty.status_code, 400)
+        other = self._auth(await self._register())
+        self.assertEqual((await self.client.post(f"/plans/{plan['id']}/undo", headers=other)).status_code, 404)
+
     async def test_plan_chat_with_images(self) -> None:
         import io
         import json as jsonlib
