@@ -66,11 +66,38 @@ class PlanIntentTests(unittest.TestCase):
             self.assertIn("午餐 12:00-13:00", prompt)
             self.assertNotIn("附带了", prompt)
 
+    def test_provider_quota_error_is_not_reported_as_timeout(self) -> None:
+        import io
+        from unittest import mock
+        from urllib import error as urlerror
+
+        from app.ai_parser import AiParseError
+        from app.core.config import settings
+        from app.plan_ai import _call_plan_model
+
+        def http_error(code: int):
+            return urlerror.HTTPError("https://x", code, "err", {}, io.BytesIO(b"{}"))
+
+        with mock.patch.multiple(settings, ai_api_key="k", ai_fallback_model=""), \
+                mock.patch("app.plan_ai.time.sleep"):
+            for code, text in ((429, "请求较多"), (400, "模型配置无效")):
+                with mock.patch("app.plan_ai.request.urlopen", side_effect=http_error(code)):
+                    with self.assertRaises(AiParseError) as caught:
+                        _call_plan_model("p")
+                self.assertIn(text, str(caught.exception))
+            with mock.patch("app.plan_ai.request.urlopen", side_effect=TimeoutError()):
+                with self.assertRaises(AiParseError) as caught:
+                    _call_plan_model("p")
+            self.assertIn("超时", str(caught.exception))
+
     def test_prompt_mentions_images_only_when_attached(self) -> None:
         args = (self.ideas, self.tasks, self.reference, "Asia/Shanghai", "按课表排", None, [])
         prompt = _build_plan_prompt(*args, force_plan=False, image_count=2)
         self.assertIn("附带了 2 张图片", prompt)
         self.assertIn("不要编造", prompt)
+        self.assertIn("没写年份", prompt)
+        self.assertIn("2027届", prompt)
+        self.assertIn("日期和星期对得上", prompt)
 
 
 if __name__ == "__main__":

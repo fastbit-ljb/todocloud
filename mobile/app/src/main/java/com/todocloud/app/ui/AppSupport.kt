@@ -260,9 +260,10 @@ internal fun oemBackgroundGuidance(): String {
 }
 
 internal fun formatDueAt(value: String): String = runCatching {
-    OffsetDateTime.parse(value)
-        .atZoneSameInstant(ZoneId.systemDefault())
-        .format(DateTimeFormatter.ofPattern("M月d日 HH:mm"))
+    val local = OffsetDateTime.parse(value).atZoneSameInstant(ZoneId.systemDefault())
+    // Show the year when it is not this year, so a date a year off is visible at a glance.
+    val pattern = if (local.year == LocalDate.now().year) "M月d日 HH:mm" else "yyyy年M月d日 HH:mm"
+    local.format(DateTimeFormatter.ofPattern(pattern))
 }.getOrElse { value.replace("T", " ").removeSuffix("Z") }
 
 internal fun parseDueDate(value: String): LocalDate? = runCatching {

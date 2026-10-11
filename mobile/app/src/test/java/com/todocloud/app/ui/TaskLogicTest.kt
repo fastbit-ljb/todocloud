@@ -116,6 +116,16 @@ class TaskLogicTest {
     }
 
     @Test
+    fun formatDueAt_showsYearOnlyOutsideTheCurrentYear() {
+        val zone = java.time.ZoneId.systemDefault()
+        val thisYear = java.time.LocalDate.now().year
+        fun at(year: Int) = java.time.ZonedDateTime.of(year, 10, 13, 17, 0, 0, 0, zone)
+            .toOffsetDateTime().toString()
+        assertEquals("10月13日 17:00", formatDueAt(at(thisYear)))
+        assertEquals("${thisYear + 1}年10月13日 17:00", formatDueAt(at(thisYear + 1)))
+    }
+
+    @Test
     fun parseInstant_rejectsNonIsoText() {
         assertEquals(Instant.parse("2026-10-11T04:00:00Z"), parseInstant("2026-10-11T12:00:00+08:00"))
         assertEquals(null, parseInstant("明天"))

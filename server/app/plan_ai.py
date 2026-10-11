@@ -57,6 +57,8 @@ def _build_plan_prompt(
 {image_rules}
 当前用户当地时间：{reference_at.isoformat(timespec='seconds')}
 IANA 时区：{timezone_name}
+图片或文字里只写了月日、没写年份的日期（例如“10月13日”“13号”），按当前时间之后最近的那一天理解，年份通常就是今年。
+“2027届”“2023级”“2026年级”这类是届别、年级或群名，不是日期，不能拿来当年份。日期旁边写了星期（如“下周二（10月13日）”）时，选出的年份必须让日期和星期对得上。
 
 必须遵守的生活边界：
 1. 普通工作不得安排在早餐 07:30-08:30、午餐 12:00-13:00、晚餐 18:00-19:00。
@@ -243,8 +245,8 @@ def _call_plan_model(prompt: str, image_parts: list[dict] | None = None) -> dict
                 {"role": "user", "content": user_content},
             ],
         }
-        if "generativelanguage.googleapis.com" in settings.ai_api_base_url:
-            payload["reasoning_effort"] = "minimal"
+        if "generativelanguage.googleapis.com" in settings.ai_api_base_url and settings.ai_reasoning_effort:
+            payload["reasoning_effort"] = settings.ai_reasoning_effort
         attempts = PLAN_PRIMARY_ATTEMPTS if model_index == 0 else 1
         for attempt in range(attempts):
             http_request = request.Request(
@@ -301,12 +303,16 @@ def _call_plan_model(prompt: str, image_parts: list[dict] | None = None) -> dict
                     continue
                 break
 
-    if isinstance(last_error, (TimeoutError, urlerror.URLError)):
-        raise AiParseError("AI 生成计划超时，请稍后重试") from last_error
+    # HTTPError is a subclass of URLError, so the HTTP cases must come first;
+    # otherwise a quota (429) or bad model name (400) is reported as a timeout.
     if isinstance(last_error, urlerror.HTTPError) and last_error.code == 429:
         raise AiParseError("AI 计划请求较多，请稍后再试") from last_error
     if isinstance(last_error, urlerror.HTTPError) and last_error.code in {400, 404}:
         raise AiParseError("AI 计划模型配置无效，请检查服务端配置") from last_error
+    if isinstance(last_error, (TimeoutError, urlerror.URLError)) and not isinstance(
+        last_error, urlerror.HTTPError
+    ):
+        raise AiParseError("AI 生成计划超时，请稍后重试") from last_error
     if isinstance(last_error, AiParseError):
         raise last_error
     raise AiParseError("AI 计划服务暂时不可用，请稍后重试") from last_error
