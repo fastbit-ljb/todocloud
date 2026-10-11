@@ -469,12 +469,13 @@ internal fun TaskSectionSwitcher(
                 Triple("inbox", "收件匣", Icons.Outlined.Inbox),
             ).forEach { (value, label, icon) ->
                 val active = selected == value
+                val contentColor = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                 Row(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(14.dp))
                         .background(
-                            if (active) MaterialTheme.colorScheme.primaryContainer
+                            if (active) MaterialTheme.colorScheme.primary
                             else Color.Transparent,
                         )
                         .clickable { onSelected(value) }
@@ -482,8 +483,8 @@ internal fun TaskSectionSwitcher(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Text(label, modifier = Modifier.padding(start = 7.dp))
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = contentColor)
+                    Text(label, modifier = Modifier.padding(start = 7.dp), color = contentColor)
                 }
             }
         }

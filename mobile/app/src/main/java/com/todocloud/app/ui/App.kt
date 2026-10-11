@@ -361,6 +361,30 @@ fun TodoCloudApp(
         }
     }
 
+    fun toggleStep(task: TaskItem, stepIndex: Int, prepareForReorder: () -> Unit) {
+        runRequest {
+            val nextSteps = task.steps.mapIndexed { index, step ->
+                if (index == stepIndex) step.copy(completed = !step.completed) else step
+            }
+            val completedStep = !task.steps[stepIndex].completed
+            val nextCompleted = nextSteps.isNotEmpty() && nextSteps.all { it.completed }
+            val updated = repository.updateTask(
+                currentSession.token,
+                task.id,
+                completed = nextCompleted,
+                steps = nextSteps,
+            )
+            if (completedStep) {
+                MascotStateManager.recordMeaningfulActivity(context)
+            }
+            ReminderScheduler.schedule(context, updated)
+            tasks = tasks.map { if (it.id == updated.id) updated else it }
+            delay(TASK_REORDER_DELAY_MILLIS.toLong())
+            prepareForReorder()
+            tasks = sortTasks(tasks)
+        }
+    }
+
     // Hide the task now and offer "撤销"; the server delete only happens once the
     // snackbar goes away without the action (timeout, swipe, or the next delete).
     fun deleteWithUndo(task: TaskItem) {
@@ -580,8 +604,8 @@ fun TodoCloudApp(
                             icon = tab.icon,
                             label = { Text(tab.label) },
                             colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                indicatorColor = MaterialTheme.colorScheme.primary,
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimary,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
                             ),
                         )
@@ -639,29 +663,7 @@ fun TodoCloudApp(
                     showLoadingAnimation = taskHeaderLoading,
                     error = error,
                     onToggle = { task, prepareForReorder -> toggleTask(task, prepareForReorder) },
-                    onStepToggle = { task, stepIndex, prepareForReorder ->
-                    runRequest {
-                        val nextSteps = task.steps.mapIndexed { index, step ->
-                            if (index == stepIndex) step.copy(completed = !step.completed) else step
-                        }
-                        val completedStep = !task.steps[stepIndex].completed
-                        val nextCompleted = nextSteps.isNotEmpty() && nextSteps.all { it.completed }
-                        val updated = repository.updateTask(
-                            currentSession.token,
-                            task.id,
-                            completed = nextCompleted,
-                            steps = nextSteps,
-                        )
-                        if (completedStep) {
-                            MascotStateManager.recordMeaningfulActivity(context)
-                        }
-                        ReminderScheduler.schedule(context, updated)
-                        tasks = tasks.map { if (it.id == updated.id) updated else it }
-                        delay(TASK_REORDER_DELAY_MILLIS.toLong())
-                        prepareForReorder()
-                        tasks = sortTasks(tasks)
-                    }
-                },
+                    onStepToggle = { task, stepIndex, prepareForReorder -> toggleStep(task, stepIndex, prepareForReorder) },
                     onReminderChange = { task, reminderOffsetMinutes ->
                     runRequest {
                         val updated = repository.updateTask(
@@ -699,6 +701,7 @@ fun TodoCloudApp(
                 tasks = tasks,
                 requestedDate = requestedCalendarDate,
                 onToggleTask = { task -> toggleTask(task) {} },
+                onToggleStep = { task, index -> toggleStep(task, index) {} },
                 onEditTask = { task ->
                     editingTask = task
                     showComposer = true
@@ -807,12 +810,14 @@ fun TodoCloudApp(
         } else {
             screen()
         }
-        // Own snackbar slot: Scaffold's sits above the tall add-menu FAB, i.e. mid-screen.
+        // Own snackbar slot, pinned to the bottom; on the task tab it sits above the
+        // add button (66dp + 16dp margin) instead of covering it.
+        val fabClearance = if (selectedTab == 0) 66.dp + 16.dp else 0.dp
         SnackbarHost(
             snackbarHostState,
             modifier = Modifier
                 .align(androidx.compose.ui.Alignment.BottomCenter)
-                .padding(bottom = scaffoldPadding.calculateBottomPadding() + 8.dp),
+                .padding(bottom = scaffoldPadding.calculateBottomPadding() + fabClearance + 8.dp),
         )
         }
         }

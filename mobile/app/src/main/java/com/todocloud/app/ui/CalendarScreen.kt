@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,6 +43,7 @@ import com.todocloud.app.data.TaskItem
 import java.time.LocalDate
 import java.time.YearMonth
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun CalendarScreen(
     paddingValues: PaddingValues,
@@ -49,7 +51,9 @@ internal fun CalendarScreen(
     requestedDate: String? = null,
     onToggleTask: (TaskItem) -> Unit = {},
     onEditTask: (TaskItem) -> Unit = {},
+    onToggleStep: (TaskItem, Int) -> Unit = { _, _ -> },
 ) {
+    var expandedTaskIds by rememberSaveable { mutableStateOf(emptyList<Int>()) }
     var visibleMonthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     var selectedDateText by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     val visibleMonth = remember(visibleMonthText) { YearMonth.parse(visibleMonthText) }
@@ -211,20 +215,27 @@ internal fun CalendarScreen(
             }
         }
         items(selectedTasks, key = { it.id }) { task ->
+            val expanded = task.id in expandedTaskIds
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClickLabel = "编辑任务") { onEditTask(task) },
+                    .combinedClickable(
+                        onClickLabel = if (expanded) "收起详情" else "展开详情",
+                        onLongClickLabel = "编辑任务",
+                        onLongClick = { onEditTask(task) },
+                    ) {
+                        expandedTaskIds = if (expanded) expandedTaskIds - task.id else expandedTaskIds + task.id
+                    },
             ) {
                 Row(
                     modifier = Modifier.padding(start = 6.dp, top = 8.dp, end = 16.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Top,
                 ) {
                     GreenTaskCheckbox(
                         checked = task.completed,
                         onCheckedChange = { onToggleTask(task) },
                     )
-                    Column(Modifier.weight(1f).padding(start = 6.dp)) {
+                    Column(Modifier.weight(1f).padding(start = 6.dp, top = 10.dp)) {
                         Text(
                             task.title,
                             style = MaterialTheme.typography.titleMedium,
@@ -244,6 +255,42 @@ internal fun CalendarScreen(
                         }
                         task.reminderOffsetMinutes?.let {
                             Text(reminderLabel(it), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (!expanded && task.steps.isNotEmpty()) {
+                            Text(
+                                "${task.steps.count { it.completed }}/${task.steps.size} 步 · 点开查看",
+                                modifier = Modifier.padding(top = 4.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        if (expanded) {
+                            task.steps.forEachIndexed { index, step ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onToggleStep(task, index) },
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    GreenTaskCheckbox(
+                                        checked = step.completed,
+                                        onCheckedChange = { onToggleStep(task, index) },
+                                    )
+                                    Text(
+                                        "${index + 1}. ${step.title}",
+                                        modifier = Modifier.padding(start = 8.dp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            task.description?.takeIf { it.isNotBlank() }?.let {
+                                Text(
+                                    it,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            TextButton(onClick = { onEditTask(task) }) { Text("编辑") }
                         }
                     }
                 }
