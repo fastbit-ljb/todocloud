@@ -71,4 +71,42 @@ class UpdatePolicyTest {
         assertEquals("TodoCloud 1.3.3\nAI 计划\n提问时只回答", UpdatePolicy.summarizeNotes(notes))
         assertEquals(10, UpdatePolicy.summarizeNotes("a".repeat(50), maxChars = 10).length)
     }
+
+    @Test
+    fun releaseNoteBlocks_keepSectionsAndBoldLeads_dropGitHubOnlyParts() {
+        val notes = """
+            ## TodoCloud 1.3.4
+
+            Android 1.3.4（versionCode 26）。签名证书和之前的版本一样。
+
+            ### 新增
+            - **任务可以编辑**：长按任务卡片即可修改。
+            - 普通一条，`代码`也去掉
+
+            ### 安装
+            下载下方的 `TodoCloud-v1.3.4.apk`。
+
+            完整变更：[v1.3.3...v1.3.4](https://example.invalid)
+        """.trimIndent()
+
+        assertEquals(
+            listOf(
+                ReleaseNoteBlock.Heading("新增"),
+                ReleaseNoteBlock.Bullet("任务可以编辑", "长按任务卡片即可修改。"),
+                ReleaseNoteBlock.Bullet(null, "普通一条，代码也去掉"),
+            ),
+            UpdatePolicy.releaseNoteBlocks(notes),
+        )
+    }
+
+    @Test
+    fun releaseNoteBlocks_dropEmptyHeadingsAndCapLength() {
+        assertEquals(emptyList<ReleaseNoteBlock>(), UpdatePolicy.releaseNoteBlocks("### 新增\n### 改进\n"))
+        assertEquals(
+            listOf(ReleaseNoteBlock.Paragraph("修复了一些问题")),
+            UpdatePolicy.releaseNoteBlocks("修复了一些问题"),
+        )
+        val many = (1..30).joinToString("\n") { "- 第 $it 条" }
+        assertEquals(5, UpdatePolicy.releaseNoteBlocks(many, maxBlocks = 5).size)
+    }
 }
