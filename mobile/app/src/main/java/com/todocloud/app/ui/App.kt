@@ -19,6 +19,16 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -71,6 +81,12 @@ fun TodoCloudApp(
     var showAddMenu by rememberSaveable { mutableStateOf(false) }
     var settingsPage by rememberSaveable { mutableStateOf("main") }
     var showComposer by rememberSaveable { mutableStateOf(false) }
+    // Task open in the editor; null with showComposer = a new task.
+    var editingTask by remember { mutableStateOf<TaskItem?>(null) }
+    // Deleted on screen but not yet on the server, while "撤销" is still offered.
+    var pendingDeleteIds by remember { mutableStateOf(emptySet<Int>()) }
+    var refreshing by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
     var showIdeaComposer by rememberSaveable { mutableStateOf(false) }
     var editingIdea by remember { mutableStateOf<InboxIdea?>(null) }
     var aiResult by remember { mutableStateOf<AiParseResult?>(null) }
@@ -130,7 +146,7 @@ fun TodoCloudApp(
             } catch (exception: ApiException) {
                 handleApiError(exception)
             } catch (_: Exception) {
-                error = "网络连接失败，请确认服务端已启动"
+                error = NETWORK_ERROR_MESSAGE
             } finally {
                 loading = false
             }
@@ -166,6 +182,21 @@ fun TodoCloudApp(
         return currentIdeas.filterNot { it.id in convertedIdeaIds }
     }
 
+    suspend fun reloadAll(token: String) {
+        // Tasks still inside their undo window stay hidden (and unscheduled).
+        tasks = sortTasks(withoutPendingDeletes(repository.listTasks(token), pendingDeleteIds))
+            .also(::scheduleTasks)
+        val loadedIdeas = repository.listIdeas(token)
+        val loadedPlans = repository.listPlans(token)
+        plans = loadedPlans
+        ideas = removeIdeasConvertedToTasks(
+            token = token,
+            currentIdeas = loadedIdeas,
+            acceptedPlans = loadedPlans,
+        )
+        tasksLoaded = true
+    }
+
     val screenshotLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent(),
     ) { uri ->
@@ -190,6 +221,7 @@ fun TodoCloudApp(
             plans = emptyList()
             tasksLoaded = false
             taskHeaderLoading = false
+            pendingDeleteIds = emptySet()
             MascotStateManager.reset(context)
         } else {
             tasksLoaded = false
@@ -197,23 +229,34 @@ fun TodoCloudApp(
             taskHeaderLoading = true
             error = null
             try {
-                tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
-                val loadedIdeas = repository.listIdeas(currentSession.token)
-                val loadedPlans = repository.listPlans(currentSession.token)
-                plans = loadedPlans
-                ideas = removeIdeasConvertedToTasks(
-                    token = currentSession.token,
-                    currentIdeas = loadedIdeas,
-                    acceptedPlans = loadedPlans,
-                )
-                tasksLoaded = true
+                reloadAll(currentSession.token)
             } catch (exception: ApiException) {
                 handleApiError(exception)
             } catch (_: Exception) {
-                error = "网络连接失败，请确认服务端已启动"
+                error = NETWORK_ERROR_MESSAGE
             } finally {
                 loading = false
                 taskHeaderLoading = false
+            }
+        }
+    }
+
+    // Pull-to-refresh: same reload as the first load, but with the pull indicator
+    // instead of the header animation.
+    fun refresh() {
+        val token = session?.token ?: return
+        if (refreshing) return
+        scope.launch {
+            refreshing = true
+            error = null
+            try {
+                reloadAll(token)
+            } catch (exception: ApiException) {
+                handleApiError(exception)
+            } catch (_: Exception) {
+                error = NETWORK_ERROR_MESSAGE
+            } finally {
+                refreshing = false
             }
         }
     }
@@ -293,6 +336,69 @@ fun TodoCloudApp(
     }
 
     val currentSession = session ?: return
+
+    fun toggleTask(task: TaskItem, prepareForReorder: () -> Unit) {
+        runRequest {
+            val nextCompleted = !task.completed
+            val nextSteps = task.steps.takeIf { it.isNotEmpty() }
+                ?.map { step -> step.copy(completed = nextCompleted) }
+            val updated = repository.updateTask(
+                currentSession.token,
+                task.id,
+                completed = nextCompleted,
+                steps = nextSteps,
+            )
+            if (nextCompleted) {
+                MascotStateManager.recordMeaningfulActivity(context)
+            }
+            ReminderScheduler.schedule(context, updated)
+            // Replace in place first so the checkbox/strike animation
+            // can finish before the item changes position.
+            tasks = tasks.map { if (it.id == updated.id) updated else it }
+            delay(TASK_REORDER_DELAY_MILLIS.toLong())
+            prepareForReorder()
+            tasks = sortTasks(tasks)
+        }
+    }
+
+    // Hide the task now and offer "撤销"; the server delete only happens once the
+    // snackbar goes away without the action (timeout, swipe, or the next delete).
+    fun deleteWithUndo(task: TaskItem) {
+        tasks = tasks.filterNot { it.id == task.id }
+        pendingDeleteIds = pendingDeleteIds + task.id
+        ReminderScheduler.cancel(context, task.id)
+        scope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            val result = snackbarHostState.showSnackbar(
+                message = "已删除「${task.title.take(20)}」",
+                actionLabel = "撤销",
+                withDismissAction = false,
+                duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                pendingDeleteIds = pendingDeleteIds - task.id
+                tasks = restoreTask(tasks, task)
+                ReminderScheduler.schedule(context, task)
+                return@launch
+            }
+            try {
+                repository.deleteTask(currentSession.token, task.id)
+            } catch (exception: ApiException) {
+                if (exception.statusCode != 404) {
+                    // Could not delete: put it back so the screen matches the server.
+                    tasks = restoreTask(tasks, task)
+                    ReminderScheduler.schedule(context, task)
+                    handleApiError(exception)
+                }
+            } catch (_: Exception) {
+                tasks = restoreTask(tasks, task)
+                ReminderScheduler.schedule(context, task)
+                error = "删除失败：$NETWORK_ERROR_MESSAGE"
+            } finally {
+                pendingDeleteIds = pendingDeleteIds - task.id
+            }
+        }
+    }
     val planningTasks = tasks.filterNot { it.completed }
     val planningTaskIds = planningTasks.mapTo(mutableSetOf()) { it.id }
     val planningIdeaIds = ideas.mapTo(mutableSetOf()) { it.id }
@@ -318,6 +424,7 @@ fun TodoCloudApp(
         TabItem("设置") { Icon(Icons.Outlined.Settings, contentDescription = "设置") },
     )
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -369,6 +476,7 @@ fun TodoCloudApp(
                     onExpandedChange = { showAddMenu = it },
                     onManual = {
                         showAddMenu = false
+                        editingTask = null
                         showComposer = true
                     },
                     onScreenshot = {
@@ -391,7 +499,11 @@ fun TodoCloudApp(
                 )
             }
         },
-    ) { paddingValues ->
+    ) { scaffoldPadding ->
+        // Task list, inbox and calendar can be pulled down to reload from the server.
+        val pullable = selectedTab == 0 || selectedTab == 1
+        val paddingValues = if (pullable) PaddingValues(0.dp) else scaffoldPadding
+        val screen: @Composable () -> Unit = {
         when (selectedTab) {
             0 -> TaskHomeScreen(
                     paddingValues = paddingValues,
@@ -405,29 +517,7 @@ fun TodoCloudApp(
                     loading = loading,
                     showLoadingAnimation = taskHeaderLoading,
                     error = error,
-                    onToggle = { task, prepareForReorder ->
-                    runRequest {
-                        val nextCompleted = !task.completed
-                        val nextSteps = task.steps.takeIf { it.isNotEmpty() }
-                            ?.map { step -> step.copy(completed = nextCompleted) }
-                        val updated = repository.updateTask(
-                            currentSession.token,
-                            task.id,
-                            completed = nextCompleted,
-                            steps = nextSteps,
-                        )
-                        if (nextCompleted) {
-                            MascotStateManager.recordMeaningfulActivity(context)
-                        }
-                        ReminderScheduler.schedule(context, updated)
-                        // Replace in place first so the checkbox/strike animation
-                        // can finish before the item changes position.
-                        tasks = tasks.map { if (it.id == updated.id) updated else it }
-                        delay(TASK_REORDER_DELAY_MILLIS.toLong())
-                        prepareForReorder()
-                        tasks = sortTasks(tasks)
-                    }
-                },
+                    onToggle = { task, prepareForReorder -> toggleTask(task, prepareForReorder) },
                     onStepToggle = { task, stepIndex, prepareForReorder ->
                     runRequest {
                         val nextSteps = task.steps.mapIndexed { index, step ->
@@ -464,12 +554,10 @@ fun TodoCloudApp(
                         tasks = tasks.map { if (it.id == updated.id) updated else it }
                     }
                 },
-                    onDelete = { task ->
-                    runRequest {
-                        repository.deleteTask(currentSession.token, task.id)
-                        ReminderScheduler.cancel(context, task.id)
-                        tasks = tasks.filterNot { it.id == task.id }
-                    }
+                    onDelete = { task -> deleteWithUndo(task) },
+                    onEditTask = { task ->
+                        editingTask = task
+                        showComposer = true
                     },
                     onEditIdea = { idea ->
                         editingIdea = idea
@@ -487,6 +575,11 @@ fun TodoCloudApp(
                 paddingValues = paddingValues,
                 tasks = tasks,
                 requestedDate = requestedCalendarDate,
+                onToggleTask = { task -> toggleTask(task) {} },
+                onEditTask = { task ->
+                    editingTask = task
+                    showComposer = true
+                },
             )
             2 -> AiPlanScreen(
                 paddingValues = paddingValues,
@@ -639,24 +732,48 @@ fun TodoCloudApp(
             }
         }
         }
+        if (pullable) {
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = ::refresh,
+                modifier = Modifier.fillMaxSize().padding(scaffoldPadding),
+            ) { screen() }
+        } else {
+            screen()
+        }
+        }
 
         if (showComposer) {
-        CreateTaskDialog(
+        TaskEditorDialog(
+            task = editingTask,
             loading = loading,
-            onDismiss = { if (!loading) showComposer = false },
-            onCreate = { title, description, dueAt, reminderOffsetMinutes ->
-                runRequest {
-                    val created = repository.createTask(
-                        currentSession.token,
-                        title,
-                        description,
-                        dueAt,
-                        reminderOffsetMinutes,
-                    )
-                    MascotStateManager.recordMeaningfulActivity(context)
-                    ReminderScheduler.schedule(context, created)
-                    tasks = sortTasks(listOf(created) + tasks)
+            onDismiss = {
+                if (!loading) {
                     showComposer = false
+                    editingTask = null
+                }
+            },
+            onSave = { draft ->
+                runRequest {
+                    val existing = editingTask
+                    val saved = if (existing == null) {
+                        repository.createTask(
+                            currentSession.token,
+                            draft.title,
+                            draft.description,
+                            draft.dueAt,
+                            draft.reminderOffsetMinutes,
+                            steps = draft.steps,
+                            startAt = draft.startAt,
+                            durationMinutes = draft.durationMinutes,
+                        ).also { MascotStateManager.recordMeaningfulActivity(context) }
+                    } else {
+                        repository.editTask(currentSession.token, existing.id, draft)
+                    }
+                    ReminderScheduler.schedule(context, saved)
+                    tasks = sortTasks(listOf(saved) + tasks.filterNot { it.id == saved.id })
+                    showComposer = false
+                    editingTask = null
                 }
             },
         )

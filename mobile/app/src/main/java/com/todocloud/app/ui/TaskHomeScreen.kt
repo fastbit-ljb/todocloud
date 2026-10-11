@@ -259,6 +259,7 @@ internal fun TaskHomeScreen(
     onStepToggle: (TaskItem, Int, () -> Unit) -> Unit,
     onReminderChange: (TaskItem, Int?) -> Unit,
     onDelete: (TaskItem) -> Unit,
+    onEditTask: (TaskItem) -> Unit,
     onEditIdea: (InboxIdea) -> Unit,
     onDeleteIdea: (InboxIdea) -> Unit,
 ) {
@@ -376,6 +377,7 @@ internal fun TaskHomeScreen(
                         },
                         onReminderChange = { offsetMinutes -> onReminderChange(task, offsetMinutes) },
                         onDelete = { onDelete(task) },
+                        onEdit = { onEditTask(task) },
                     )
                 }
             }

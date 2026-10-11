@@ -120,10 +120,14 @@ class TodoCloudRepository(context: Context) {
         dueAt: String?,
         reminderOffsetMinutes: Int?,
         steps: List<TaskStep> = emptyList(),
+        startAt: String? = null,
+        durationMinutes: Int? = null,
     ): TaskItem {
         val payload = JSONObject().put("title", title)
         if (!description.isNullOrBlank()) payload.put("description", description)
+        if (startAt != null) payload.put("start_at", startAt)
         if (dueAt != null) payload.put("due_at", dueAt)
+        if (durationMinutes != null) payload.put("duration_minutes", durationMinutes)
         if (reminderOffsetMinutes != null) {
             payload.put("reminder_offset_minutes", reminderOffsetMinutes)
         }
@@ -164,6 +168,31 @@ class TodoCloudRepository(context: Context) {
                 }
             })
         }
+        val response = authorizedRequest(token) { authToken ->
+            Request.Builder()
+                .url("$baseUrl/tasks/$id")
+                .authorized(authToken)
+                .patch(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+        }
+        return parseTask(response as JSONObject)
+    }
+
+    /** Replaces every editable field of a task; null clears a field. Completion is untouched. */
+    suspend fun editTask(token: String, id: Int, draft: TaskDraft): TaskItem {
+        fun Any?.orNull(): Any = this ?: JSONObject.NULL
+        val payload = JSONObject()
+            .put("title", draft.title)
+            .put("description", draft.description.orNull())
+            .put("start_at", draft.startAt.orNull())
+            .put("due_at", draft.dueAt.orNull())
+            .put("duration_minutes", draft.durationMinutes.orNull())
+            .put("reminder_offset_minutes", draft.reminderOffsetMinutes.orNull())
+            .put("steps", JSONArray().apply {
+                draft.steps.forEach { step ->
+                    put(JSONObject().put("title", step.title).put("completed", step.completed))
+                }
+            })
         val response = authorizedRequest(token) { authToken ->
             Request.Builder()
                 .url("$baseUrl/tasks/$id")
