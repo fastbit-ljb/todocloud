@@ -85,6 +85,12 @@ data class PlanAcceptResult(
     val tasks: List<TaskItem>,
 )
 
+data class PlanUndoResult(
+    val plan: AiPlan,
+    val deletedTaskIds: List<Int>,
+    val restoredTasks: List<TaskItem>,
+)
+
 /** Result of one AI planning conversation turn: either an answer or a new draft plan. */
 sealed interface PlanChatResult {
     val reply: String

@@ -12,6 +12,7 @@ class TodoCloudApplication : Application(), DefaultLifecycleObserver {
         super<Application>.onCreate()
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         UpdateNotifier.scheduleDailyCheck(this)
+        com.todocloud.app.notification.DailyDigestNotifier.schedule(this)
     }
 
     override fun onStart(owner: LifecycleOwner) {

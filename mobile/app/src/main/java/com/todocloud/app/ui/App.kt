@@ -399,6 +399,111 @@ fun TodoCloudApp(
             }
         }
     }
+
+    fun generatePlan(message: String, ideaIds: Set<Int>, forcePlan: Boolean, images: List<android.net.Uri>) {
+        scope.launch {
+            planLoading = true
+            planError = null
+            try {
+                val result = repository.chatPlan(
+                    currentSession.token,
+                    message,
+                    ideaIds,
+                    planConversation,
+                    forcePlan,
+                    images,
+                )
+                val shownMessage = if (images.isEmpty()) message else "$message\n（附图 ${images.size} 张）"
+                when (result) {
+                    is com.todocloud.app.data.PlanChatResult.Answer -> {
+                        planConversation = (
+                            planConversation +
+                                com.todocloud.app.data.PlanMessage("user", shownMessage) +
+                                com.todocloud.app.data.PlanMessage("assistant", result.reply)
+                            ).takeLast(12)
+                    }
+                    is com.todocloud.app.data.PlanChatResult.Created -> {
+                        planConversation = emptyList()
+                        plans = listOf(result.plan) + plans.filterNot { it.id == result.plan.id }
+                    }
+                }
+            } catch (exception: ApiException) {
+                if (exception.statusCode == 401) handleApiError(exception)
+                else planError = exception.message
+            } catch (_: Exception) {
+                planError = "网络连接失败，请稍后重试"
+            } finally {
+                planLoading = false
+            }
+        }
+    }
+
+    // Shortcuts on the task list ("帮我排今天", "让 AI 重新排"): open the AI tab and plan right away.
+    fun planShortcut(message: String) {
+        selectedTab = 2
+        showAddMenu = false
+        generatePlan(message, ideas.mapTo(linkedSetOf()) { it.id }, forcePlan = true, images = emptyList())
+    }
+
+    suspend fun undoAcceptedPlan(planId: Int) {
+        val undone = repository.undoPlan(currentSession.token, planId)
+        undone.deletedTaskIds.forEach { ReminderScheduler.cancel(context, it) }
+        val restoredById = undone.restoredTasks.associateBy { it.id }
+        tasks = sortTasks(
+            tasks.filterNot { it.id in undone.deletedTaskIds }.map { restoredById[it.id] ?: it },
+        )
+        scheduleTasks(undone.restoredTasks)
+        plans = listOf(undone.plan) + plans.filterNot { it.id == undone.plan.id }
+        ideas = repository.listIdeas(currentSession.token)
+    }
+
+    fun acceptPlanWithUndo(planId: Int, items: List<com.todocloud.app.data.PlanItem>?) {
+        scope.launch {
+            planLoading = true
+            planError = null
+            val accepted = try {
+                repository.acceptPlan(currentSession.token, planId, items).also { accepted ->
+                    plans = listOf(accepted.plan) + plans.filterNot { it.id == accepted.plan.id }
+                    ideas = removeIdeasConvertedToTasks(
+                        token = currentSession.token,
+                        currentIdeas = ideas,
+                        acceptedPlans = listOf(accepted.plan),
+                    )
+                    tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
+                    ideas = repository.listIdeas(currentSession.token)
+                    MascotStateManager.recordMeaningfulActivity(context)
+                }
+            } catch (exception: ApiException) {
+                if (exception.statusCode == 401) handleApiError(exception)
+                else planError = exception.message
+                null
+            } catch (_: Exception) {
+                planError = "网络连接失败，请稍后重试"
+                null
+            } finally {
+                planLoading = false
+            }
+            if (accepted == null) return@launch
+            snackbarHostState.currentSnackbarData?.dismiss()
+            val result = snackbarHostState.showSnackbar(
+                message = "已采用 ${accepted.plan.items.size} 项安排",
+                actionLabel = "撤回",
+                duration = SnackbarDuration.Long,
+            )
+            if (result != SnackbarResult.ActionPerformed) return@launch
+            planLoading = true
+            try {
+                undoAcceptedPlan(planId)
+            } catch (exception: ApiException) {
+                if (exception.statusCode == 401) handleApiError(exception)
+                else planError = exception.message
+            } catch (_: Exception) {
+                planError = "撤回失败：网络连接失败，请稍后重试"
+            } finally {
+                planLoading = false
+            }
+        }
+    }
     val planningTasks = tasks.filterNot { it.completed }
     val planningTaskIds = planningTasks.mapTo(mutableSetOf()) { it.id }
     val planningIdeaIds = ideas.mapTo(mutableSetOf()) { it.id }
@@ -569,6 +674,8 @@ fun TodoCloudApp(
                             ideas = ideas.filterNot { it.id == idea.id }
                         }
                     },
+                    onPlanToday = { planShortcut(todayPlanMessage()) },
+                    onReplanOverdue = { overdue -> planShortcut(overduePlanMessage(overdue)) },
                 )
 
             1 -> CalendarScreen(
@@ -594,41 +701,7 @@ fun TodoCloudApp(
                     taskSection = "inbox"
                 },
                 onGenerate = { message, selectedIdeaIds, forcePlan, images ->
-                    scope.launch {
-                        planLoading = true
-                        planError = null
-                        try {
-                            val result = repository.chatPlan(
-                                currentSession.token,
-                                message,
-                                selectedIdeaIds,
-                                planConversation,
-                                forcePlan,
-                                images,
-                            )
-                            val shownMessage = if (images.isEmpty()) message else "$message\n（附图 ${images.size} 张）"
-                            when (result) {
-                                is com.todocloud.app.data.PlanChatResult.Answer -> {
-                                    planConversation = (
-                                        planConversation +
-                                            com.todocloud.app.data.PlanMessage("user", shownMessage) +
-                                            com.todocloud.app.data.PlanMessage("assistant", result.reply)
-                                        ).takeLast(12)
-                                }
-                                is com.todocloud.app.data.PlanChatResult.Created -> {
-                                    planConversation = emptyList()
-                                    plans = listOf(result.plan) + plans.filterNot { it.id == result.plan.id }
-                                }
-                            }
-                        } catch (exception: ApiException) {
-                            if (exception.statusCode == 401) handleApiError(exception)
-                            else planError = exception.message
-                        } catch (_: Exception) {
-                            planError = "网络连接失败，请稍后重试"
-                        } finally {
-                            planLoading = false
-                        }
-                    }
+                    generatePlan(message, selectedIdeaIds, forcePlan, images)
                 },
                 onRevise = { planId, message, images ->
                     scope.launch {
@@ -647,31 +720,7 @@ fun TodoCloudApp(
                         }
                     }
                 },
-                onAccept = { planId ->
-                    scope.launch {
-                        planLoading = true
-                        planError = null
-                        try {
-                            val accepted = repository.acceptPlan(currentSession.token, planId)
-                            plans = listOf(accepted.plan) + plans.filterNot { it.id == accepted.plan.id }
-                            ideas = removeIdeasConvertedToTasks(
-                                token = currentSession.token,
-                                currentIdeas = ideas,
-                                acceptedPlans = listOf(accepted.plan),
-                            )
-                            tasks = sortTasks(repository.listTasks(currentSession.token)).also(::scheduleTasks)
-                            ideas = repository.listIdeas(currentSession.token)
-                            MascotStateManager.recordMeaningfulActivity(context)
-                        } catch (exception: ApiException) {
-                            if (exception.statusCode == 401) handleApiError(exception)
-                            else planError = exception.message
-                        } catch (_: Exception) {
-                            planError = "网络连接失败，请稍后重试"
-                        } finally {
-                            planLoading = false
-                        }
-                    }
-                },
+                onAccept = { planId, items -> acceptPlanWithUndo(planId, items) },
             )
             else -> when (settingsPage) {
                 "permissions" -> PermissionSettingsScreen(

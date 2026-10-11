@@ -17,5 +17,7 @@ class ReminderBootReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
             com.todocloud.app.update.UpdateNotifier.scheduleDailyCheck(context, replace = true)
         }
+        // Reboots, updates and clock changes all invalidate the 8:00 alarm.
+        DailyDigestNotifier.schedule(context, replace = true)
     }
 }

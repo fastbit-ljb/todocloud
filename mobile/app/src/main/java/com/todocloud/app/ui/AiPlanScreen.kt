@@ -41,6 +41,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -106,7 +108,7 @@ internal fun AiPlanScreen(
     onOpenInbox: () -> Unit,
     onGenerate: (message: String, ideaIds: Set<Int>, forcePlan: Boolean, images: List<Uri>) -> Unit,
     onRevise: (Int, String, List<Uri>) -> Unit,
-    onAccept: (Int) -> Unit,
+    onAccept: (planId: Int, items: List<PlanItem>?) -> Unit,
 ) {
     var message by rememberSaveable(plan?.id) { mutableStateOf("") }
     var images by remember(plan?.id) { mutableStateOf<List<Uri>>(emptyList()) }
@@ -191,21 +193,40 @@ internal fun AiPlanScreen(
             return@Column
         }
 
+        // Which proposed items to adopt and any time edits; reset whenever the plan changes.
+        val planKey = plan.id to plan.items
+        var excluded by remember(planKey) { mutableStateOf(emptySet<Int>()) }
+        var edits by remember(planKey) { mutableStateOf(emptyMap<Int, PlanItem>()) }
+        var editingIndex by remember(planKey) { mutableStateOf<Int?>(null) }
+        val selectedCount = plan.items.size - excluded.size
+
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(top = 32.dp, bottom = 24.dp),
         ) {
             item {
                 AiPlanResultHeader(plan)
+                Text(
+                    "取消勾选不想要的安排，点一项可以改时间",
+                    modifier = Modifier.padding(start = 6.dp, bottom = 14.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
             itemsIndexed(
                 items = plan.items,
                 key = { index, item -> "${item.sourceType}-${item.sourceId}-$index" },
             ) { index, item ->
                 PlanTimelineItem(
-                    item = item,
+                    item = edits[index] ?: item,
                     index = index + 1,
                     isLast = index == plan.items.lastIndex,
+                    selected = index !in excluded,
+                    edited = index in edits,
+                    onSelectedChange = { keep ->
+                        excluded = if (keep) excluded - index else excluded + index
+                    },
+                    onEdit = { editingIndex = index },
                 )
             }
             if (plan.messages.size > 2) {
@@ -258,13 +279,29 @@ internal fun AiPlanScreen(
                 },
             )
             Button(
-                onClick = { onAccept(plan.id) },
-                enabled = !loading && plan.items.isNotEmpty(),
+                onClick = { onAccept(plan.id, planAcceptSelection(plan.items, excluded, edits)) },
+                enabled = !loading && selectedCount > 0,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(18.dp),
             ) {
                 Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(20.dp))
-                Text("采用计划", modifier = Modifier.padding(start = 7.dp))
+                Text(
+                    if (excluded.isEmpty() && edits.isEmpty()) "采用计划" else "采用 $selectedCount 项",
+                    modifier = Modifier.padding(start = 7.dp),
+                )
+            }
+        }
+        editingIndex?.let { index ->
+            val original = plan.items.getOrNull(index)
+            if (original != null) {
+                PlanItemTimeDialog(
+                    item = edits[index] ?: original,
+                    onDismiss = { editingIndex = null },
+                    onSave = { updated ->
+                        edits = if (updated == original) edits - index else edits + (index to updated)
+                        editingIndex = null
+                    },
+                )
             }
         }
     }
@@ -837,7 +874,15 @@ internal fun InboxIdeaPickerDialog(
 }
 
 @Composable
-internal fun PlanTimelineItem(item: PlanItem, index: Int, isLast: Boolean) {
+internal fun PlanTimelineItem(
+    item: PlanItem,
+    index: Int,
+    isLast: Boolean,
+    selected: Boolean = true,
+    edited: Boolean = false,
+    onSelectedChange: (Boolean) -> Unit = {},
+    onEdit: () -> Unit = {},
+) {
     val scheduleText = when {
         item.startAt != null && item.dueAt != null ->
             "${formatPlanDateTime(item.startAt)} — ${formatPlanDateTime(item.dueAt)}"
@@ -846,7 +891,12 @@ internal fun PlanTimelineItem(item: PlanItem, index: Int, isLast: Boolean) {
         else -> "暂不排期"
     }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClickLabel = "修改时间", onClick = onEdit)
+            .graphicsLayer { alpha = if (selected) 1f else 0.45f }
+            .padding(start = 6.dp, end = 0.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Box(
@@ -876,6 +926,7 @@ internal fun PlanTimelineItem(item: PlanItem, index: Int, isLast: Boolean) {
                 buildString {
                     append(scheduleText)
                     item.durationMinutes?.let { append(" · ${formatDuration(it)}") }
+                    if (edited) append(" · 已修改")
                 },
                 modifier = Modifier.padding(top = 5.dp),
                 color = MaterialTheme.colorScheme.primary,
@@ -914,6 +965,70 @@ internal fun PlanTimelineItem(item: PlanItem, index: Int, isLast: Boolean) {
                 )
             }
         }
+        GreenTaskCheckbox(
+            checked = selected,
+            onCheckedChange = { onSelectedChange(!selected) },
+        )
+    }
+}
+
+/** Change when one proposed item happens, before the plan is accepted. */
+@Composable
+internal fun PlanItemTimeDialog(
+    item: PlanItem,
+    onDismiss: () -> Unit,
+    onSave: (PlanItem) -> Unit,
+) {
+    var startAt by remember(item) { mutableStateOf(item.startAt?.let(::parseIdeaDateTime)) }
+    var dueAt by remember(item) { mutableStateOf(item.dueAt?.let(::parseIdeaDateTime)) }
+    var duration by remember(item) { mutableStateOf(item.durationMinutes) }
+    var picker by remember { mutableStateOf<String?>(null) }
+    val formatter = remember { java.time.format.DateTimeFormatter.ofPattern("M月d日 HH:mm") }
+    val invalid = startAt != null && dueAt != null && startAt!!.isAfter(dueAt)
+    fun java.time.LocalDateTime.iso() =
+        atZone(java.time.ZoneId.systemDefault()).toInstant().toString()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(item.title, maxLines = 2) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { picker = "start" }, modifier = Modifier.weight(1f)) {
+                        Text(startAt?.format(formatter) ?: "开始时间")
+                    }
+                    OutlinedButton(onClick = { picker = "due" }, modifier = Modifier.weight(1f)) {
+                        Text(dueAt?.format(formatter) ?: "截止时间")
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    if (startAt != null) TextButton(onClick = { startAt = null }) { Text("清除开始") }
+                    if (dueAt != null) TextButton(onClick = { dueAt = null }) { Text("清除截止") }
+                }
+                if (invalid) Text("开始时间不能晚于截止时间", color = MaterialTheme.colorScheme.error)
+                IdeaDurationSelector(value = duration, onValueChange = { duration = it }, onMore = {})
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(item.copy(startAt = startAt?.iso(), dueAt = dueAt?.iso(), durationMinutes = duration))
+                },
+                enabled = !invalid,
+            ) { Text("确定") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+    picker?.let { target ->
+        TaskDateTimePickerDialog(
+            title = if (target == "start") "设置开始时间" else "设置截止时间",
+            initialDateTime = if (target == "start") startAt else dueAt,
+            onDismiss = { picker = null },
+            onConfirm = { selected ->
+                if (target == "start") startAt = selected else dueAt = selected
+                picker = null
+            },
+        )
     }
 }
 

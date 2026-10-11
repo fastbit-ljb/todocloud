@@ -172,6 +172,36 @@ internal fun SettingsHomeScreen(
         ) {
             Text("AI 识别任务默认：${formatReminderOffset(defaultReminderOffsetMinutes)}")
         }
+        var digestEnabled by remember(context) {
+            mutableStateOf(com.todocloud.app.notification.DailyDigestNotifier.isEnabled(context))
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("每日早晨摘要", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "每天 8 点通知今天要做的事和过期任务；没有安排的日子不打扰",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = digestEnabled,
+                    onCheckedChange = { enabled ->
+                        digestEnabled = enabled
+                        com.todocloud.app.notification.DailyDigestNotifier.setEnabled(context, enabled)
+                    },
+                    modifier = Modifier.padding(start = 12.dp),
+                )
+            }
+        }
 
         Text("更多设置", style = MaterialTheme.typography.titleMedium)
         SettingsEntry(

@@ -183,6 +183,9 @@
         <receiver
             android:name=".update.UpdateCheckReceiver"
             android:exported="false" />
+        <receiver
+            android:name=".notification.DailyDigestReceiver"
+            android:exported="false" />
         <service
             android:name=".notification.ReminderAccessibilityService"
             android:exported="true"
