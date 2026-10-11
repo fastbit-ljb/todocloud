@@ -529,19 +529,29 @@ fun TodoCloudApp(
         TabItem("设置") { Icon(Icons.Outlined.Settings, contentDescription = "设置") },
     )
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        when {
-                            selectedTab == 0 && taskSection == "inbox" -> "收件匣"
-                            selectedTab == 0 -> "我的任务"
-                            selectedTab == 3 && settingsPage == "permissions" -> "权限"
-                            selectedTab == 3 && settingsPage == "sponsor" -> "赞助开发"
-                            else -> tabs[selectedTab].label
-                        },
-                    )
+                    androidx.compose.foundation.layout.Column {
+                        Text(
+                            when {
+                                selectedTab == 0 && taskSection == "inbox" -> "收件匣"
+                                selectedTab == 0 -> "我的任务"
+                                selectedTab == 3 && settingsPage == "permissions" -> "权限"
+                                selectedTab == 3 && settingsPage == "sponsor" -> "赞助开发"
+                                else -> tabs[selectedTab].label
+                            },
+                            style = MaterialTheme.typography.headlineSmall,
+                        )
+                        if (selectedTab == 0 && taskSection == "tasks") {
+                            Text(
+                                taskHeaderSubtitle(tasks),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
                     if (selectedTab == 3 && settingsPage != "main") {
@@ -550,11 +560,15 @@ fun TodoCloudApp(
                         }
                     }
                 },
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ),
             )
         },
         bottomBar = {
             if (selectedTab != 3 || settingsPage == "main") {
-                NavigationBar {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                     tabs.forEachIndexed { index, tab ->
                         NavigationBarItem(
                             selected = selectedTab == index,
@@ -566,7 +580,9 @@ fun TodoCloudApp(
                             icon = tab.icon,
                             label = { Text(tab.label) },
                             colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
                             ),
                         )
                     }
@@ -781,6 +797,7 @@ fun TodoCloudApp(
             }
         }
         }
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
         if (pullable) {
             PullToRefreshBox(
                 isRefreshing = refreshing,
@@ -789,6 +806,14 @@ fun TodoCloudApp(
             ) { screen() }
         } else {
             screen()
+        }
+        // Own snackbar slot: Scaffold's sits above the tall add-menu FAB, i.e. mid-screen.
+        SnackbarHost(
+            snackbarHostState,
+            modifier = Modifier
+                .align(androidx.compose.ui.Alignment.BottomCenter)
+                .padding(bottom = scaffoldPadding.calculateBottomPadding() + 8.dp),
+        )
         }
         }
 

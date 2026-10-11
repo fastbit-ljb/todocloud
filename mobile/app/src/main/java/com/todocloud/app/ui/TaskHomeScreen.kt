@@ -135,10 +135,10 @@ internal fun TaskAddSpeedDial(
                     role = Role.Button
                 },
             shape = RoundedCornerShape(20.dp),
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ) {
-            val symbolColor = MaterialTheme.colorScheme.onSecondaryContainer
+            val symbolColor = MaterialTheme.colorScheme.onPrimaryContainer
             Canvas(modifier = Modifier.size(30.dp)) {
                 val armLength = 10.dp.toPx()
                 val lineWidth = 2.6.dp.toPx()
@@ -608,10 +608,10 @@ internal fun IdeaAddButton(enabled: Boolean, onClick: () -> Unit) {
         onClick = { if (enabled) onClick() },
         modifier = Modifier.size(66.dp).graphicsLayer { alpha = if (enabled) 1f else 0.5f },
         shape = RoundedCornerShape(20.dp),
-        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
-        val color = MaterialTheme.colorScheme.onSecondaryContainer
+        val color = MaterialTheme.colorScheme.onPrimaryContainer
         Canvas(Modifier.size(30.dp)) {
             val arm = 10.dp.toPx()
             val width = 2.6.dp.toPx()
