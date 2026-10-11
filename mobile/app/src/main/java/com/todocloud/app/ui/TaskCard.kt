@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -79,13 +80,16 @@ internal fun TaskCard(
     onStepToggle: (Int) -> Unit,
     onReminderChange: (Int?) -> Unit,
     onDelete: () -> Unit,
+    onEdit: () -> Unit = {},
 ) {
     var expanded by rememberSaveable(task.id) { mutableStateOf(false) }
-    var deleting by rememberSaveable(task.id) { mutableStateOf(false) }
+    // Not saveable on purpose: after an undone delete the card comes back with
+    // the same key, and a restored `deleting = true` would delete it again.
+    var deleting by remember(task.id) { mutableStateOf(false) }
     var reminderPickerOpen by rememberSaveable(task.id) { mutableStateOf(false) }
     var titleTextWidth by remember(task.id) { mutableStateOf(0f) }
     var titleHasOverflow by remember(task.id) { mutableStateOf(false) }
-    var flyAway by rememberSaveable(task.id) { mutableStateOf(false) }
+    var flyAway by remember(task.id) { mutableStateOf(false) }
     var entryStarted by rememberSaveable(task.id) { mutableStateOf(false) }
     val entryProgress by animateFloatAsState(
         targetValue = if (entryStarted) 1f else 0f,
@@ -170,12 +174,12 @@ internal fun TaskCard(
                     rotationZ = 0f
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.5f)
                 }
-                .clickable(
-                    enabled = !deleting && (task.steps.isNotEmpty() || titleHasOverflow),
+                .combinedClickable(
+                    enabled = !deleting,
+                    onLongClick = onEdit,
+                    onLongClickLabel = "编辑任务",
                 ) {
-                    if (task.steps.isNotEmpty() || titleHasOverflow) {
-                        expanded = !expanded
-                    }
+                    expanded = !expanded
                 },
         ) {
             Row(
@@ -276,14 +280,6 @@ internal fun TaskCard(
                                 }
                             }
                         }
-                        if (task.steps.isEmpty() && task.description.isNullOrBlank()) {
-                            Text(
-                                "这个任务还没有识别出步骤",
-                                modifier = Modifier.padding(top = 8.dp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
                         task.description?.let {
                             Text(
                                 it,
@@ -291,6 +287,19 @@ internal fun TaskCard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                        task.startAt?.let {
+                            Text(
+                                "开始 ${formatDueAt(it)}",
+                                modifier = Modifier.padding(top = 4.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        androidx.compose.material3.TextButton(
+                            onClick = onEdit,
+                            enabled = !deleting,
+                            modifier = Modifier.padding(top = 2.dp),
+                        ) { Text("编辑") }
                     }
                 }
                 Column(

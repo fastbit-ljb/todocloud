@@ -25,6 +25,17 @@ data class TaskItem(
     val durationMinutes: Int? = null,
 )
 
+/** Everything the task editor can set; times are ISO-8601 instants. */
+data class TaskDraft(
+    val title: String,
+    val description: String?,
+    val startAt: String?,
+    val dueAt: String?,
+    val durationMinutes: Int?,
+    val reminderOffsetMinutes: Int?,
+    val steps: List<TaskStep>,
+)
+
 data class IdeaDetail(
     val content: String,
 )

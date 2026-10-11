@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.widthIn
@@ -46,6 +47,8 @@ internal fun CalendarScreen(
     paddingValues: PaddingValues,
     tasks: List<TaskItem>,
     requestedDate: String? = null,
+    onToggleTask: (TaskItem) -> Unit = {},
+    onEditTask: (TaskItem) -> Unit = {},
 ) {
     var visibleMonthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     var selectedDateText by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
@@ -208,18 +211,40 @@ internal fun CalendarScreen(
             }
         }
         items(selectedTasks, key = { it.id }) { task ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(task.title, style = MaterialTheme.typography.titleMedium)
-                    task.dueAt?.let {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClickLabel = "编辑任务") { onEditTask(task) },
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 6.dp, top = 8.dp, end = 16.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    GreenTaskCheckbox(
+                        checked = task.completed,
+                        onCheckedChange = { onToggleTask(task) },
+                    )
+                    Column(Modifier.weight(1f).padding(start = 6.dp)) {
                         Text(
-                            formatDueAt(it),
-                            modifier = Modifier.padding(top = 6.dp),
-                            color = MaterialTheme.colorScheme.primary,
+                            task.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (task.completed) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            textDecoration = if (task.completed) TextDecoration.LineThrough else null,
                         )
-                    }
-                    task.reminderOffsetMinutes?.let {
-                        Text("提前 $it 分钟提醒", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        task.dueAt?.let {
+                            Text(
+                                formatDueAt(it),
+                                modifier = Modifier.padding(top = 4.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        task.reminderOffsetMinutes?.let {
+                            Text(reminderLabel(it), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
