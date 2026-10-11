@@ -76,9 +76,8 @@ internal fun seededColorScheme(seed: Color, dark: Boolean): ColorScheme {
             surfaceVariant = neutral(90, 0.3f),
             onSurfaceVariant = neutral(30, 0.3f),
             surfaceTint = tone(40),
-            // Snackbars and other "inverse" surfaces: a deep shade of the theme color.
-            inverseSurface = tone(20, 0.45f),
-            inverseOnSurface = tone(95, 0.3f),
+            inverseSurface = neutral(20),
+            inverseOnSurface = neutral(95),
             outline = neutral(50, 0.3f),
             outlineVariant = neutral(80, 0.3f),
             surfaceBright = neutral(98),
@@ -115,8 +114,8 @@ internal fun seededColorScheme(seed: Color, dark: Boolean): ColorScheme {
             surfaceVariant = neutral(30, 0.3f),
             onSurfaceVariant = neutral(80, 0.3f),
             surfaceTint = tone(80, 0.85f),
-            inverseSurface = tone(90, 0.4f),
-            inverseOnSurface = tone(20, 0.45f),
+            inverseSurface = neutral(90),
+            inverseOnSurface = neutral(20),
             outline = neutral(60, 0.3f),
             outlineVariant = neutral(30, 0.3f),
             surfaceBright = neutral(24),
@@ -133,6 +132,19 @@ internal fun seededColorScheme(seed: Color, dark: Boolean): ColorScheme {
         )
     }
 }
+
+/**
+ * Selected-item indicator (bottom navigation, task/inbox switcher): a light tint of the
+ * theme color, one step deeper than primaryContainer so it stands out from the grey-ish
+ * container behind it without turning into a solid dark block.
+ */
+@Composable
+internal fun selectionIndicatorColor(): Color =
+    androidx.compose.ui.graphics.lerp(
+        MaterialTheme.colorScheme.primaryContainer,
+        MaterialTheme.colorScheme.primary,
+        0.22f,
+    )
 
 /** The color of [hue] and HSL [saturation] whose perceptual lightness (L*) is [tone]. */
 internal fun colorAtTone(hue: Float, saturation: Float, tone: Int): Color {

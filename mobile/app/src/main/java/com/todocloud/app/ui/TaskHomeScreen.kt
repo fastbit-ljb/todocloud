@@ -469,13 +469,13 @@ internal fun TaskSectionSwitcher(
                 Triple("inbox", "收件匣", Icons.Outlined.Inbox),
             ).forEach { (value, label, icon) ->
                 val active = selected == value
-                val contentColor = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                val contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                 Row(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(14.dp))
                         .background(
-                            if (active) MaterialTheme.colorScheme.primary
+                            if (active) com.todocloud.app.ui.theme.selectionIndicatorColor()
                             else Color.Transparent,
                         )
                         .clickable { onSelected(value) }

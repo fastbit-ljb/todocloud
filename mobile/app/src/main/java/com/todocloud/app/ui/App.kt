@@ -604,8 +604,8 @@ fun TodoCloudApp(
                             icon = tab.icon,
                             label = { Text(tab.label) },
                             colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = MaterialTheme.colorScheme.primary,
-                                selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                                indicatorColor = com.todocloud.app.ui.theme.selectionIndicatorColor(),
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
                             ),
                         )
@@ -818,7 +818,16 @@ fun TodoCloudApp(
             modifier = Modifier
                 .align(androidx.compose.ui.Alignment.BottomCenter)
                 .padding(bottom = scaffoldPadding.calculateBottomPadding() + fabClearance + 8.dp),
-        )
+        ) { data ->
+            // Light snackbar in the theme's own tint instead of the default dark one.
+            androidx.compose.material3.Snackbar(
+                snackbarData = data,
+                shape = MaterialTheme.shapes.medium,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                actionColor = MaterialTheme.colorScheme.primary,
+            )
+        }
         }
         }
 

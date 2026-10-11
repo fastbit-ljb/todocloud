@@ -256,14 +256,6 @@ internal fun CalendarScreen(
                         task.reminderOffsetMinutes?.let {
                             Text(reminderLabel(it), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (!expanded && task.steps.isNotEmpty()) {
-                            Text(
-                                "${task.steps.count { it.completed }}/${task.steps.size} 步 · 点开查看",
-                                modifier = Modifier.padding(top = 4.dp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
                         if (expanded) {
                             task.steps.forEachIndexed { index, step ->
                                 Row(
