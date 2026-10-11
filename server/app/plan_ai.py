@@ -3,7 +3,7 @@ import base64
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from urllib import error as urlerror
 from urllib import request
 
@@ -118,23 +118,6 @@ IANA 时区：{timezone_name}
 """.strip()
 
 
-def _correct_year_slip(parsed: datetime, reference_at: datetime) -> datetime:
-    """Undo a model year slip on dates given without a year.
-
-    A screenshot or message that says "10月13日" sometimes comes back as next
-    year's 13 October although it is two days away. A plan is about the near
-    future, so a time more than ~10 months ahead whose same date one year
-    earlier is still upcoming is moved back one year.
-    """
-    if parsed - reference_at <= timedelta(days=300):
-        return parsed
-    try:
-        earlier = parsed.replace(year=parsed.year - 1)
-    except ValueError:  # 29 February
-        return parsed
-    return earlier if earlier >= reference_at - timedelta(days=1) else parsed
-
-
 def _normalize_iso(value: object, reference_at: datetime) -> str | None:
     if value in (None, "", "null"):
         return None
@@ -144,7 +127,6 @@ def _normalize_iso(value: object, reference_at: datetime) -> str | None:
         raise AiParseError("AI 计划返回了无效时间") from exc
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=reference_at.tzinfo)
-    parsed = _correct_year_slip(parsed, reference_at)
     return parsed.astimezone(reference_at.tzinfo).isoformat()
 
 
@@ -263,8 +245,8 @@ def _call_plan_model(prompt: str, image_parts: list[dict] | None = None) -> dict
                 {"role": "user", "content": user_content},
             ],
         }
-        if "generativelanguage.googleapis.com" in settings.ai_api_base_url:
-            payload["reasoning_effort"] = "minimal"
+        if "generativelanguage.googleapis.com" in settings.ai_api_base_url and settings.ai_reasoning_effort:
+            payload["reasoning_effort"] = settings.ai_reasoning_effort
         attempts = PLAN_PRIMARY_ATTEMPTS if model_index == 0 else 1
         for attempt in range(attempts):
             http_request = request.Request(
@@ -321,12 +303,16 @@ def _call_plan_model(prompt: str, image_parts: list[dict] | None = None) -> dict
                     continue
                 break
 
-    if isinstance(last_error, (TimeoutError, urlerror.URLError)):
-        raise AiParseError("AI 生成计划超时，请稍后重试") from last_error
+    # HTTPError is a subclass of URLError, so the HTTP cases must come first;
+    # otherwise a quota (429) or bad model name (400) is reported as a timeout.
     if isinstance(last_error, urlerror.HTTPError) and last_error.code == 429:
         raise AiParseError("AI 计划请求较多，请稍后再试") from last_error
     if isinstance(last_error, urlerror.HTTPError) and last_error.code in {400, 404}:
         raise AiParseError("AI 计划模型配置无效，请检查服务端配置") from last_error
+    if isinstance(last_error, (TimeoutError, urlerror.URLError)) and not isinstance(
+        last_error, urlerror.HTTPError
+    ):
+        raise AiParseError("AI 生成计划超时，请稍后重试") from last_error
     if isinstance(last_error, AiParseError):
         raise last_error
     raise AiParseError("AI 计划服务暂时不可用，请稍后重试") from last_error

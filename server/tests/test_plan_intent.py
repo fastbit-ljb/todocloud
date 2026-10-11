@@ -66,6 +66,30 @@ class PlanIntentTests(unittest.TestCase):
             self.assertIn("午餐 12:00-13:00", prompt)
             self.assertNotIn("附带了", prompt)
 
+    def test_provider_quota_error_is_not_reported_as_timeout(self) -> None:
+        import io
+        from unittest import mock
+        from urllib import error as urlerror
+
+        from app.ai_parser import AiParseError
+        from app.core.config import settings
+        from app.plan_ai import _call_plan_model
+
+        def http_error(code: int):
+            return urlerror.HTTPError("https://x", code, "err", {}, io.BytesIO(b"{}"))
+
+        with mock.patch.multiple(settings, ai_api_key="k", ai_fallback_model=""), \
+                mock.patch("app.plan_ai.time.sleep"):
+            for code, text in ((429, "请求较多"), (400, "模型配置无效")):
+                with mock.patch("app.plan_ai.request.urlopen", side_effect=http_error(code)):
+                    with self.assertRaises(AiParseError) as caught:
+                        _call_plan_model("p")
+                self.assertIn(text, str(caught.exception))
+            with mock.patch("app.plan_ai.request.urlopen", side_effect=TimeoutError()):
+                with self.assertRaises(AiParseError) as caught:
+                    _call_plan_model("p")
+            self.assertIn("超时", str(caught.exception))
+
     def test_prompt_mentions_images_only_when_attached(self) -> None:
         args = (self.ideas, self.tasks, self.reference, "Asia/Shanghai", "按课表排", None, [])
         prompt = _build_plan_prompt(*args, force_plan=False, image_count=2)
@@ -74,35 +98,6 @@ class PlanIntentTests(unittest.TestCase):
         self.assertIn("没写年份", prompt)
         self.assertIn("2027届", prompt)
         self.assertIn("日期和星期对得上", prompt)
-
-    def test_year_slip_is_moved_back_to_the_upcoming_date(self) -> None:
-        # Reference is 2026-10-08 09:00 Asia/Shanghai.
-        raw = {
-            "intent": "plan",
-            "summary": "s",
-            "items": [
-                {"source_type": "idea", "source_id": 3, "title": "汇报",
-                 "start_at": "2027-10-13T13:00:00+08:00", "due_at": "2027-10-13T17:00:00+08:00"},
-                {"source_type": "task", "source_id": 7, "title": "火车",
-                 "due_at": "2027-03-01T08:00:00+08:00"},
-            ],
-        }
-        items = {i["source_id"]: i for i in self._turn(raw)["proposal"]["items"]}
-        self.assertTrue(items[3]["start_at"].startswith("2026-10-13T13:00"))
-        self.assertTrue(items[3]["due_at"].startswith("2026-10-13T17:00"))
-        # Five months ahead is plausible: left alone.
-        self.assertTrue(items[7]["due_at"].startswith("2027-03-01"))
-
-    def test_year_slip_does_not_move_dates_into_the_past(self) -> None:
-        raw = {
-            "intent": "plan",
-            "summary": "s",
-            "items": [{"source_type": "idea", "source_id": 3, "title": "x",
-                       "due_at": "2027-10-01T10:00:00+08:00"}],
-        }
-        # 2026-10-01 is already past on 2026-10-08, so 2027-10-01 is kept.
-        item = self._turn(raw)["proposal"]["items"][0]
-        self.assertTrue(item["due_at"].startswith("2027-10-01"))
 
 
 if __name__ == "__main__":

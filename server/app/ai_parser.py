@@ -290,8 +290,8 @@ def _call_model(content: object, reference_at: datetime, timezone_name: str) -> 
                 },
             ],
         }
-        if "generativelanguage.googleapis.com" in settings.ai_api_base_url:
-            request_payload["reasoning_effort"] = "minimal"
+        if "generativelanguage.googleapis.com" in settings.ai_api_base_url and settings.ai_reasoning_effort:
+            request_payload["reasoning_effort"] = settings.ai_reasoning_effort
         attempts = AI_PRIMARY_ATTEMPTS if model_index == 0 else 1
         truncated = False
         for attempt in range(attempts):

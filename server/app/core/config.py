@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_model: str = "gemini-3-flash-preview"
     ai_fallback_model: str = "gemini-3.6-flash"
+    # Gemini thinking level sent as reasoning_effort. Newer models (3.7/3.8 flash)
+    # reject "minimal"; use "low" for them. Empty = do not send the field.
+    ai_reasoning_effort: str = "minimal"
     jwt_secret: str = DEFAULT_JWT_SECRET
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
