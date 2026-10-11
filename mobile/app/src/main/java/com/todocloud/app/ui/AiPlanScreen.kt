@@ -983,6 +983,8 @@ internal fun PlanItemTimeDialog(
     var dueAt by remember(item) { mutableStateOf(item.dueAt?.let(::parseIdeaDateTime)) }
     var duration by remember(item) { mutableStateOf(item.durationMinutes) }
     var picker by remember { mutableStateOf<String?>(null) }
+    var showCustomDuration by remember { mutableStateOf(false) }
+    var customDurationText by remember { mutableStateOf("") }
     val formatter = remember { java.time.format.DateTimeFormatter.ofPattern("M月d日 HH:mm") }
     val invalid = startAt != null && dueAt != null && startAt!!.isAfter(dueAt)
     fun java.time.LocalDateTime.iso() =
@@ -1006,7 +1008,17 @@ internal fun PlanItemTimeDialog(
                     if (dueAt != null) TextButton(onClick = { dueAt = null }) { Text("清除截止") }
                 }
                 if (invalid) Text("开始时间不能晚于截止时间", color = MaterialTheme.colorScheme.error)
-                IdeaDurationSelector(value = duration, onValueChange = { duration = it }, onMore = {})
+                IdeaDurationSelector(
+                    value = duration,
+                    onValueChange = { duration = it },
+                    onMore = {
+                        customDurationText = duration
+                            ?.takeUnless { value -> IDEA_DURATION_OPTIONS.any { it.minutes == value } }
+                            ?.toString()
+                            .orEmpty()
+                        showCustomDuration = true
+                    },
+                )
             }
         },
         confirmButton = {
@@ -1028,6 +1040,31 @@ internal fun PlanItemTimeDialog(
                 if (target == "start") startAt = selected else dueAt = selected
                 picker = null
             },
+        )
+    }
+    if (showCustomDuration) {
+        AlertDialog(
+            onDismissRequest = { showCustomDuration = false },
+            title = { Text("自定义持续时间") },
+            text = {
+                FloatingUnderlineTextField(
+                    value = customDurationText,
+                    onValueChange = { customDurationText = it.filter(Char::isDigit).take(6) },
+                    label = "分钟数",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    supportingText = "最长可设置 365 天",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        duration = customDurationText.toIntOrNull()?.coerceIn(1, 525_600)
+                        showCustomDuration = false
+                    },
+                    enabled = customDurationText.toIntOrNull()?.let { it in 1..525_600 } == true,
+                ) { Text("确定") }
+            },
+            dismissButton = { TextButton(onClick = { showCustomDuration = false }) { Text("取消") } },
         )
     }
 }
