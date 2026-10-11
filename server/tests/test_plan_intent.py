@@ -72,6 +72,8 @@ class PlanIntentTests(unittest.TestCase):
         self.assertIn("附带了 2 张图片", prompt)
         self.assertIn("不要编造", prompt)
         self.assertIn("没写年份", prompt)
+        self.assertIn("2027届", prompt)
+        self.assertIn("日期和星期对得上", prompt)
 
     def test_year_slip_is_moved_back_to_the_upcoming_date(self) -> None:
         # Reference is 2026-10-08 09:00 Asia/Shanghai.
