@@ -22,6 +22,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material3.CardDefaults
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
@@ -262,8 +264,12 @@ internal fun TaskHomeScreen(
     onEditTask: (TaskItem) -> Unit,
     onEditIdea: (InboxIdea) -> Unit,
     onDeleteIdea: (InboxIdea) -> Unit,
+    onPlanToday: () -> Unit = {},
+    onReplanOverdue: (List<TaskItem>) -> Unit = {},
 ) {
     val homeTasks = remember(tasks) { visibleHomeTasks(tasks) }
+    val overdue = remember(tasks) { overdueTasks(tasks) }
+    val canPlanToday = tasks.any { !it.completed } || ideas.isNotEmpty()
     val taskListState = rememberLazyListState()
 
     fun prepareViewportForReorder() {
@@ -338,6 +344,16 @@ internal fun TaskHomeScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                if (!loading && (canPlanToday || overdue.isNotEmpty())) {
+                    item(key = "plan-shortcuts") {
+                        PlanShortcutBar(
+                            overdueCount = overdue.size,
+                            canPlanToday = canPlanToday,
+                            onPlanToday = onPlanToday,
+                            onReplanOverdue = { onReplanOverdue(overdue) },
+                        )
+                    }
+                }
                 if (homeTasks.isEmpty() && !loading) {
                     item {
                         Card(modifier = Modifier.fillMaxWidth()) {
@@ -381,6 +397,55 @@ internal fun TaskHomeScreen(
                     )
                 }
             }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun PlanShortcutBar(
+    overdueCount: Int,
+    canPlanToday: Boolean,
+    onPlanToday: () -> Unit,
+    onReplanOverdue: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (overdueCount > 0) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                ),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "有 $overdueCount 件任务已过期",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    androidx.compose.material3.TextButton(onClick = onReplanOverdue) {
+                        Text("让 AI 重新排", color = MaterialTheme.colorScheme.onErrorContainer)
+                    }
+                }
+            }
+        }
+        if (canPlanToday) {
+            androidx.compose.material3.FilledTonalButton(
+                onClick = onPlanToday,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                androidx.compose.material3.Icon(
+                    androidx.compose.material.icons.Icons.Outlined.AutoAwesome,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text("帮我排今天", modifier = Modifier.padding(start = 8.dp))
             }
         }
     }

@@ -355,18 +355,55 @@ class TodoCloudRepository(context: Context) {
         return parsePlan(response as JSONObject)
     }
 
-    suspend fun acceptPlan(token: String, planId: Int): PlanAcceptResult {
+    /** Adopt a draft plan; [items] = the chosen (possibly edited) items, null = all of them. */
+    suspend fun acceptPlan(token: String, planId: Int, items: List<PlanItem>? = null): PlanAcceptResult {
+        val body = JSONObject()
+        if (items != null) {
+            body.put("items", JSONArray().apply { items.forEach { put(planItemJson(it)) } })
+        }
         val response = authorizedRequest(token) { authToken ->
             Request.Builder()
                 .url("$baseUrl/plans/$planId/accept")
                 .authorized(authToken)
-                .post("{}".toRequestBody(jsonMediaType))
+                .post(body.toString().toRequestBody(jsonMediaType))
                 .build()
         } as JSONObject
         return PlanAcceptResult(
             plan = parsePlan(response.getJSONObject("plan")),
             tasks = response.getJSONArray("tasks").toTaskItems(),
         )
+    }
+
+    /** Reverse an accepted plan: created tasks are deleted, the plan becomes a draft again. */
+    suspend fun undoPlan(token: String, planId: Int): PlanUndoResult {
+        val response = authorizedRequest(token) { authToken ->
+            Request.Builder()
+                .url("$baseUrl/plans/$planId/undo")
+                .authorized(authToken)
+                .post("{}".toRequestBody(jsonMediaType))
+                .build()
+        } as JSONObject
+        val deleted = response.getJSONArray("deleted_task_ids")
+        return PlanUndoResult(
+            plan = parsePlan(response.getJSONObject("plan")),
+            deletedTaskIds = (0 until deleted.length()).map { deleted.getInt(it) },
+            restoredTasks = response.getJSONArray("tasks").toTaskItems(),
+        )
+    }
+
+    private fun planItemJson(item: PlanItem): JSONObject {
+        fun Any?.orNull(): Any = this ?: JSONObject.NULL
+        return JSONObject()
+            .put("source_type", item.sourceType)
+            .put("source_id", item.sourceId)
+            .put("title", item.title)
+            .put("description", item.description.orNull())
+            .put("start_at", item.startAt.orNull())
+            .put("due_at", item.dueAt.orNull())
+            .put("duration_minutes", item.durationMinutes.orNull())
+            .put("reminder_offset_minutes", item.reminderOffsetMinutes.orNull())
+            .put("steps", JSONArray().apply { item.steps.forEach { put(JSONObject().put("title", it.title)) } })
+            .put("note", item.note)
     }
 
     suspend fun parseScreenshot(token: String, imageUri: Uri): AiParseResult {
