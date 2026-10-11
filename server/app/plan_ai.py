@@ -3,7 +3,7 @@ import base64
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib import error as urlerror
 from urllib import request
 
@@ -57,6 +57,7 @@ def _build_plan_prompt(
 {image_rules}
 当前用户当地时间：{reference_at.isoformat(timespec='seconds')}
 IANA 时区：{timezone_name}
+图片或文字里只写了月日、没写年份的日期（例如“10月13日”“13号”），按当前时间之后最近的那一天理解，年份通常就是今年。
 
 必须遵守的生活边界：
 1. 普通工作不得安排在早餐 07:30-08:30、午餐 12:00-13:00、晚餐 18:00-19:00。
@@ -116,6 +117,23 @@ IANA 时区：{timezone_name}
 """.strip()
 
 
+def _correct_year_slip(parsed: datetime, reference_at: datetime) -> datetime:
+    """Undo a model year slip on dates given without a year.
+
+    A screenshot or message that says "10月13日" sometimes comes back as next
+    year's 13 October although it is two days away. A plan is about the near
+    future, so a time more than ~10 months ahead whose same date one year
+    earlier is still upcoming is moved back one year.
+    """
+    if parsed - reference_at <= timedelta(days=300):
+        return parsed
+    try:
+        earlier = parsed.replace(year=parsed.year - 1)
+    except ValueError:  # 29 February
+        return parsed
+    return earlier if earlier >= reference_at - timedelta(days=1) else parsed
+
+
 def _normalize_iso(value: object, reference_at: datetime) -> str | None:
     if value in (None, "", "null"):
         return None
@@ -125,6 +143,7 @@ def _normalize_iso(value: object, reference_at: datetime) -> str | None:
         raise AiParseError("AI 计划返回了无效时间") from exc
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=reference_at.tzinfo)
+    parsed = _correct_year_slip(parsed, reference_at)
     return parsed.astimezone(reference_at.tzinfo).isoformat()
 
 

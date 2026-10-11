@@ -71,6 +71,36 @@ class PlanIntentTests(unittest.TestCase):
         prompt = _build_plan_prompt(*args, force_plan=False, image_count=2)
         self.assertIn("附带了 2 张图片", prompt)
         self.assertIn("不要编造", prompt)
+        self.assertIn("没写年份", prompt)
+
+    def test_year_slip_is_moved_back_to_the_upcoming_date(self) -> None:
+        # Reference is 2026-10-08 09:00 Asia/Shanghai.
+        raw = {
+            "intent": "plan",
+            "summary": "s",
+            "items": [
+                {"source_type": "idea", "source_id": 3, "title": "汇报",
+                 "start_at": "2027-10-13T13:00:00+08:00", "due_at": "2027-10-13T17:00:00+08:00"},
+                {"source_type": "task", "source_id": 7, "title": "火车",
+                 "due_at": "2027-03-01T08:00:00+08:00"},
+            ],
+        }
+        items = {i["source_id"]: i for i in self._turn(raw)["proposal"]["items"]}
+        self.assertTrue(items[3]["start_at"].startswith("2026-10-13T13:00"))
+        self.assertTrue(items[3]["due_at"].startswith("2026-10-13T17:00"))
+        # Five months ahead is plausible: left alone.
+        self.assertTrue(items[7]["due_at"].startswith("2027-03-01"))
+
+    def test_year_slip_does_not_move_dates_into_the_past(self) -> None:
+        raw = {
+            "intent": "plan",
+            "summary": "s",
+            "items": [{"source_type": "idea", "source_id": 3, "title": "x",
+                       "due_at": "2027-10-01T10:00:00+08:00"}],
+        }
+        # 2026-10-01 is already past on 2026-10-08, so 2027-10-01 is kept.
+        item = self._turn(raw)["proposal"]["items"][0]
+        self.assertTrue(item["due_at"].startswith("2027-10-01"))
 
 
 if __name__ == "__main__":
