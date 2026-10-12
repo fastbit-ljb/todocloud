@@ -62,6 +62,7 @@ internal fun LoginScreen(
     loading: Boolean,
     error: String?,
     onSubmit: (String, String, Boolean) -> Unit,
+    onUseLocally: () -> Unit = {},
 ) {
     var registerMode by rememberSaveable { mutableStateOf(false) }
     var email by rememberSaveable { mutableStateOf("") }
@@ -188,6 +189,22 @@ internal fun LoginScreen(
                     }
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            androidx.compose.material3.OutlinedButton(
+                onClick = onUseLocally,
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth().widthIn(max = 440.dp).height(48.dp),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Text("先不登录，在本机使用")
+            }
+            Text(
+                "数据只加密保存在这台手机上，不会上传。AI 功能需要登录。",
+                modifier = Modifier.padding(top = 8.dp, start = 8.dp, end = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
             Spacer(Modifier.height(16.dp))
             Text(
                 "任务、提醒与步骤，随时云端同步",

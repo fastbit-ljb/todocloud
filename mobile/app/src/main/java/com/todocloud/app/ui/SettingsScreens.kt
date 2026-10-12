@@ -74,6 +74,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.todocloud.app.BuildConfig
 import com.todocloud.app.R
 import com.todocloud.app.data.Session
+import com.todocloud.app.data.isLocal
 import com.todocloud.app.notification.ReminderScheduler.ReminderMode
 
 @Composable
@@ -103,6 +104,7 @@ internal fun SettingsHomeScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         SettingsGroup(title = "账号") {
+            val local = session.isLocal
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -115,7 +117,7 @@ internal fun SettingsHomeScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        session.email.take(1).uppercase(),
+                        if (local) "本" else session.email.take(1).uppercase(),
                         color = MaterialTheme.colorScheme.onPrimary,
                         style = MaterialTheme.typography.titleMedium,
                     )
@@ -124,19 +126,23 @@ internal fun SettingsHomeScreen(
                     modifier = Modifier.weight(1f).padding(horizontal = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Text(session.email, style = MaterialTheme.typography.titleMedium)
+                    Text(if (local) "本机模式" else session.email, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "已登录 · 任务会继续云端同步",
+                        if (local) "数据只加密保存在这台手机上" else "已登录 · 任务会继续云端同步",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                IconButton(onClick = onLogout) {
-                    Icon(
-                        Icons.Outlined.Logout,
-                        contentDescription = "退出登录",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                if (local) {
+                    androidx.compose.material3.TextButton(onClick = onLogout) { Text("登录账号") }
+                } else {
+                    IconButton(onClick = onLogout) {
+                        Icon(
+                            Icons.Outlined.Logout,
+                            contentDescription = "退出登录",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
