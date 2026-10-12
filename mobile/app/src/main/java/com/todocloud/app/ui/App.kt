@@ -54,6 +54,7 @@ import com.todocloud.app.data.InboxIdea
 import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TaskStep
 import com.todocloud.app.data.TodoCloudRepository
+import com.todocloud.app.data.isLocal
 import com.todocloud.app.notification.ReminderScheduler
 import com.todocloud.app.widget.TaskCalendarWidget
 import kotlinx.coroutines.Dispatchers
@@ -97,7 +98,7 @@ fun TodoCloudApp(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var shareLoading by remember { mutableStateOf(false) }
     // Local mode's own model key (Settings → AI 模型).
-    var aiKeySet by remember { mutableStateOf(repository.aiKeys.apiKey != null) }
+    var aiChoice by remember { mutableStateOf(repository.aiKeys.choice()) }
     var showAiKeyDialog by remember { mutableStateOf(false) }
     var aiKeyChecking by remember { mutableStateOf(false) }
     var aiKeyError by remember { mutableStateOf<String?>(null) }
@@ -868,7 +869,7 @@ fun TodoCloudApp(
                             session = null
                         }
                     },
-                    aiKeySet = aiKeySet,
+                    aiChoice = aiChoice,
                     onEditAiKey = {
                         aiKeyError = null
                         showAiKeyDialog = true
@@ -988,19 +989,32 @@ fun TodoCloudApp(
 
     if (showAiKeyDialog) {
         AiKeyDialog(
-            keySet = aiKeySet,
+            current = aiChoice,
+            signedIn = session?.isLocal == false,
+            savedKeyFor = { repository.aiKeys.apiKey(it.id) != null },
+            savedModelFor = { repository.aiKeys.model(it.id) },
             checking = aiKeyChecking,
             error = aiKeyError,
-            onSave = { key ->
+            onSave = { request ->
                 scope.launch {
                     aiKeyChecking = true
                     aiKeyError = null
+                    val signedIn = session?.isLocal == false
                     try {
-                        repository.checkAiKey(key)
-                        repository.aiKeys.apiKey = key
-                        aiKeySet = true
+                        if (aiSaveNeedsCheck(request, signedIn)) {
+                            val key = request.key ?: repository.aiKeys.apiKey(request.provider.id)
+                                ?: throw ApiException("请填写 API 密钥")
+                            repository.checkAiKey(request.provider.id, key, request.model)
+                            // Local mode never changes what a signed-in session uses.
+                            val own = if (signedIn) request.ownWhenSignedIn else repository.aiKeys.ownWhenSignedIn
+                            repository.aiKeys.save(request.provider.id, request.key, request.model, own)
+                        } else {
+                            repository.aiKeys.setOwnWhenSignedIn(false)
+                        }
+                        aiChoice = repository.aiKeys.choice()
                         showAiKeyDialog = false
-                        android.widget.Toast.makeText(context, "密钥可用，已保存", android.widget.Toast.LENGTH_SHORT).show()
+                        val done = if (aiSaveNeedsCheck(request, signedIn)) "${request.provider.label} 可用，已保存" else "已改回服务器的 AI"
+                        android.widget.Toast.makeText(context, done, android.widget.Toast.LENGTH_SHORT).show()
                     } catch (exception: ApiException) {
                         aiKeyError = exception.message
                     } catch (_: Exception) {
@@ -1010,9 +1024,9 @@ fun TodoCloudApp(
                     }
                 }
             },
-            onClear = {
-                repository.aiKeys.apiKey = null
-                aiKeySet = false
+            onClear = { provider ->
+                repository.aiKeys.clearKey(provider.id)
+                aiChoice = repository.aiKeys.choice()
                 showAiKeyDialog = false
             },
             onDismiss = { showAiKeyDialog = false },

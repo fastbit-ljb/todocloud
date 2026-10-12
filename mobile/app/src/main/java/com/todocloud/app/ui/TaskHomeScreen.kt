@@ -388,7 +388,7 @@ internal fun TaskHomeScreen(
                             Column(Modifier.padding(18.dp)) {
                                 Text("从一个小任务开始", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    "任务会自动保存到云端，之后可以继续加入 AI 创建和截图解析。",
+                                    "点右下角的 ＋ 新建任务，也可以让 AI 计划或截图识别帮你生成。",
                                     modifier = Modifier.padding(top = 6.dp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
