@@ -117,6 +117,13 @@ fun TodoCloudApp(
         mutableStateOf(ReminderScheduler.loadReminderMode(context))
     }
     var mascotSet by remember(context) { mutableStateOf(MascotStateManager.selectedSet(context)) }
+    // The state the desktop icon switches to when the user leaves the app. The account avatar
+    // and the 吉祥物 page show it, so they follow every task change (added, completed, deleted,
+    // rescheduled, synced) at once; opening a tab or settings page re-reads it as well, so
+    // states that come with time passing (overdue, frozen) are current there too.
+    val mascotState = remember(context, tasksLoaded, tasks, selectedTab, settingsPage) {
+        MascotStateManager.displayState(context, tasks, tasksLoaded)
+    }
 
     LaunchedEffect(requestedTab, requestedCalendarDate) {
         selectedTab = requestedTab.coerceIn(0, 3)
@@ -826,7 +833,7 @@ fun TodoCloudApp(
                 "mascot" -> MascotSettingsScreen(
                     paddingValues = paddingValues,
                     selected = mascotSet,
-                    shownState = remember { MascotStateManager.shownState(context) },
+                    shownState = mascotState,
                     onSelect = { set ->
                         MascotStateManager.selectSet(context, set)
                         mascotSet = set
@@ -850,6 +857,7 @@ fun TodoCloudApp(
                     onOpenPermissions = { settingsPage = "permissions" },
                     onOpenSponsor = { settingsPage = "sponsor" },
                     mascot = mascotSet,
+                    mascotState = mascotState,
                     onOpenMascot = { settingsPage = "mascot" },
                     updateAvailableVersion = updateAvailableVersion,
                     checkingUpdate = checkingUpdate,

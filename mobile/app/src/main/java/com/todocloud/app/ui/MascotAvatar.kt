@@ -14,23 +14,24 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.todocloud.app.branding.MascotSet
+import com.todocloud.app.branding.MascotState
 import kotlin.math.sqrt
 
 /**
- * Settings → 账号 avatar: [set]'s 日常 picture on a plain white plate, in light and dark mode
- * alike. The plate takes the size of the letter avatar it replaces, so the account row keeps
- * its height and text position. The picture is never clipped: [MascotAvatarLayout] keeps the
- * whole picture inside the plate.
+ * Settings → 账号 avatar: [set]'s picture for [state] on a plain white plate, in light and dark
+ * mode alike. The plate takes the size of the letter avatar it replaces, so the account row
+ * keeps its height and text position. The picture is never clipped: [MascotAvatarLayout] keeps
+ * the whole picture inside the plate.
  */
 @Composable
-internal fun MascotAvatar(set: MascotSet, modifier: Modifier = Modifier) {
+internal fun MascotAvatar(set: MascotSet, state: MascotState, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .size(MascotAvatarLayout.PLATE_DP.dp)
             .background(Color.White, RoundedCornerShape(MascotAvatarLayout.CORNER_DP.dp)),
     ) {
         Image(
-            painter = painterResource(set.avatar),
+            painter = painterResource(set.avatar(state)),
             // Decorative: the account name next to it already says whose card this is.
             contentDescription = null,
             modifier = Modifier

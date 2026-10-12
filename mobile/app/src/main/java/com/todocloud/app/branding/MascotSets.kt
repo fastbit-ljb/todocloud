@@ -46,8 +46,11 @@ class MascotSet(
      */
     private val aliasPrefix: String,
 ) {
-    /** Settings → 账号 avatar: always this set's 日常 (01_daily) picture, whatever the task state. */
-    val avatar: Int get() = pictures[MascotState.DAILY]
+    /**
+     * Settings → 账号 avatar for [state]: the same artwork as this set's launcher icon for
+     * [state], since both come from the set's picture for that state.
+     */
+    fun avatar(state: MascotState): Int = pictures[state]
 
     fun launcherAlias(packageName: String, state: MascotState): String =
         "$packageName.launcher.$aliasPrefix${state.launcherAlias}"

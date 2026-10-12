@@ -110,13 +110,66 @@ object MascotStateManager {
     }
 
     /** The state the launcher icon shows, or will show once the app is in the background. */
-    fun shownState(context: Context): MascotState = shownState(preferences(context))
-
     private fun shownState(prefs: SharedPreferences): MascotState {
-        val stored = prefs.getString(KEY_PENDING_STATE, null)
-            ?: prefs.getString(KEY_CURRENT_STATE, null)
-        return MascotState.entries.firstOrNull { it.name == stored } ?: MascotState.DAILY
+        val stored = prefs.all
+        return shownStateFrom(stored[KEY_PENDING_STATE], stored[KEY_CURRENT_STATE])
     }
+
+    /**
+     * The state the launcher icon switches to when the user leaves the app, shown by the
+     * account avatar and the 吉祥物 page. Once [tasksLoaded], it is [resolve] on [tasks] right
+     * now -- the same call, on the same inputs, that [update] makes when the app goes to the
+     * background -- so it follows every task change at once. Before that it is what the
+     * launcher shows.
+     */
+    fun displayState(
+        context: Context,
+        tasks: List<TaskItem>,
+        tasksLoaded: Boolean,
+        now: Instant = Instant.now(),
+    ): MascotState {
+        val stored = preferences(context).all
+        return displayStateFrom(
+            tasks = tasks,
+            tasksLoaded = tasksLoaded,
+            storedLastActivity = stored[KEY_LAST_ACTIVITY_AT],
+            storedPending = stored[KEY_PENDING_STATE],
+            storedCurrent = stored[KEY_CURRENT_STATE],
+            now = now,
+            zoneId = ZoneId.systemDefault(),
+        )
+    }
+
+    /** [displayState] on the raw stored values; anything unreadable gives [MascotState.DAILY]. */
+    internal fun displayStateFrom(
+        tasks: List<TaskItem>,
+        tasksLoaded: Boolean,
+        storedLastActivity: Any?,
+        storedPending: Any?,
+        storedCurrent: Any?,
+        now: Instant,
+        zoneId: ZoneId,
+    ): MascotState {
+        if (!tasksLoaded) return shownStateFrom(storedPending, storedCurrent)
+        val lastActivity = when (storedLastActivity) {
+            // Nothing recorded yet: update() records "now" and resolves with that.
+            null -> now
+            is Long -> Instant.ofEpochMilli(storedLastActivity)
+            else -> return MascotState.DAILY
+        }
+        return runCatching { resolve(tasks, lastActivity, now, zoneId) }.getOrDefault(MascotState.DAILY)
+    }
+
+    /**
+     * The pending state, else the current one. A value that cannot be read (missing, unknown,
+     * or not a string in a damaged preferences file) is skipped; when neither can be read it
+     * is [MascotState.DAILY].
+     */
+    internal fun shownStateFrom(pending: Any?, current: Any?): MascotState =
+        storedState(pending) ?: storedState(current) ?: MascotState.DAILY
+
+    private fun storedState(value: Any?): MascotState? =
+        (value as? String)?.let { name -> MascotState.entries.firstOrNull { it.name == name } }
 
     internal fun resolve(
         tasks: List<TaskItem>,

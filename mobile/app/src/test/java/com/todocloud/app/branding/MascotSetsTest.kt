@@ -29,10 +29,41 @@ class MascotSetsTest {
     }
 
     @Test
-    fun avatarIsEachSetsDailyPicture() {
-        assertEquals(R.drawable.mascot_classic_daily, MascotSets.CLASSIC.avatar)
-        assertEquals(R.drawable.mascot_mooncat_daily, MascotSets.MOON_CAT.avatar)
-        for (set in MascotSets.all) assertEquals(set.pictures[MascotState.DAILY], set.avatar, set.id)
+    fun avatarAndLauncherIconShowTheSameArtworkForAllEightStatesOfBothSets() {
+        // Artwork file stems, in the source folders' 01_daily … 08_frozen order.
+        val keys = listOf("daily", "due_soon", "overdue", "progress", "complete", "no_tasks", "half_frozen", "frozen")
+        assertEquals(keys, MascotSets.previewOrder.map { snakeCase(it.launcherAlias) })
+        val res = resDirectory()
+        var checked = 0
+        for (set in MascotSets.all) {
+            for (state in MascotSets.previewOrder) {
+                val key = snakeCase(state.launcherAlias)
+                val where = "${set.id} ${state.name}"
+                val picture = "mascot_${set.id}_$key"
+                assertEquals(resourceId(R.drawable::class.java, picture), set.avatar(state), where)
+                assertEquals(
+                    resourceId(R.mipmap::class.java, "ic_launcher_${set.id}_$key"),
+                    set.launcherIcons[state],
+                    where,
+                )
+                // That launcher icon's foreground is the very same picture, in both icon variants.
+                for (variant in listOf("mipmap-anydpi-v26", "mipmap-anydpi-v33")) {
+                    val icon = parse(File(res, "$variant/ic_launcher_${set.id}_$key.xml"))
+                    val foreground = icon.getElementsByTagName("foreground").item(0) as Element
+                    assertEquals(
+                        "@drawable/ic_mascot_foreground_${set.id}_$key",
+                        foreground.getAttributeNS(ANDROID, "drawable"),
+                        "$where $variant",
+                    )
+                }
+                val layers = parse(File(res, "drawable/ic_mascot_foreground_${set.id}_$key.xml"))
+                    .getElementsByTagName("item")
+                assertEquals(1, layers.length, where)
+                assertEquals("@drawable/$picture", (layers.item(0) as Element).getAttributeNS(ANDROID, "drawable"), where)
+                checked++
+            }
+        }
+        assertEquals(2 * 8, checked)
     }
 
     @Test
@@ -43,10 +74,10 @@ class MascotSetsTest {
         for (value in stored) {
             val set = MascotSets.fromStored(value)
             assertSame(MascotSets.CLASSIC, set, "stored value: $value")
-            assertEquals(R.drawable.mascot_classic_daily, set.avatar, "stored value: $value")
+            assertEquals(R.drawable.mascot_classic_overdue, set.avatar(MascotState.OVERDUE), "stored value: $value")
         }
         assertSame(MascotSets.MOON_CAT, MascotSets.fromStored("mooncat"))
-        assertEquals(R.drawable.mascot_mooncat_daily, MascotSets.fromStored("mooncat").avatar)
+        assertEquals(R.drawable.mascot_mooncat_overdue, MascotSets.fromStored("mooncat").avatar(MascotState.OVERDUE))
     }
 
     @Test
@@ -159,6 +190,9 @@ class MascotSetsTest {
             .parse(file)
 
     private fun snakeCase(name: String) = name.replace(Regex("(?<=[a-z])(?=[A-Z])"), "_").lowercase()
+
+    /** A generated R.drawable / R.mipmap id by resource name; fails if there is no such resource. */
+    private fun resourceId(type: Class<*>, name: String): Int = type.getField(name).getInt(null)
 
     private companion object {
         const val ANDROID = "http://schemas.android.com/apk/res/android"

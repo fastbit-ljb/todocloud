@@ -76,6 +76,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.todocloud.app.BuildConfig
 import com.todocloud.app.R
 import com.todocloud.app.branding.MascotSet
+import com.todocloud.app.branding.MascotState
 import com.todocloud.app.data.Session
 import com.todocloud.app.data.isLocal
 import com.todocloud.app.notification.ReminderScheduler.ReminderMode
@@ -92,6 +93,7 @@ internal fun SettingsHomeScreen(
     onOpenPermissions: () -> Unit,
     onOpenSponsor: () -> Unit,
     mascot: MascotSet,
+    mascotState: MascotState,
     onOpenMascot: () -> Unit,
     updateAvailableVersion: String?,
     checkingUpdate: Boolean,
@@ -116,7 +118,7 @@ internal fun SettingsHomeScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                MascotAvatar(mascot)
+                MascotAvatar(mascot, mascotState)
                 Column(
                     modifier = Modifier.weight(1f).padding(horizontal = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
