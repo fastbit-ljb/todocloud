@@ -5,7 +5,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.db.base import Base
-from app.db.migrate import upgrade_to_head
+from app.db.migrate import upgrade_to, upgrade_to_head
 from tests import pg
 
 
@@ -26,7 +26,8 @@ class MigrationTests(unittest.IsolatedAsyncioTestCase):
             await conn.close()
 
     async def test_fresh_database_matches_production_schema(self) -> None:
-        await upgrade_to_head(self.engine)
+        # The baseline revision is exactly what production ran before Alembic.
+        await upgrade_to(self.engine, "0001_baseline")
         self.assertEqual(await self._version(), "0001_baseline")
         fresh = await pg.schema_snapshot()
 
@@ -56,15 +57,24 @@ class MigrationTests(unittest.IsolatedAsyncioTestCase):
         await upgrade_to_head(self.engine)
         await upgrade_to_head(self.engine)  # a second start is a no-op
 
-        self.assertEqual(await pg.schema_snapshot(), before)
-        self.assertEqual(await self._version(), "0001_baseline")
+        # The only schema change on top of production is the recurrence column.
+        after = await pg.schema_snapshot()
+        added = sorted(set(after["columns"]) - set(before["columns"]))
+        self.assertEqual(
+            added, [("tasks", "recurrence", "character varying", 16, "YES", None)]
+        )
+        self.assertEqual(sorted(set(before["columns"]) - set(after["columns"])), [])
+        self.assertEqual(after["indexes"], before["indexes"])
+        self.assertEqual(after["constraints"], before["constraints"])
+        self.assertEqual(await self._version(), "0002_task_recurrence")
         conn = await pg.connect()
         try:
-            row = await conn.fetchrow("SELECT title, steps FROM public.tasks")
+            row = await conn.fetchrow("SELECT title, steps, recurrence FROM public.tasks")
         finally:
             await conn.close()
         self.assertEqual(row["title"], "keep me")
         self.assertIn('"s"', row["steps"])
+        self.assertIsNone(row["recurrence"])
 
     async def test_old_database_gets_missing_columns_and_jsonb_steps(self) -> None:
         # A database from before the startup ALTERs, created with steps as JSON
@@ -93,7 +103,7 @@ class MigrationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await conn.close()
 
-        await upgrade_to_head(self.engine)
+        await upgrade_to(self.engine, "0001_baseline")
         upgraded = await pg.schema_snapshot()
 
         await pg.reset_schema()
