@@ -56,8 +56,10 @@ import com.todocloud.app.data.TaskStep
 import com.todocloud.app.data.TodoCloudRepository
 import com.todocloud.app.notification.ReminderScheduler
 import com.todocloud.app.widget.TaskCalendarWidget
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 @Composable
 @androidx.compose.material3.ExperimentalMaterial3Api
@@ -89,6 +91,8 @@ fun TodoCloudApp(
     // Deleted on screen but not yet on the server, while "撤销" is still offered.
     var pendingDeleteIds by remember { mutableStateOf(emptySet<Int>()) }
     var refreshing by remember { mutableStateOf(false) }
+    // Set while the lists come from the on-device copy because the server was unreachable.
+    var offlineSyncedAt by remember { mutableStateOf<Long?>(null) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var shareLoading by remember { mutableStateOf(false) }
@@ -239,12 +243,24 @@ fun TodoCloudApp(
             loading = true
             taskHeaderLoading = true
             error = null
+            // Show the encrypted on-device copy at once; the server load replaces it.
+            val snapshot = repository.loadOfflineSnapshot(currentSession.email)
+            if (snapshot != null && tasks.isEmpty() && ideas.isEmpty()) {
+                tasks = sortTasks(snapshot.tasks)
+                ideas = snapshot.ideas
+            }
             try {
                 reloadAll(currentSession.token)
+                offlineSyncedAt = null
             } catch (exception: ApiException) {
                 handleApiError(exception)
             } catch (_: Exception) {
-                error = NETWORK_ERROR_MESSAGE
+                if (snapshot != null) {
+                    offlineSyncedAt = snapshot.syncedAtMillis
+                    error = offlineNotice(snapshot.syncedAtMillis)
+                } else {
+                    error = NETWORK_ERROR_MESSAGE
+                }
             } finally {
                 loading = false
                 taskHeaderLoading = false
@@ -262,14 +278,24 @@ fun TodoCloudApp(
             error = null
             try {
                 reloadAll(token)
+                offlineSyncedAt = null
             } catch (exception: ApiException) {
                 handleApiError(exception)
             } catch (_: Exception) {
-                error = NETWORK_ERROR_MESSAGE
+                error = offlineSyncedAt?.let(::offlineNotice) ?: NETWORK_ERROR_MESSAGE
             } finally {
                 refreshing = false
             }
         }
+    }
+
+    // Keep the offline copy in step with what the server last confirmed. Only
+    // after a successful load: the offline view itself is never written back.
+    LaunchedEffect(session?.email, tasks, ideas, tasksLoaded) {
+        val email = session?.email ?: return@LaunchedEffect
+        if (!tasksLoaded) return@LaunchedEffect
+        delay(500) // coalesce bursts of edits
+        withContext(Dispatchers.IO) { repository.saveOfflineSnapshot(email, tasks, ideas) }
     }
 
     DisposableEffect(lifecycleOwner, tasks, tasksLoaded) {

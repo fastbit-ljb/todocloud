@@ -9,9 +9,12 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-internal class SecureSessionStore(context: Context) {
+internal class SecureSessionStore(
+    context: Context,
+    preferencesName: String = PREFERENCES_NAME,
+) {
     private val preferences = context.applicationContext.getSharedPreferences(
-        PREFERENCES_NAME,
+        preferencesName,
         Context.MODE_PRIVATE,
     )
 
@@ -37,6 +40,10 @@ internal class SecureSessionStore(context: Context) {
 
     fun clear() {
         preferences.edit().clear().apply()
+    }
+
+    fun remove(name: String) {
+        preferences.edit().remove(name).apply()
     }
 
     private fun key(): SecretKey {
