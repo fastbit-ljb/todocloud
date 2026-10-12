@@ -11,6 +11,7 @@ import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,6 +64,8 @@ import kotlinx.coroutines.delay
 fun TodoCloudApp(
     requestedTab: Int = 0,
     requestedCalendarDate: String? = null,
+    sharedContent: SharedContent? = null,
+    onSharedContentHandled: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -86,6 +89,9 @@ fun TodoCloudApp(
     // Deleted on screen but not yet on the server, while "撤销" is still offered.
     var pendingDeleteIds by remember { mutableStateOf(emptySet<Int>()) }
     var refreshing by remember { mutableStateOf(false) }
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var shareLoading by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     var showIdeaComposer by rememberSaveable { mutableStateOf(false) }
     var editingIdea by remember { mutableStateOf<InboxIdea?>(null) }
@@ -120,6 +126,11 @@ fun TodoCloudApp(
 
     BackHandler(enabled = selectedTab == 0 && showAddMenu) {
         showAddMenu = false
+    }
+
+    BackHandler(enabled = selectedTab == 0 && searching && !showAddMenu) {
+        searching = false
+        searchQuery = ""
     }
 
     fun handleApiError(exception: ApiException) {
@@ -584,6 +595,16 @@ fun TodoCloudApp(
                         }
                     }
                 },
+                actions = {
+                    if (selectedTab == 0 && !searching) {
+                        IconButton(onClick = {
+                            showAddMenu = false
+                            searching = true
+                        }) {
+                            Icon(Icons.Outlined.Search, contentDescription = "搜索")
+                        }
+                    }
+                },
                 colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -694,6 +715,13 @@ fun TodoCloudApp(
                     },
                     onPlanToday = { planShortcut(todayPlanMessage()) },
                     onReplanOverdue = { overdue -> planShortcut(overduePlanMessage(overdue)) },
+                    searching = searching,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    onCloseSearch = {
+                        searching = false
+                        searchQuery = ""
+                    },
                 )
 
             1 -> CalendarScreen(
@@ -907,6 +935,50 @@ fun TodoCloudApp(
             },
         )
         }
+
+    sharedContent?.let { content ->
+        // Content from the system share sheet. Waits behind the login screen when
+        // signed out, since both actions need the account.
+        fun handleShare(action: suspend () -> Unit) {
+            scope.launch {
+                shareLoading = true
+                error = null
+                try {
+                    action()
+                } catch (exception: ApiException) {
+                    handleApiError(exception)
+                } catch (_: Exception) {
+                    error = NETWORK_ERROR_MESSAGE
+                } finally {
+                    shareLoading = false
+                    selectedTab = 0
+                    onSharedContentHandled()
+                }
+            }
+        }
+        ShareIntakeDialog(
+            content = content,
+            loading = shareLoading,
+            onRecognize = {
+                handleShare {
+                    taskSection = "tasks"
+                    aiResult = when (content) {
+                        is SharedContent.Text -> repository.parseText(currentSession.token, content.text)
+                        is SharedContent.Image -> repository.parseScreenshot(currentSession.token, content.uri)
+                    }
+                }
+            },
+            onSaveIdea = {
+                val text = (content as? SharedContent.Text)?.text ?: return@ShareIntakeDialog
+                handleShare {
+                    val saved = repository.createIdea(currentSession.token, text, null, null, null, emptyList())
+                    ideas = listOf(saved) + ideas.filterNot { it.id == saved.id }
+                    taskSection = "inbox"
+                }
+            },
+            onDismiss = onSharedContentHandled,
+        )
+    }
 
     aiResult?.let { result ->
         val importPlan = buildAiImportPlan(tasks, result.candidates)

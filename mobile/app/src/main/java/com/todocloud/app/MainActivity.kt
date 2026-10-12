@@ -12,13 +12,16 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import com.todocloud.app.ui.SharedContent
 import com.todocloud.app.ui.TodoCloudApp
+import com.todocloud.app.ui.sharedContentFrom
 import com.todocloud.app.ui.theme.TodoCloudTheme
 import com.todocloud.app.notification.ReminderScheduler
 
 class MainActivity : ComponentActivity() {
     private val requestedTab = mutableIntStateOf(0)
     private val requestedCalendarDate = mutableStateOf<String?>(null)
+    private val sharedContent = mutableStateOf<SharedContent?>(null)
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,6 +35,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         applyNavigationRequest(intent)
+        // A recreated activity (rotation, dark-mode switch) keeps its original
+        // intent; only read a share on the first creation.
+        if (savedInstanceState == null) sharedContent.value = sharedContentFrom(intent)
         enableEdgeToEdge()
         ReminderScheduler.createNotificationChannel(this)
         // Restore alarms/notifications before the network-backed task list is
@@ -48,6 +54,8 @@ class MainActivity : ComponentActivity() {
                 TodoCloudApp(
                     requestedTab = requestedTab.intValue,
                     requestedCalendarDate = requestedCalendarDate.value,
+                    sharedContent = sharedContent.value,
+                    onSharedContentHandled = { sharedContent.value = null },
                 )
             }
         }
@@ -57,6 +65,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         applyNavigationRequest(intent)
+        sharedContentFrom(intent)?.let { sharedContent.value = it }
     }
 
     private fun applyNavigationRequest(intent: Intent?) {
