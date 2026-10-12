@@ -78,11 +78,9 @@ class MascotSetsTest {
         val res = resDirectory()
         // Exactly one definition: an override under drawable-night or drawable-v31 would bring a
         // theme colour back on some phones.
-        val definitions = subdirectories(res, "drawable")
-            .map { File(it, "ic_launcher_background.xml") }
-            .filter { it.isFile }
-        assertEquals(listOf("drawable"), definitions.map { it.parentFile.name })
-        val fills = parse(definitions.single()).getElementsByTagName("solid")
+        val definedIn = subdirectories(res, "drawable").filter { File(it, "ic_launcher_background.xml").isFile }
+        assertEquals(listOf("drawable"), definedIn.map { it.name })
+        val fills = parse(File(definedIn.single(), "ic_launcher_background.xml")).getElementsByTagName("solid")
         assertEquals(1, fills.length)
         assertEquals("@android:color/white", (fills.item(0) as Element).getAttributeNS(ANDROID, "color"))
 
