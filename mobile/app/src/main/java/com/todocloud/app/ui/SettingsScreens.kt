@@ -27,6 +27,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -97,31 +100,29 @@ internal fun SettingsHomeScreen(
             .padding(paddingValues)
             .padding(horizontal = 20.dp)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("账号", style = MaterialTheme.typography.titleMedium)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        ) {
+        SettingsGroup(title = "账号") {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    Icons.Outlined.AccountCircle,
-                    contentDescription = "账号",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(30.dp),
-                )
-                Column(
+                androidx.compose.foundation.layout.Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                        .size(44.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        session.email.take(1).uppercase(),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f).padding(horizontal = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(session.email, style = MaterialTheme.typography.titleMedium)
                     Text(
@@ -130,112 +131,112 @@ internal fun SettingsHomeScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                IconButton(
-                    onClick = onLogout,
-                    modifier = Modifier.size(40.dp),
-                ) {
+                IconButton(onClick = onLogout) {
                     Icon(
                         Icons.Outlined.Logout,
                         contentDescription = "退出登录",
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
         }
 
-        Text("提醒设置", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "选择任务到点后的提醒方式",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        ReminderModeCard(
-            title = "通知栏提醒",
-            description = "沿用原来的通知栏提醒，可点击通知进入应用",
-            icon = { Icon(Icons.Outlined.Notifications, contentDescription = null) },
-            selected = reminderMode == ReminderMode.NOTIFICATION,
-            onClick = { onReminderModeChange(ReminderMode.NOTIFICATION) },
-        )
-        ReminderModeCard(
-            title = "闹钟提醒",
-            description = "到点响铃并显示停止界面，不发送任务通知",
-            icon = { Icon(Icons.Outlined.Alarm, contentDescription = null) },
-            selected = reminderMode == ReminderMode.ALARM,
-            onClick = {
-                onReminderModeChange(ReminderMode.ALARM)
-                requestAlarmPermissions(context)
-            },
-        )
-        OutlinedButton(
-            onClick = { showDefaultReminderPicker = true },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("AI 识别任务默认：${formatReminderOffset(defaultReminderOffsetMinutes)}")
-        }
-        var digestEnabled by remember(context) {
-            mutableStateOf(com.todocloud.app.notification.DailyDigestNotifier.isEnabled(context))
-        }
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("每日早晨摘要", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "每天 8 点通知今天要做的事和过期任务；没有安排的日子不打扰",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
+        SettingsGroup(title = "提醒", caption = "选择任务到点后的提醒方式") {
+            SettingsRow(
+                icon = Icons.Outlined.Notifications,
+                title = "通知栏提醒",
+                description = "沿用原来的通知栏提醒，可点击通知进入应用",
+                onClick = { onReminderModeChange(ReminderMode.NOTIFICATION) },
+                trailing = {
+                    RadioButton(
+                        selected = reminderMode == ReminderMode.NOTIFICATION,
+                        onClick = { onReminderModeChange(ReminderMode.NOTIFICATION) },
                     )
-                }
-                androidx.compose.material3.Switch(
-                    checked = digestEnabled,
-                    onCheckedChange = { enabled ->
-                        digestEnabled = enabled
-                        com.todocloud.app.notification.DailyDigestNotifier.setEnabled(context, enabled)
-                    },
-                    modifier = Modifier.padding(start = 12.dp),
-                )
+                },
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = Icons.Outlined.Alarm,
+                title = "闹钟提醒",
+                description = "到点响铃并显示停止界面，不发送任务通知",
+                onClick = {
+                    onReminderModeChange(ReminderMode.ALARM)
+                    requestAlarmPermissions(context)
+                },
+                trailing = {
+                    RadioButton(
+                        selected = reminderMode == ReminderMode.ALARM,
+                        onClick = {
+                            onReminderModeChange(ReminderMode.ALARM)
+                            requestAlarmPermissions(context)
+                        },
+                    )
+                },
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = androidx.compose.material.icons.Icons.Outlined.AccessTime,
+                title = "AI 识别任务默认提醒",
+                description = formatReminderOffset(defaultReminderOffsetMinutes),
+                onClick = { showDefaultReminderPicker = true },
+            )
+            SettingsDivider()
+            var digestEnabled by remember(context) {
+                mutableStateOf(com.todocloud.app.notification.DailyDigestNotifier.isEnabled(context))
             }
+            fun setDigest(enabled: Boolean) {
+                digestEnabled = enabled
+                com.todocloud.app.notification.DailyDigestNotifier.setEnabled(context, enabled)
+            }
+            SettingsRow(
+                icon = androidx.compose.material.icons.Icons.Outlined.WbSunny,
+                title = "每日早晨摘要",
+                description = "每天 8 点通知今天要做的事和过期任务；没有安排的日子不打扰",
+                onClick = { setDigest(!digestEnabled) },
+                trailing = {
+                    androidx.compose.material3.Switch(
+                        checked = digestEnabled,
+                        onCheckedChange = ::setDigest,
+                    )
+                },
+            )
         }
 
-        Text("更多设置", style = MaterialTheme.typography.titleMedium)
-        SettingsEntry(
-            title = "权限",
-            description = "通知、闹钟、后台运行和无障碍辅助",
-            icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
-            onClick = onOpenPermissions,
-        )
-        SettingsEntry(
-            title = "赞助开发",
-            description = "查看收款码，支持 TodoCloud 持续开发",
-            icon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null) },
-            onClick = onOpenSponsor,
-        )
-        Text("关于 TodoCloud", style = MaterialTheme.typography.titleMedium)
-        SettingsEntry(
-            title = if (updateAvailableVersion != null) "检查更新 · 新版本 $updateAvailableVersion" else "检查更新",
-            description = when {
-                checkingUpdate -> "正在检查…"
-                updateAvailableVersion != null -> "点击查看更新内容并下载"
-                else -> "当前版本 ${BuildConfig.VERSION_NAME}"
-            },
-            icon = {
-                BadgedBox(badge = { if (updateAvailableVersion != null) Badge() }) {
-                    Icon(Icons.Outlined.SystemUpdate, contentDescription = null)
-                }
-            },
-            onClick = { if (!checkingUpdate) onCheckUpdate() },
-        )
+        SettingsGroup(title = "更多") {
+            SettingsRow(
+                icon = Icons.Outlined.Settings,
+                title = "权限",
+                description = "通知、闹钟、后台运行和无障碍辅助",
+                onClick = onOpenPermissions,
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = Icons.Outlined.FavoriteBorder,
+                title = "赞助开发",
+                description = "查看收款码，支持 TodoCloud 持续开发",
+                onClick = onOpenSponsor,
+            )
+        }
+
+        SettingsGroup(title = "关于 TodoCloud") {
+            SettingsRow(
+                icon = Icons.Outlined.SystemUpdate,
+                title = if (updateAvailableVersion != null) "检查更新 · 新版本 $updateAvailableVersion" else "检查更新",
+                description = when {
+                    checkingUpdate -> "正在检查…"
+                    updateAvailableVersion != null -> "点击查看更新内容并下载"
+                    else -> "当前版本 ${BuildConfig.VERSION_NAME}"
+                },
+                badge = updateAvailableVersion != null,
+                onClick = { if (!checkingUpdate) onCheckUpdate() },
+            )
+        }
         Text(
-            "当前版本 ${BuildConfig.VERSION_NAME}\n任务、提醒与云端同步",
+            "TodoCloud ${BuildConfig.VERSION_NAME} · 任务、提醒与云端同步",
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(bottom = 20.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
     }
 
@@ -249,6 +250,102 @@ internal fun SettingsHomeScreen(
             },
         )
     }
+}
+
+/** A titled block of settings rows on one rounded surface. */
+@Composable
+internal fun SettingsGroup(
+    title: String,
+    caption: String? = null,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Text(
+            title,
+            modifier = Modifier.padding(start = 4.dp, bottom = if (caption == null) 8.dp else 2.dp),
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelLarge,
+        )
+        caption?.let {
+            Text(
+                it,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        androidx.compose.material3.Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Column(content = content)
+        }
+    }
+}
+
+/** One settings row: tinted icon badge, title + description, optional trailing control. */
+@Composable
+internal fun SettingsRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    badge: Boolean = false,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BadgedBox(badge = { if (badge) Badge() }) {
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.small)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f).padding(horizontal = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                description,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (trailing != null) {
+            trailing()
+        } else {
+            Icon(
+                Icons.Outlined.ChevronRight,
+                contentDescription = "打开$title",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun SettingsDivider() {
+    androidx.compose.material3.HorizontalDivider(
+        modifier = Modifier.padding(start = 70.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+    )
 }
 
 @Composable

@@ -135,10 +135,10 @@ internal fun TaskAddSpeedDial(
                     role = Role.Button
                 },
             shape = RoundedCornerShape(20.dp),
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ) {
-            val symbolColor = MaterialTheme.colorScheme.onSecondaryContainer
+            val symbolColor = MaterialTheme.colorScheme.onPrimaryContainer
             Canvas(modifier = Modifier.size(30.dp)) {
                 val armLength = 10.dp.toPx()
                 val lineWidth = 2.6.dp.toPx()
@@ -469,12 +469,13 @@ internal fun TaskSectionSwitcher(
                 Triple("inbox", "收件匣", Icons.Outlined.Inbox),
             ).forEach { (value, label, icon) ->
                 val active = selected == value
+                val contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                 Row(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(14.dp))
                         .background(
-                            if (active) MaterialTheme.colorScheme.primaryContainer
+                            if (active) com.todocloud.app.ui.theme.selectionIndicatorColor()
                             else Color.Transparent,
                         )
                         .clickable { onSelected(value) }
@@ -482,8 +483,8 @@ internal fun TaskSectionSwitcher(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Text(label, modifier = Modifier.padding(start = 7.dp))
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = contentColor)
+                    Text(label, modifier = Modifier.padding(start = 7.dp), color = contentColor)
                 }
             }
         }
@@ -608,10 +609,10 @@ internal fun IdeaAddButton(enabled: Boolean, onClick: () -> Unit) {
         onClick = { if (enabled) onClick() },
         modifier = Modifier.size(66.dp).graphicsLayer { alpha = if (enabled) 1f else 0.5f },
         shape = RoundedCornerShape(20.dp),
-        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
-        val color = MaterialTheme.colorScheme.onSecondaryContainer
+        val color = MaterialTheme.colorScheme.onPrimaryContainer
         Canvas(Modifier.size(30.dp)) {
             val arm = 10.dp.toPx()
             val width = 2.6.dp.toPx()

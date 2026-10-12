@@ -40,6 +40,20 @@ internal fun planAcceptSelection(
     }
 }
 
+/** Line under "我的任务": the date plus how much is due today, e.g. "10月12日 周一 · 今天 3 件事". */
+internal fun taskHeaderSubtitle(
+    tasks: List<TaskItem>,
+    today: LocalDate = LocalDate.now(),
+    zone: ZoneId = ZoneId.systemDefault(),
+): String {
+    val weekday = listOf("一", "二", "三", "四", "五", "六", "日")[today.dayOfWeek.value - 1]
+    val dueToday = tasks.count { task ->
+        !task.completed && task.dueAt?.let(::parseInstant)?.atZone(zone)?.toLocalDate() == today
+    }
+    val load = if (dueToday == 0) "今天没有到期的事" else "今天 $dueToday 件事"
+    return "${today.monthValue}月${today.dayOfMonth}日 周$weekday · $load"
+}
+
 /** Content of the morning notification, or null when there is nothing to say. */
 internal data class DailyDigest(val title: String, val lines: List<String>)
 

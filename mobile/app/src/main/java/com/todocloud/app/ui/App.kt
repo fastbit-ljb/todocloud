@@ -361,6 +361,30 @@ fun TodoCloudApp(
         }
     }
 
+    fun toggleStep(task: TaskItem, stepIndex: Int, prepareForReorder: () -> Unit) {
+        runRequest {
+            val nextSteps = task.steps.mapIndexed { index, step ->
+                if (index == stepIndex) step.copy(completed = !step.completed) else step
+            }
+            val completedStep = !task.steps[stepIndex].completed
+            val nextCompleted = nextSteps.isNotEmpty() && nextSteps.all { it.completed }
+            val updated = repository.updateTask(
+                currentSession.token,
+                task.id,
+                completed = nextCompleted,
+                steps = nextSteps,
+            )
+            if (completedStep) {
+                MascotStateManager.recordMeaningfulActivity(context)
+            }
+            ReminderScheduler.schedule(context, updated)
+            tasks = tasks.map { if (it.id == updated.id) updated else it }
+            delay(TASK_REORDER_DELAY_MILLIS.toLong())
+            prepareForReorder()
+            tasks = sortTasks(tasks)
+        }
+    }
+
     // Hide the task now and offer "撤销"; the server delete only happens once the
     // snackbar goes away without the action (timeout, swipe, or the next delete).
     fun deleteWithUndo(task: TaskItem) {
@@ -529,19 +553,29 @@ fun TodoCloudApp(
         TabItem("设置") { Icon(Icons.Outlined.Settings, contentDescription = "设置") },
     )
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        when {
-                            selectedTab == 0 && taskSection == "inbox" -> "收件匣"
-                            selectedTab == 0 -> "我的任务"
-                            selectedTab == 3 && settingsPage == "permissions" -> "权限"
-                            selectedTab == 3 && settingsPage == "sponsor" -> "赞助开发"
-                            else -> tabs[selectedTab].label
-                        },
-                    )
+                    androidx.compose.foundation.layout.Column {
+                        Text(
+                            when {
+                                selectedTab == 0 && taskSection == "inbox" -> "收件匣"
+                                selectedTab == 0 -> "我的任务"
+                                selectedTab == 3 && settingsPage == "permissions" -> "权限"
+                                selectedTab == 3 && settingsPage == "sponsor" -> "赞助开发"
+                                else -> tabs[selectedTab].label
+                            },
+                            style = MaterialTheme.typography.headlineSmall,
+                        )
+                        if (selectedTab == 0 && taskSection == "tasks") {
+                            Text(
+                                taskHeaderSubtitle(tasks),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
                     if (selectedTab == 3 && settingsPage != "main") {
@@ -550,11 +584,15 @@ fun TodoCloudApp(
                         }
                     }
                 },
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ),
             )
         },
         bottomBar = {
             if (selectedTab != 3 || settingsPage == "main") {
-                NavigationBar {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                     tabs.forEachIndexed { index, tab ->
                         NavigationBarItem(
                             selected = selectedTab == index,
@@ -566,7 +604,9 @@ fun TodoCloudApp(
                             icon = tab.icon,
                             label = { Text(tab.label) },
                             colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                                indicatorColor = com.todocloud.app.ui.theme.selectionIndicatorColor(),
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
                             ),
                         )
                     }
@@ -623,29 +663,7 @@ fun TodoCloudApp(
                     showLoadingAnimation = taskHeaderLoading,
                     error = error,
                     onToggle = { task, prepareForReorder -> toggleTask(task, prepareForReorder) },
-                    onStepToggle = { task, stepIndex, prepareForReorder ->
-                    runRequest {
-                        val nextSteps = task.steps.mapIndexed { index, step ->
-                            if (index == stepIndex) step.copy(completed = !step.completed) else step
-                        }
-                        val completedStep = !task.steps[stepIndex].completed
-                        val nextCompleted = nextSteps.isNotEmpty() && nextSteps.all { it.completed }
-                        val updated = repository.updateTask(
-                            currentSession.token,
-                            task.id,
-                            completed = nextCompleted,
-                            steps = nextSteps,
-                        )
-                        if (completedStep) {
-                            MascotStateManager.recordMeaningfulActivity(context)
-                        }
-                        ReminderScheduler.schedule(context, updated)
-                        tasks = tasks.map { if (it.id == updated.id) updated else it }
-                        delay(TASK_REORDER_DELAY_MILLIS.toLong())
-                        prepareForReorder()
-                        tasks = sortTasks(tasks)
-                    }
-                },
+                    onStepToggle = { task, stepIndex, prepareForReorder -> toggleStep(task, stepIndex, prepareForReorder) },
                     onReminderChange = { task, reminderOffsetMinutes ->
                     runRequest {
                         val updated = repository.updateTask(
@@ -683,6 +701,7 @@ fun TodoCloudApp(
                 tasks = tasks,
                 requestedDate = requestedCalendarDate,
                 onToggleTask = { task -> toggleTask(task) {} },
+                onToggleStep = { task, index -> toggleStep(task, index) {} },
                 onEditTask = { task ->
                     editingTask = task
                     showComposer = true
@@ -781,6 +800,7 @@ fun TodoCloudApp(
             }
         }
         }
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
         if (pullable) {
             PullToRefreshBox(
                 isRefreshing = refreshing,
@@ -789,6 +809,25 @@ fun TodoCloudApp(
             ) { screen() }
         } else {
             screen()
+        }
+        // Own snackbar slot, pinned to the bottom; on the task tab it sits above the
+        // add button (66dp + 16dp margin) instead of covering it.
+        val fabClearance = if (selectedTab == 0) 66.dp + 16.dp else 0.dp
+        SnackbarHost(
+            snackbarHostState,
+            modifier = Modifier
+                .align(androidx.compose.ui.Alignment.BottomCenter)
+                .padding(bottom = scaffoldPadding.calculateBottomPadding() + fabClearance + 8.dp),
+        ) { data ->
+            // Light snackbar in the theme's own tint instead of the default dark one.
+            androidx.compose.material3.Snackbar(
+                snackbarData = data,
+                shape = MaterialTheme.shapes.medium,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                actionColor = MaterialTheme.colorScheme.primary,
+            )
+        }
         }
         }
 

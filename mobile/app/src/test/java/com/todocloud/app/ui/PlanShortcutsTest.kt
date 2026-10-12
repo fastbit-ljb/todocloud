@@ -68,6 +68,17 @@ class PlanShortcutsTest {
     }
 
     @Test
+    fun headerSubtitleShowsDateWeekdayAndTodayLoad() {
+        val tasks = listOf(
+            task(1, "2026-10-12T06:00:00Z"),
+            task(2, "2026-10-12T01:00:00Z", completed = true),
+            task(3, "2026-10-13T01:00:00Z"),
+        )
+        assertEquals("10月12日 周一 · 今天 1 件事", taskHeaderSubtitle(tasks, today, zone))
+        assertEquals("10月12日 周一 · 今天没有到期的事", taskHeaderSubtitle(emptyList(), today, zone))
+    }
+
+    @Test
     fun dailyDigestStaysQuietOnAnEmptyDay() {
         assertNull(dailyDigest(listOf(task(1, "2026-10-13T02:00:00Z")), today, zone, now))
         val onlyOverdue = dailyDigest(listOf(task(1, "2026-10-10T02:00:00Z")), today, zone, now)!!
