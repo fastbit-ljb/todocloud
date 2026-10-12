@@ -91,6 +91,27 @@ class PlanAiTests(unittest.TestCase):
         self.assertEqual(len(allowed["items"]), 1)
         self.assertEqual(allowed["items"][0]["source_type"], "prompt")
 
+    def test_prompt_explains_recurrence(self) -> None:
+        prompt = _build_plan_prompt([], [], self.reference, "Asia/Shanghai", "每周三晚上组会", None, [])
+        self.assertIn("重复规则", prompt)
+        self.assertIn('"recurrence"', prompt)
+        self.assertIn("不要把每一次都单独列出来", prompt)
+
+    def test_normalize_keeps_valid_recurrence_only_with_a_due_time(self) -> None:
+        due = "2026-10-14T20:00:00+08:00"
+        raw = {
+            "summary": "",
+            "items": [
+                {"source_type": "prompt", "source_id": 1, "title": "组会", "due_at": due, "recurrence": "Weekly"},
+                {"source_type": "prompt", "source_id": 2, "title": "背单词", "recurrence": "daily"},
+                {"source_type": "prompt", "source_id": 3, "title": "跑步", "due_at": due, "recurrence": "hourly"},
+                {"source_type": "prompt", "source_id": 4, "title": "交报告", "due_at": due},
+            ],
+        }
+        items = _normalize_proposal(raw, [], [], self.reference, allow_prompt_items=True)["items"]
+        rules = {item["title"]: item["recurrence"] for item in items}
+        self.assertEqual(rules, {"组会": "weekly", "背单词": None, "跑步": None, "交报告": None})
+
 
 if __name__ == "__main__":
     unittest.main()

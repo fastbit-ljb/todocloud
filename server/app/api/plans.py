@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai_parser import AiNotConfiguredError, AiParseError
 from app.api.dependencies import get_current_user
-from app.api.tasks import TaskResponse
+from app.api.tasks import Recurrence, TaskResponse
 from app.core.config import settings
 from app.core.rate_limit import enforce_rate_limit
 from app.db.models import AiPlan, Attachment, Idea, Task, User
@@ -35,6 +35,18 @@ class PlanItem(BaseModel):
     reminder_offset_minutes: int | None = Field(default=None, ge=0, le=10_080)
     steps: list[PlanStep] = Field(default_factory=list, max_length=30)
     note: str = ""
+    # Repeat rule for the task this item becomes; only kept when there is a due time.
+    recurrence: Recurrence | None = None
+
+
+def _item_recurrence(item: PlanItem, proposed: dict[tuple[str, int], PlanItem]) -> str | None:
+    """The rule to store for an adopted item. Clients from before this field (1.3.6)
+    send items without it, so fall back to what the plan proposed for that item."""
+    rule = item.recurrence
+    if "recurrence" not in item.model_fields_set:
+        original = proposed.get((item.source_type, item.source_id))
+        rule = original.recurrence if original else None
+    return rule if item.due_at is not None else None
 
 
 class PlanProposal(BaseModel):
@@ -138,6 +150,7 @@ def serialize_task(task: Task) -> dict:
         "due_at": task.due_at.isoformat() if task.due_at else None,
         "duration_minutes": task.duration_minutes,
         "steps": task.steps or [],
+        "recurrence": task.recurrence,
     }
 
 
@@ -448,7 +461,9 @@ async def accept_plan(
         selected = payload.items
     # What accepting changed, so /undo can put it back exactly.
     record: dict = {"created_task_ids": [], "converted_idea_ids": [], "task_snapshots": []}
+    proposed_by_key = {(item.source_type, item.source_id): item for item in proposal.items}
     for item in selected:
+        rule = _item_recurrence(item, proposed_by_key)
         if item.source_type == "task":
             task = await db.scalar(
                 select(Task).where(Task.id == item.source_id, Task.user_id == user.id)
@@ -463,6 +478,7 @@ async def accept_plan(
                     "duration_minutes": task.duration_minutes,
                     "reminder_offset_minutes": task.reminder_offset_minutes,
                     "steps": list(task.steps or []),
+                    "recurrence": task.recurrence,
                 }
             )
             task.start_at = item.start_at
@@ -472,6 +488,10 @@ async def accept_plan(
                 task.reminder_offset_minutes = item.reminder_offset_minutes
             if item.steps:
                 task.steps = [{"title": step.title, "completed": False} for step in item.steps]
+            if rule is not None:
+                task.recurrence = rule
+            elif task.due_at is None:
+                task.recurrence = None  # a rule needs a due time
             changed_tasks.append(task)
             continue
 
@@ -485,6 +505,7 @@ async def accept_plan(
                 duration_minutes=item.duration_minutes,
                 reminder_offset_minutes=item.reminder_offset_minutes,
                 steps=[{"title": step.title, "completed": False} for step in item.steps],
+                recurrence=rule,
             )
             db.add(task)
             await db.flush()
@@ -516,6 +537,7 @@ async def accept_plan(
             duration_minutes=item.duration_minutes or idea.duration_minutes,
             reminder_offset_minutes=item.reminder_offset_minutes,
             steps=proposed_steps or idea_steps,
+            recurrence=rule,
         )
         db.add(task)
         await db.flush()
@@ -583,6 +605,8 @@ async def undo_accept(
         task.duration_minutes = snapshot.get("duration_minutes")
         task.reminder_offset_minutes = snapshot.get("reminder_offset_minutes")
         task.steps = list(snapshot.get("steps") or [])
+        if "recurrence" in snapshot:  # records from before recurrence did not change it
+            task.recurrence = snapshot.get("recurrence")
         restored.append(task)
 
     plan.proposal = {

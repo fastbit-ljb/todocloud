@@ -364,6 +364,53 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["id"] for item in (await self.client.get("/ideas", headers=auth)).json()],
                          [idea["id"]])  # idea back in the inbox
 
+    async def test_plan_items_can_become_recurring_tasks(self) -> None:
+        from unittest import mock
+
+        auth = self._auth(await self._register())
+        task = (
+            await self.client.post(
+                "/tasks", headers=auth, json={"title": "跑步", "due_at": "2026-10-20T07:30:00+08:00"}
+            )
+        ).json()
+        raw = {
+            "intent": "plan",
+            "summary": "固定节奏",
+            "items": [
+                {"source_type": "prompt", "source_id": 1, "title": "组会",
+                 "start_at": "2026-10-14T19:00:00+08:00", "due_at": "2026-10-14T20:00:00+08:00",
+                 "recurrence": "weekly"},
+                {"source_type": "prompt", "source_id": 2, "title": "背单词",
+                 "due_at": "2026-10-13T08:00:00+08:00", "recurrence": "daily"},
+                {"source_type": "task", "source_id": task["id"], "title": "跑步",
+                 "due_at": "2026-10-13T07:30:00+08:00", "recurrence": "weekdays"},
+            ],
+        }
+        with mock.patch("app.plan_ai._call_plan_model", return_value=raw):
+            plan = (
+                await self.client.post(
+                    "/plans/chat", headers=auth, json={"message": "每周三组会，每天背单词", "force_plan": True}
+                )
+            ).json()["plan"]
+        proposed = {i["title"]: i["recurrence"] for i in plan["proposal"]["items"]}
+        self.assertEqual(proposed, {"组会": "weekly", "背单词": "daily", "跑步": "weekdays"})
+
+        # A 1.3.6 client sends the items back without the field: the proposed rule is kept.
+        # Here the user also switched 背单词 off ("recurrence": null) explicitly.
+        old_style = [{k: v for k, v in item.items() if k != "recurrence"} for item in plan["proposal"]["items"]]
+        next(i for i in old_style if i["title"] == "背单词")["recurrence"] = None
+        accepted = await self.client.post(
+            f"/plans/{plan['id']}/accept", headers=auth, json={"items": old_style}
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        rules = {t["title"]: t["recurrence"] for t in (await self.client.get("/tasks", headers=auth)).json()}
+        self.assertEqual(rules, {"背单词": None, "跑步": "weekdays", "组会": "weekly"})
+
+        undone = await self.client.post(f"/plans/{plan['id']}/undo", headers=auth)
+        self.assertEqual(undone.status_code, 200, undone.text)
+        after = (await self.client.get("/tasks", headers=auth)).json()
+        self.assertEqual([(t["title"], t["recurrence"]) for t in after], [("跑步", None)])
+
     async def test_accept_rejects_foreign_or_empty_selection(self) -> None:
         auth = self._auth(await self._register())
         plan, _, _ = await self._draft_plan(auth)

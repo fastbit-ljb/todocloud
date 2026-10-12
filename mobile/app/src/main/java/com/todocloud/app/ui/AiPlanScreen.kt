@@ -926,6 +926,7 @@ internal fun PlanTimelineItem(
                 buildString {
                     append(scheduleText)
                     item.durationMinutes?.let { append(" · ${formatDuration(it)}") }
+                    recurrenceLabel(item.recurrence)?.let { append(" · $it") }
                     if (edited) append(" · 已修改")
                 },
                 modifier = Modifier.padding(top = 5.dp),
@@ -973,6 +974,7 @@ internal fun PlanTimelineItem(
 }
 
 /** Change when one proposed item happens, before the plan is accepted. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun PlanItemTimeDialog(
     item: PlanItem,
@@ -982,6 +984,7 @@ internal fun PlanItemTimeDialog(
     var startAt by remember(item) { mutableStateOf(item.startAt?.let(::parseIdeaDateTime)) }
     var dueAt by remember(item) { mutableStateOf(item.dueAt?.let(::parseIdeaDateTime)) }
     var duration by remember(item) { mutableStateOf(item.durationMinutes) }
+    var recurrence by remember(item) { mutableStateOf(item.recurrence) }
     var picker by remember { mutableStateOf<String?>(null) }
     var showCustomDuration by remember { mutableStateOf(false) }
     var customDurationText by remember { mutableStateOf("") }
@@ -1019,12 +1022,33 @@ internal fun PlanItemTimeDialog(
                         showCustomDuration = true
                     },
                 )
+                if (dueAt != null) {
+                    Text("重复", style = MaterialTheme.typography.titleSmall)
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        RECURRENCE_OPTIONS.forEach { option ->
+                            androidx.compose.material3.FilterChip(
+                                selected = recurrence == option.rule,
+                                onClick = { recurrence = option.rule },
+                                label = { Text(option.label) },
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    onSave(item.copy(startAt = startAt?.iso(), dueAt = dueAt?.iso(), durationMinutes = duration))
+                    onSave(
+                        item.copy(
+                            startAt = startAt?.iso(),
+                            dueAt = dueAt?.iso(),
+                            durationMinutes = duration,
+                            recurrence = if (dueAt == null) null else recurrence,
+                        ),
+                    )
                 },
                 enabled = !invalid,
             ) { Text("确定") }
