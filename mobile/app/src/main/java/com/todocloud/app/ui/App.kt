@@ -368,6 +368,10 @@ fun TodoCloudApp(
                     session = newSession
                 }
             },
+            onUseLocally = {
+                error = null
+                session = repository.startLocalSession()
+            },
         )
         return
     }

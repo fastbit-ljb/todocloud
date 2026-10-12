@@ -37,6 +37,19 @@ class TodoCloudRepository(context: Context) {
         .build()
     private val sessionStore = SecureSessionStore(context)
     private val offlineStore = SecureSessionStore(context, OFFLINE_PREFERENCES_NAME)
+    private val local by lazy { LocalStore.get(appContext) }
+
+    /** Start using the app on this phone only: no account, nothing sent to the server. */
+    fun startLocalSession(): Session =
+        Session(LOCAL_SESSION_TOKEN, LOCAL_SESSION_TOKEN, email = "", displayName = "本机").also(::saveSession)
+
+    /** Deletes every task and idea kept in local mode. */
+    suspend fun clearLocalData() = local.clear()
+
+    // AI features run on the server, which local mode never talks to.
+    private fun requireCloud(token: String) {
+        if (token == LOCAL_SESSION_TOKEN) throw ApiException(LOCAL_AI_UNAVAILABLE)
+    }
     private val refreshMutex = Mutex()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     private val baseUrl = BuildConfig.API_BASE_URL.trimEnd('/')
@@ -80,6 +93,11 @@ class TodoCloudRepository(context: Context) {
     }
 
     suspend fun logout(session: Session) {
+        if (session.isLocal) {
+            // Leaving local mode keeps its data on the phone for the next time.
+            clearSession()
+            return
+        }
         // The UI may still hold the session from sign-in while the repository
         // has since rotated its refresh token in the secure store.
         val refreshToken = savedSession()?.refreshToken ?: session.refreshToken
@@ -103,6 +121,7 @@ class TodoCloudRepository(context: Context) {
      * same Keystore key as the session, so they can be shown when the network is down.
      */
     fun saveOfflineSnapshot(email: String, tasks: List<TaskItem>, ideas: List<InboxIdea>) {
+        if (savedSession()?.isLocal == true) return // local mode is already on the phone
         val payload = JSONObject()
             .put("owner", email)
             .put("synced_at", System.currentTimeMillis())
@@ -162,6 +181,7 @@ class TodoCloudRepository(context: Context) {
     }
 
     suspend fun listTasks(token: String): List<TaskItem> {
+        if (token == LOCAL_SESSION_TOKEN) return local.listTasks()
         val response = authorizedRequest(token) { authToken ->
             Request.Builder().url(baseUrl + "/tasks").authorized(authToken).get().build()
         }
@@ -179,6 +199,11 @@ class TodoCloudRepository(context: Context) {
         durationMinutes: Int? = null,
         recurrence: String? = null,
     ): TaskItem {
+        if (token == LOCAL_SESSION_TOKEN) {
+            return local.createTask(
+                title, description, dueAt, reminderOffsetMinutes, steps, startAt, durationMinutes, recurrence,
+            )
+        }
         val payload = JSONObject().put("title", title)
         if (!description.isNullOrBlank()) payload.put("description", description)
         if (startAt != null) payload.put("start_at", startAt)
@@ -212,6 +237,9 @@ class TodoCloudRepository(context: Context) {
         steps: List<TaskStep>? = null,
         includeSchedule: Boolean = false,
     ): TaskItem {
+        if (token == LOCAL_SESSION_TOKEN) {
+            return local.updateTask(id, completed, dueAt, reminderOffsetMinutes, steps, includeSchedule)
+        }
         val payload = JSONObject()
         completed?.let { payload.put("completed", it) }
         if (includeSchedule) {
@@ -237,6 +265,7 @@ class TodoCloudRepository(context: Context) {
 
     /** Replaces every editable field of a task; null clears a field. Completion is untouched. */
     suspend fun editTask(token: String, id: Int, draft: TaskDraft): TaskItem {
+        if (token == LOCAL_SESSION_TOKEN) return local.editTask(id, draft)
         fun Any?.orNull(): Any = this ?: JSONObject.NULL
         val payload = JSONObject()
             .put("title", draft.title)
@@ -262,6 +291,7 @@ class TodoCloudRepository(context: Context) {
     }
 
     suspend fun deleteTask(token: String, id: Int) {
+        if (token == LOCAL_SESSION_TOKEN) return local.deleteTask(id)
         authorizedRequest(token) { authToken ->
             Request.Builder()
                 .url("$baseUrl/tasks/$id")
@@ -272,6 +302,7 @@ class TodoCloudRepository(context: Context) {
     }
 
     suspend fun listIdeas(token: String): List<InboxIdea> {
+        if (token == LOCAL_SESSION_TOKEN) return local.listIdeas()
         val response = authorizedRequest(token) { authToken ->
             Request.Builder().url(baseUrl + "/ideas").authorized(authToken).get().build()
         }
@@ -286,6 +317,7 @@ class TodoCloudRepository(context: Context) {
         dueAt: String?,
         items: List<IdeaDetail>,
     ): InboxIdea {
+        if (token == LOCAL_SESSION_TOKEN) return local.createIdea(content, durationMinutes, startAt, dueAt, items)
         val payload = ideaPayload(content, durationMinutes, startAt, dueAt, items)
         val response = authorizedRequest(token) { authToken ->
             Request.Builder()
@@ -306,6 +338,7 @@ class TodoCloudRepository(context: Context) {
         dueAt: String?,
         items: List<IdeaDetail>,
     ): InboxIdea {
+        if (token == LOCAL_SESSION_TOKEN) return local.updateIdea(id, content, durationMinutes, startAt, dueAt, items)
         val payload = ideaPayload(content, durationMinutes, startAt, dueAt, items)
         val response = authorizedRequest(token) { authToken ->
             Request.Builder()
@@ -318,12 +351,14 @@ class TodoCloudRepository(context: Context) {
     }
 
     suspend fun deleteIdea(token: String, id: Int) {
+        if (token == LOCAL_SESSION_TOKEN) return local.deleteIdea(id)
         authorizedRequest(token) { authToken ->
             Request.Builder().url("$baseUrl/ideas/$id").authorized(authToken).delete().build()
         }
     }
 
     suspend fun listPlans(token: String): List<AiPlan> {
+        if (token == LOCAL_SESSION_TOKEN) return emptyList()
         val response = authorizedRequest(token) { authToken ->
             Request.Builder().url(baseUrl + "/plans").authorized(authToken).get().build()
         }
@@ -331,6 +366,7 @@ class TodoCloudRepository(context: Context) {
     }
 
     suspend fun generatePlan(token: String, message: String, ideaIds: Collection<Int>): AiPlan {
+        requireCloud(token)
         val payload = planningPayload(message, ideaIds)
         val response = authorizedRequest(token) { authToken ->
             Request.Builder()
@@ -350,6 +386,7 @@ class TodoCloudRepository(context: Context) {
         forcePlan: Boolean,
         images: List<Uri> = emptyList(),
     ): PlanChatResult {
+        requireCloud(token)
         val payload = planningPayload(message, ideaIds).apply {
             put("force_plan", forcePlan)
             put(
@@ -400,6 +437,7 @@ class TodoCloudRepository(context: Context) {
         message: String,
         images: List<Uri> = emptyList(),
     ): AiPlan {
+        requireCloud(token)
         val payload = planningPayload(message)
         val body = planRequestBody(payload, images)
         val suffix = if (images.isEmpty()) "messages" else "messages/images"
@@ -415,6 +453,7 @@ class TodoCloudRepository(context: Context) {
 
     /** Adopt a draft plan; [items] = the chosen (possibly edited) items, null = all of them. */
     suspend fun acceptPlan(token: String, planId: Int, items: List<PlanItem>? = null): PlanAcceptResult {
+        requireCloud(token)
         val body = JSONObject()
         if (items != null) {
             body.put("items", JSONArray().apply { items.forEach { put(planItemJson(it)) } })
@@ -434,6 +473,7 @@ class TodoCloudRepository(context: Context) {
 
     /** Reverse an accepted plan: created tasks are deleted, the plan becomes a draft again. */
     suspend fun undoPlan(token: String, planId: Int): PlanUndoResult {
+        requireCloud(token)
         val response = authorizedRequest(token) { authToken ->
             Request.Builder()
                 .url("$baseUrl/plans/$planId/undo")
@@ -466,6 +506,7 @@ class TodoCloudRepository(context: Context) {
     }
 
     suspend fun parseScreenshot(token: String, imageUri: Uri): AiParseResult {
+        requireCloud(token)
         val (imageBytes, contentType) = withContext(Dispatchers.IO) {
             prepareScreenshotForUpload(imageUri)
         }
@@ -587,6 +628,7 @@ class TodoCloudRepository(context: Context) {
     }
 
     suspend fun parseText(token: String, text: String): AiParseResult {
+        requireCloud(token)
         val payload = JSONObject().apply {
             put("text", text)
             put("reference_at", currentAiReferenceAt())
@@ -858,6 +900,7 @@ class TodoCloudRepository(context: Context) {
     }
 
     private companion object {
+        const val LOCAL_AI_UNAVAILABLE = "本机模式暂不能使用 AI 功能，登录账号后可用"
         const val OFFLINE_PREFERENCES_NAME = "todocloud_offline"
         const val KEY_OFFLINE_SNAPSHOT = "snapshot"
         const val MAX_AUTH_ATTEMPTS = 3
