@@ -7,6 +7,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import org.junit.Test
+import org.w3c.dom.Document
 import org.w3c.dom.Element
 
 class MascotSetsTest {
@@ -72,10 +73,36 @@ class MascotSetsTest {
         }
     }
 
+    @Test
+    fun everyLauncherIconUsesTheSamePlainWhiteBackground() {
+        val res = resDirectory()
+        // Exactly one definition: an override under drawable-night or drawable-v31 would bring a
+        // theme colour back on some phones.
+        val definitions = subdirectories(res, "drawable")
+            .map { File(it, "ic_launcher_background.xml") }
+            .filter { it.isFile }
+        assertEquals(listOf("drawable"), definitions.map { it.parentFile.name })
+        val fills = parse(definitions.single()).getElementsByTagName("solid")
+        assertEquals(1, fills.length)
+        assertEquals("@android:color/white", (fills.item(0) as Element).getAttributeNS(ANDROID, "color"))
+
+        val icons = subdirectories(res, "mipmap").flatMap { dir ->
+            dir.listFiles().orEmpty().filter { it.extension == "xml" }
+        }
+        assertTrue(icons.size >= MascotSets.all.size * MascotState.entries.size * 2, "launcher icons: $icons")
+        for (icon in icons) {
+            val background = parse(icon).getElementsByTagName("background").item(0) as? Element
+            assertEquals(
+                "@drawable/ic_launcher_background",
+                background?.getAttributeNS(ANDROID, "drawable"),
+                icon.path,
+            )
+        }
+    }
+
     /** Every activity-alias that has a MAIN/LAUNCHER intent filter, by android:name. */
     private fun launcherAliases(): Map<String, Element> {
-        val factory = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
-        val document = factory.newDocumentBuilder().parse(manifestFile())
+        val document = parse(manifestFile())
         val aliases = document.getElementsByTagName("activity-alias")
         return (0 until aliases.length)
             .map { aliases.item(it) as Element }
@@ -94,6 +121,22 @@ class MascotSetsTest {
             .map(::File)
             .firstOrNull { it.isFile }
             ?: error("AndroidManifest.xml not found from ${File(".").absolutePath}")
+
+    private fun resDirectory(): File =
+        listOf("src/main/res", "app/src/main/res")
+            .map(::File)
+            .firstOrNull { it.isDirectory }
+            ?: error("res directory not found from ${File(".").absolutePath}")
+
+    /** `drawable`, `drawable-night`, `drawable-v31`, ... for prefix "drawable". */
+    private fun subdirectories(res: File, prefix: String): List<File> =
+        res.listFiles().orEmpty().filter { it.isDirectory && (it.name == prefix || it.name.startsWith("$prefix-")) }
+
+    private fun parse(file: File): Document =
+        DocumentBuilderFactory.newInstance()
+            .apply { isNamespaceAware = true }
+            .newDocumentBuilder()
+            .parse(file)
 
     private fun snakeCase(name: String) = name.replace(Regex("(?<=[a-z])(?=[A-Z])"), "_").lowercase()
 
