@@ -23,8 +23,11 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CardDefaults
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.lazy.LazyColumn
@@ -266,8 +269,20 @@ internal fun TaskHomeScreen(
     onDeleteIdea: (InboxIdea) -> Unit,
     onPlanToday: () -> Unit = {},
     onReplanOverdue: (List<TaskItem>) -> Unit = {},
+    searching: Boolean = false,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    onCloseSearch: () -> Unit = {},
 ) {
-    val homeTasks = remember(tasks) { visibleHomeTasks(tasks) }
+    val activeQuery = if (searching) searchQuery else ""
+    val filtering = activeQuery.isNotBlank()
+    // While searching, every loaded task counts (old completed ones too).
+    val homeTasks = remember(tasks, activeQuery) {
+        if (filtering) searchTasks(tasks, activeQuery) else visibleHomeTasks(tasks)
+    }
+    val shownIdeas = remember(ideas, activeQuery) {
+        if (filtering) searchIdeas(ideas, activeQuery) else ideas
+    }
     val overdue = remember(tasks) { overdueTasks(tasks) }
     val canPlanToday = tasks.any { !it.completed } || ideas.isNotEmpty()
     val taskListState = rememberLazyListState()
@@ -296,6 +311,15 @@ internal fun TaskHomeScreen(
                 onSelected = onSectionChange,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
+            if (searching) {
+                TaskSearchField(
+                    query = searchQuery,
+                    placeholder = if (section == "inbox") "搜索想法" else "搜索任务、备注和步骤",
+                    onQueryChange = onSearchQueryChange,
+                    onClose = onCloseSearch,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                )
+            }
             if (showLoadingAnimation || error != null) {
                 Column(
                     modifier = Modifier
@@ -322,8 +346,9 @@ internal fun TaskHomeScreen(
 
             if (section == "inbox") {
                 InboxList(
-                    ideas = ideas,
+                    ideas = shownIdeas,
                     loading = loading,
+                    noMatchQuery = activeQuery.takeIf { filtering },
                     onEdit = onEditIdea,
                     onDelete = onDeleteIdea,
                     modifier = Modifier.weight(1f),
@@ -344,7 +369,10 @@ internal fun TaskHomeScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (!loading && (canPlanToday || overdue.isNotEmpty())) {
+                if (filtering && homeTasks.isEmpty()) {
+                    item(key = "no-match") { NoSearchMatch(activeQuery) }
+                }
+                if (!filtering && !loading && (canPlanToday || overdue.isNotEmpty())) {
                     item(key = "plan-shortcuts") {
                         PlanShortcutBar(
                             overdueCount = overdue.size,
@@ -354,7 +382,7 @@ internal fun TaskHomeScreen(
                         )
                     }
                 }
-                if (homeTasks.isEmpty() && !loading) {
+                if (!filtering && homeTasks.isEmpty() && !loading) {
                     item {
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(18.dp)) {
@@ -498,13 +526,16 @@ internal fun InboxList(
     onEdit: (InboxIdea) -> Unit,
     onDelete: (InboxIdea) -> Unit,
     modifier: Modifier = Modifier,
+    noMatchQuery: String? = null,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (ideas.isEmpty() && !loading) {
+        if (noMatchQuery != null && ideas.isEmpty()) {
+            item(key = "no-match") { NoSearchMatch(noMatchQuery) }
+        } else if (ideas.isEmpty() && !loading) {
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(20.dp)) {
@@ -601,6 +632,48 @@ internal fun IdeaCard(
             }
         }
     }
+}
+
+@Composable
+internal fun TaskSearchField(
+    query: String,
+    placeholder: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    androidx.compose.material3.OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = modifier.fillMaxWidth().focusRequester(focusRequester),
+        singleLine = true,
+        shape = RoundedCornerShape(16.dp),
+        placeholder = { Text(placeholder) },
+        leadingIcon = {
+            Icon(androidx.compose.material.icons.Icons.Outlined.Search, contentDescription = null)
+        },
+        trailingIcon = {
+            IconButton(onClick = { if (query.isEmpty()) onClose() else onQueryChange("") }) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Outlined.Close,
+                    contentDescription = if (query.isEmpty()) "关闭搜索" else "清空搜索",
+                )
+            }
+        },
+    )
+}
+
+@Composable
+internal fun NoSearchMatch(query: String) {
+    Text(
+        "没有找到包含「${query.trim()}」的内容",
+        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
 }
 
 @Composable
