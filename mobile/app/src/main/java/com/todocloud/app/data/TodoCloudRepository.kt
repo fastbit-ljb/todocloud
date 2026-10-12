@@ -46,14 +46,22 @@ class TodoCloudRepository(context: Context) {
     /** Deletes every task and idea kept in local mode. */
     suspend fun clearLocalData() = local.clear()
 
-    /** The user's own model key used by local mode's AI features (null = not set). */
+    /** The user's own model keys and which service is active. */
     val aiKeys by lazy { AiKeyStore(appContext) }
 
-    private fun localAi(): LocalAi =
-        aiKeys.apiKey?.let(::LocalAi) ?: throw ApiException(LOCAL_AI_NEEDS_KEY)
+    private fun localAi(): LocalAi {
+        val provider = aiKeys.provider
+        val key = aiKeys.apiKey(provider.id) ?: throw ApiException(LOCAL_AI_NEEDS_KEY)
+        return LocalAi(provider, key, aiKeys.model(provider.id))
+    }
+
+    /** Signed in but the user chose to run AI on the phone with their own key. */
+    private fun ownCloudAi(token: String): LocalAi? =
+        if (token != LOCAL_SESSION_TOKEN && aiKeys.ownWhenSignedIn) localAi() else null
 
     /** Sends a tiny request with [key] so a typo is caught before it is saved. */
-    suspend fun checkAiKey(key: String) = LocalAi(key.trim()).check()
+    suspend fun checkAiKey(providerId: String, key: String, model: String) =
+        AiProviders.byId(providerId).let { LocalAi(it, key.trim(), model.trim().ifEmpty { it.model }).check() }
 
     private suspend fun localImageUrls(images: List<Uri>): List<String> = withContext(Dispatchers.IO) {
         images.take(MAX_PLAN_IMAGES).map(::prepareScreenshotForUpload).map { (bytes, type) -> LocalAi.imageDataUrl(bytes, type) }
@@ -93,6 +101,81 @@ class TodoCloudRepository(context: Context) {
         val next = turn.optJSONObject("proposal")
         val reply = next?.optString("summary") ?: turn.optString("reply")
         return local.saveRevision(planId, next, history + PlanMessage("assistant", reply))
+    }
+
+    // ---- Signed in, AI on the phone with the user's own key; the plan is stored on the server ----
+
+    /** Inbox ideas and open tasks from the server, in the planning prompt's shape. */
+    private suspend fun cloudPlanningSources(token: String, ideaIds: Collection<Int>?): Pair<List<JSONObject>, List<JSONObject>> {
+        fun JSONObject.pick(vararg names: String) = JSONObject().also { out ->
+            names.forEach { name -> out.put(name, if (has(name)) get(name) else JSONObject.NULL) }
+        }
+        val ideas = authorizedRequest(token) { Request.Builder().url("$baseUrl/ideas").authorized(it).get().build() } as JSONArray
+        val tasks = authorizedRequest(token) { Request.Builder().url("$baseUrl/tasks").authorized(it).get().build() } as JSONArray
+        val chosenIdeas = (0 until ideas.length()).map { ideas.getJSONObject(it) }
+            .filter { ideaIds == null || it.getInt("id") in ideaIds }
+            .map { it.pick("id", "content", "duration_minutes", "start_at", "due_at", "items") }
+        val openTasks = (0 until tasks.length()).map { tasks.getJSONObject(it) }
+            .filter { !it.optBoolean("completed") }
+            .map { it.pick("id", "title", "description", "start_at", "due_at", "duration_minutes", "steps", "recurrence") }
+        return chosenIdeas to openTasks
+    }
+
+    private fun importMessages(messages: List<PlanMessage>) = JSONArray().apply {
+        messages.takeLast(60).forEach { put(JSONObject().put("role", it.role).put("content", it.content.take(8000))) }
+    }
+
+    private suspend fun ownCloudChat(
+        token: String,
+        ai: LocalAi,
+        message: String,
+        ideaIds: Collection<Int>,
+        history: List<PlanMessage>,
+        forcePlan: Boolean,
+        images: List<Uri>,
+    ): PlanChatResult {
+        val text = message.trim()
+        if (text.isEmpty()) throw ApiException("请先告诉 AI 你想问什么或安排什么")
+        val urls = localImageUrls(images)
+        // Same selection as the server's /plans/chat: only the ideas the user picked.
+        val (ideas, tasks) = cloudPlanningSources(token, ideaIds)
+        val userText = if (urls.isEmpty()) text else "$text\n（附图 ${urls.size} 张）"
+        val turn = ai.planTurn(ideas, tasks, text, null, history.takeLast(12) + PlanMessage("user", userText), forcePlan, urls)
+        val proposal = turn.optJSONObject("proposal") ?: return PlanChatResult.Answer(turn.optString("reply"))
+        val body = JSONObject()
+            .put("proposal", proposal)
+            .put("messages", importMessages(listOf(PlanMessage("user", userText), PlanMessage("assistant", proposal.optString("summary")))))
+        val response = authorizedRequest(token) {
+            Request.Builder().url("$baseUrl/plans/import").authorized(it)
+                .post(body.toString().toRequestBody(jsonMediaType)).build()
+        } as JSONObject
+        return PlanChatResult.Created(turn.optString("reply"), parsePlan(response))
+    }
+
+    private suspend fun ownCloudRevise(token: String, ai: LocalAi, planId: Int, message: String, images: List<Uri>): AiPlan {
+        val text = message.trim()
+        if (text.isEmpty()) throw ApiException("请先告诉 AI 你想怎么调整")
+        val plans = authorizedRequest(token) { Request.Builder().url("$baseUrl/plans").authorized(it).get().build() } as JSONArray
+        val plan = (0 until plans.length()).map { plans.getJSONObject(it) }.firstOrNull { it.getInt("id") == planId }
+            ?: throw ApiException("计划不存在", 404)
+        if (plan.optString("status") != "draft") throw ApiException("已采用的计划不能继续修改", 409)
+        val urls = localImageUrls(images)
+        val (ideas, tasks) = cloudPlanningSources(token, null)
+        val stored = plan.optJSONArray("messages") ?: JSONArray()
+        val history = (0 until stored.length()).map { stored.getJSONObject(it) }
+            .map { PlanMessage(it.optString("role"), it.optString("content")) } +
+            PlanMessage("user", if (urls.isEmpty()) text else "$text\n（附图 ${urls.size} 张）")
+        val turn = ai.planTurn(ideas, tasks, text, plan.getJSONObject("proposal"), history, forcePlan = false, imageDataUrls = urls)
+        val next = turn.optJSONObject("proposal")
+        val reply = next?.optString("summary") ?: turn.optString("reply")
+        val body = JSONObject()
+            .put("proposal", next ?: JSONObject.NULL)
+            .put("messages", importMessages(history + PlanMessage("assistant", reply)))
+        val response = authorizedRequest(token) {
+            Request.Builder().url("$baseUrl/plans/$planId/import-revision").authorized(it)
+                .post(body.toString().toRequestBody(jsonMediaType)).build()
+        } as JSONObject
+        return parsePlan(response)
     }
 
     // AI features run on the server, which local mode never talks to.
@@ -436,6 +519,7 @@ class TodoCloudRepository(context: Context) {
         images: List<Uri> = emptyList(),
     ): PlanChatResult {
         if (token == LOCAL_SESSION_TOKEN) return localChat(message, ideaIds, history, forcePlan, images)
+        ownCloudAi(token)?.let { return ownCloudChat(token, it, message, ideaIds, history, forcePlan, images) }
         val payload = planningPayload(message, ideaIds).apply {
             put("force_plan", forcePlan)
             put(
@@ -487,6 +571,7 @@ class TodoCloudRepository(context: Context) {
         images: List<Uri> = emptyList(),
     ): AiPlan {
         if (token == LOCAL_SESSION_TOKEN) return localRevise(planId, message, images)
+        ownCloudAi(token)?.let { return ownCloudRevise(token, it, planId, message, images) }
         val payload = planningPayload(message)
         val body = planRequestBody(payload, images)
         val suffix = if (images.isEmpty()) "messages" else "messages/images"
@@ -555,10 +640,10 @@ class TodoCloudRepository(context: Context) {
     }
 
     suspend fun parseScreenshot(token: String, imageUri: Uri): AiParseResult {
-        if (token == LOCAL_SESSION_TOKEN) {
-            val ai = localAi()
+        val ownAi = if (token == LOCAL_SESSION_TOKEN) localAi() else ownCloudAi(token)
+        if (ownAi != null) {
             val url = localImageUrls(listOf(imageUri)).first()
-            return AiParseResult(attachmentId = null, parseId = null, candidates = ai.parseTasks(null, url))
+            return AiParseResult(attachmentId = null, parseId = null, candidates = ownAi.parseTasks(null, url))
         }
         val (imageBytes, contentType) = withContext(Dispatchers.IO) {
             prepareScreenshotForUpload(imageUri)
@@ -681,9 +766,10 @@ class TodoCloudRepository(context: Context) {
     }
 
     suspend fun parseText(token: String, text: String): AiParseResult {
-        if (token == LOCAL_SESSION_TOKEN) {
+        val ownAi = if (token == LOCAL_SESSION_TOKEN) localAi() else ownCloudAi(token)
+        if (ownAi != null) {
             val clean = text.trim().ifEmpty { throw ApiException("聊天文字不能为空") }
-            return AiParseResult(attachmentId = null, parseId = null, candidates = localAi().parseTasks(clean, null))
+            return AiParseResult(attachmentId = null, parseId = null, candidates = ownAi.parseTasks(clean, null))
         }
         val payload = JSONObject().apply {
             put("text", text)
@@ -957,7 +1043,7 @@ class TodoCloudRepository(context: Context) {
 
     private companion object {
         const val LOCAL_AI_UNAVAILABLE = "本机模式暂不能使用 AI 功能，登录账号后可用"
-        const val LOCAL_AI_NEEDS_KEY = "本机模式下使用 AI 需要你自己的 API 密钥，请到 设置 → AI 模型 里填写"
+        const val LOCAL_AI_NEEDS_KEY = "本机模式下使用 AI 需要你自己的模型密钥，请到 设置 → AI 模型 里填写"
         const val OFFLINE_PREFERENCES_NAME = "todocloud_offline"
         const val KEY_OFFLINE_SNAPSHOT = "snapshot"
         const val MAX_AUTH_ATTEMPTS = 3

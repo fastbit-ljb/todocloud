@@ -21,39 +21,165 @@ import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 
 /**
- * The user's own model key for local mode. Endpoint and models are fixed (the same
- * Gemini setup the server uses); the user only supplies the key, which is stored
- * encrypted with an Android Keystore key and only ever sent to that endpoint.
+ * One model service the user can bring a key for. Every preset speaks the OpenAI-style
+ * /chat/completions protocol; [extraParams] switches off slow "thinking" where the
+ * service has it, since planning needs a quick JSON answer, not a long reasoning trace.
+ */
+data class AiProvider(
+    val id: String,
+    val label: String,
+    val baseUrl: String,
+    val model: String,
+    val fallbackModel: String? = null,
+    val supportsImages: Boolean,
+    val keyHelpUrl: String,
+    val keyHelpLabel: String,
+    val host: String,
+    val extraParams: Map<String, Any> = emptyMap(),
+)
+
+object AiProviders {
+    val GEMINI = AiProvider(
+        id = "gemini",
+        label = "Gemini",
+        baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/",
+        model = "gemini-3.8-flash",
+        fallbackModel = "gemini-3.6-flash",
+        supportsImages = true,
+        keyHelpUrl = "https://aistudio.google.com/apikey",
+        keyHelpLabel = "Google AI Studio",
+        host = "generativelanguage.googleapis.com",
+        extraParams = mapOf("reasoning_effort" to "low"),
+    )
+    val DEEPSEEK = AiProvider(
+        id = "deepseek",
+        label = "DeepSeek",
+        baseUrl = "https://api.deepseek.com/",
+        model = "deepseek-v4-flash",
+        supportsImages = false,
+        keyHelpUrl = "https://platform.deepseek.com/api_keys",
+        keyHelpLabel = "DeepSeek 开放平台",
+        host = "api.deepseek.com",
+    )
+    val QWEN = AiProvider(
+        id = "qwen",
+        label = "通义千问",
+        baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/",
+        model = "qwen3.7-plus",
+        fallbackModel = "qwen-plus",
+        supportsImages = true,
+        keyHelpUrl = "https://bailian.console.aliyun.com/?tab=model#/api-key",
+        keyHelpLabel = "阿里云百炼",
+        host = "dashscope.aliyuncs.com",
+        extraParams = mapOf("enable_thinking" to false),
+    )
+    val GLM = AiProvider(
+        id = "glm",
+        label = "智谱 GLM",
+        baseUrl = "https://open.bigmodel.cn/api/paas/v4/",
+        model = "glm-4.6v-flash",
+        supportsImages = true,
+        keyHelpUrl = "https://open.bigmodel.cn/usercenter/apikeys",
+        keyHelpLabel = "智谱开放平台",
+        host = "open.bigmodel.cn",
+        extraParams = mapOf("thinking" to mapOf("type" to "disabled")),
+    )
+    val KIMI = AiProvider(
+        id = "kimi",
+        label = "Kimi",
+        baseUrl = "https://api.moonshot.cn/v1/",
+        model = "kimi-k2.6",
+        supportsImages = true,
+        keyHelpUrl = "https://platform.moonshot.cn/console/api-keys",
+        keyHelpLabel = "Moonshot 开放平台",
+        host = "api.moonshot.cn",
+        extraParams = mapOf("thinking" to mapOf("type" to "disabled")),
+    )
+
+    val all = listOf(GEMINI, DEEPSEEK, QWEN, GLM, KIMI)
+
+    fun byId(id: String?): AiProvider = all.firstOrNull { it.id == id } ?: GEMINI
+
+    /** Display text, e.g. "DeepSeek（不支持识别图片）". */
+    fun describe(provider: AiProvider): String =
+        if (provider.supportsImages) provider.label else "${provider.label}（不支持识别图片）"
+}
+
+/** What the settings screen shows about the user's own model. */
+data class AiChoice(
+    val provider: AiProvider,
+    val keySet: Boolean,
+    val model: String,
+    /** Signed-in users: AI runs on the phone with this key instead of the server. */
+    val ownWhenSignedIn: Boolean,
+)
+
+/**
+ * The user's own model keys, one per service, plus which service is active. Stored
+ * encrypted with an Android Keystore key; a key is only ever sent to its own service.
  */
 class AiKeyStore(context: Context) {
     private val store = SecureSessionStore(context, "todocloud_ai_key")
 
-    var apiKey: String?
-        get() = store.get(KEY)?.takeIf { it.isNotBlank() }
-        set(value) {
-            if (value.isNullOrBlank()) store.remove(KEY) else store.put(KEY, value.trim())
+    init {
+        // Builds from before the provider choice kept a single Gemini key under "api_key".
+        store.get(LEGACY_KEY)?.takeIf { it.isNotBlank() }?.let { legacy ->
+            if (store.get(keyName(AiProviders.GEMINI.id)) == null) store.put(keyName(AiProviders.GEMINI.id), legacy)
+            store.remove(LEGACY_KEY)
         }
+    }
+
+    val provider: AiProvider get() = AiProviders.byId(store.get(PROVIDER))
+
+    fun apiKey(providerId: String): String? = store.get(keyName(providerId))?.takeIf { it.isNotBlank() }
+
+    /** The model name to call; the preset's own model unless the user changed it. */
+    fun model(providerId: String): String =
+        store.get(modelName(providerId))?.takeIf { it.isNotBlank() } ?: AiProviders.byId(providerId).model
+
+    val ownWhenSignedIn: Boolean get() = store.get(OWN_SIGNED_IN) == "1" && apiKey(provider.id) != null
+
+    fun choice(): AiChoice = provider.let { AiChoice(it, apiKey(it.id) != null, model(it.id), ownWhenSignedIn) }
+
+    /** Makes [providerId] active; a null [key] keeps the one already saved for it. */
+    fun save(providerId: String, key: String?, model: String, ownWhenSignedIn: Boolean) {
+        val preset = AiProviders.byId(providerId)
+        store.put(PROVIDER, preset.id)
+        key?.trim()?.takeIf { it.isNotEmpty() }?.let { store.put(keyName(preset.id), it) }
+        val cleanModel = model.trim()
+        if (cleanModel.isEmpty() || cleanModel == preset.model) store.remove(modelName(preset.id))
+        else store.put(modelName(preset.id), cleanModel)
+        if (ownWhenSignedIn) store.put(OWN_SIGNED_IN, "1") else store.remove(OWN_SIGNED_IN)
+    }
+
+    fun setOwnWhenSignedIn(enabled: Boolean) {
+        if (enabled) store.put(OWN_SIGNED_IN, "1") else store.remove(OWN_SIGNED_IN)
+    }
+
+    fun clearKey(providerId: String) {
+        store.remove(keyName(providerId))
+        store.remove(modelName(providerId))
+    }
 
     private companion object {
-        const val KEY = "api_key"
+        const val LEGACY_KEY = "api_key"
+        const val PROVIDER = "provider"
+        const val OWN_SIGNED_IN = "own_when_signed_in"
+        fun keyName(id: String) = "api_key_$id"
+        fun modelName(id: String) = "model_$id"
     }
-}
-
-/** Fixed provider settings for local mode, mirroring the server's .env. */
-internal object LocalAiConfig {
-    const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-    const val MODEL = "gemini-3.8-flash"
-    const val FALLBACK_MODEL = "gemini-3.6-flash"
-    const val REASONING_EFFORT = "low"
-    const val KEY_HELP_URL = "https://aistudio.google.com/apikey"
 }
 
 /**
  * On-device port of server/app/plan_ai.py and ai_parser.py: same prompts and the same
- * clean-up of the model's output, so local mode plans like the cloud does. Keep the
+ * clean-up of the model's output, so AI on the phone plans like the cloud does. Keep the
  * prompt text in sync with the server when either changes.
  */
-internal class LocalAi(private val apiKey: String) {
+internal class LocalAi(
+    private val provider: AiProvider,
+    private val apiKey: String,
+    private val model: String = provider.model,
+) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
@@ -92,9 +218,9 @@ internal class LocalAi(private val apiKey: String) {
         }
     }
 
-    /** A tiny request to check the key works before saving it. */
+    /** A tiny request to check the key and model work before saving them. Any reply counts. */
     suspend fun check() {
-        callModel("你是测试助手。", "只返回 JSON：{\"ok\":true}", emptyList(), maxTokens = 64, fallback = false)
+        callModel("你是测试助手。", "只回复 ok", emptyList(), maxTokens = 256, fallback = false, parseJson = false)
     }
 
     private suspend fun callModel(
@@ -103,8 +229,13 @@ internal class LocalAi(private val apiKey: String) {
         imageDataUrls: List<String>,
         maxTokens: Int,
         fallback: Boolean = true,
+        parseJson: Boolean = true,
     ): JSONObject = withContext(Dispatchers.IO) {
-        val models = if (fallback) listOf(LocalAiConfig.MODEL, LocalAiConfig.FALLBACK_MODEL) else listOf(LocalAiConfig.MODEL)
+        if (imageDataUrls.isNotEmpty() && !provider.supportsImages) {
+            throw ApiException("${provider.label} 不能识别图片。请在设置的「AI 模型」里换成通义千问、智谱、Kimi 或 Gemini")
+        }
+        // The fallback only makes sense for the preset's own model, not one the user typed.
+        val models = listOfNotNull(model, provider.fallbackModel.takeIf { fallback && model == provider.model })
         val userContent: Any = if (imageDataUrls.isEmpty()) {
             prompt
         } else {
@@ -122,12 +253,12 @@ internal class LocalAi(private val apiKey: String) {
                 val payload = JSONObject()
                     .put("model", model)
                     .put("max_tokens", maxTokens)
-                    .put("reasoning_effort", LocalAiConfig.REASONING_EFFORT)
                     .put("messages", JSONArray()
                         .put(JSONObject().put("role", "system").put("content", system))
                         .put(JSONObject().put("role", "user").put("content", userContent)))
+                provider.extraParams.forEach { (name, value) -> payload.put(name, jsonValue(value)) }
                 val request = Request.Builder()
-                    .url(LocalAiConfig.BASE_URL.trimEnd('/') + "/chat/completions")
+                    .url(provider.baseUrl.trimEnd('/') + "/chat/completions")
                     .header("Authorization", "Bearer $apiKey")
                     .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                     .build()
@@ -142,6 +273,7 @@ internal class LocalAi(private val apiKey: String) {
                             if (keyProblem) throw ApiException(KEY_INVALID)
                             return@use null
                         }
+                        if (!parseJson) return@use JSONObject()
                         val message = JSONObject(body).getJSONArray("choices").getJSONObject(0).getJSONObject("message")
                         val content = message.opt("content").let { value ->
                             if (value is JSONArray) {
@@ -166,12 +298,19 @@ internal class LocalAi(private val apiKey: String) {
             }
         }
         throw when {
-            lastCode == 429 -> ApiException("AI 请求较多或密钥额度已用完，请稍后再试")
-            lastCode == 400 || lastCode == 404 -> ApiException("AI 模型暂时不可用，请稍后重试")
-            lastWasNetwork -> ApiException("连接不上 AI 服务。手机需要能访问 Google（generativelanguage.googleapis.com）")
+            lastCode == 429 -> ApiException("${provider.label} 请求较多或密钥额度已用完，请稍后再试")
+            lastCode == 402 -> ApiException("${provider.label} 账户余额不足，请先在平台充值")
+            lastCode == 400 || lastCode == 404 ->
+                ApiException("模型 ${this@LocalAi.model} 暂时不可用或已下线，可在设置的「AI 模型」里换一个模型名")
+            lastWasNetwork -> ApiException("连接不上 ${provider.label}（${provider.host}），请检查网络")
             lastError != null -> lastError!!
-            else -> ApiException("AI 服务暂时不可用，请稍后重试")
+            else -> ApiException("${provider.label} 暂时不可用，请稍后重试")
         }
+    }
+
+    private fun jsonValue(value: Any): Any = when (value) {
+        is Map<*, *> -> JSONObject().apply { value.forEach { (k, v) -> if (v != null) put(k.toString(), jsonValue(v)) } }
+        else -> value
     }
 
     companion object {

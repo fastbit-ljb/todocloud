@@ -93,7 +93,7 @@ internal fun SettingsHomeScreen(
     checkingUpdate: Boolean,
     onCheckUpdate: () -> Unit,
     onLogout: () -> Unit,
-    aiKeySet: Boolean = false,
+    aiChoice: com.todocloud.app.data.AiChoice? = null,
     onEditAiKey: () -> Unit = {},
 ) {
     var showDefaultReminderPicker by rememberSaveable { mutableStateOf(false) }
@@ -150,18 +150,19 @@ internal fun SettingsHomeScreen(
             }
         }
 
-        if (session.isLocal) {
+        if (aiChoice != null) {
+            val local = session.isLocal
             SettingsGroup(
                 title = "AI 模型",
-                caption = "本机模式用你自己的密钥直接调用 Gemini，任务内容不经过 TodoCloud 服务器",
+                caption = if (local) "本机模式用你自己的密钥在手机上直接调用模型，任务内容不经过 TodoCloud 服务器"
+                else "默认用 TodoCloud 服务器的 AI；也可以换成你自己的密钥，在手机上直接调用",
             ) {
                 SettingsRow(
                     icon = androidx.compose.material.icons.Icons.Outlined.AutoAwesome,
-                    title = "Gemini API 密钥",
-                    description = if (aiKeySet) "已填写 · ${com.todocloud.app.data.LocalAiConfig.MODEL}"
-                    else "未填写，AI 计划和识别任务需要它",
+                    title = if (local || aiChoice.ownWhenSignedIn) "${aiChoice.provider.label} API 密钥" else "AI 模型来源",
+                    description = aiChoiceSummary(aiChoice, signedIn = !local),
                     onClick = onEditAiKey,
-                    badge = !aiKeySet,
+                    badge = local && !aiChoice.keySet,
                 )
             }
         }

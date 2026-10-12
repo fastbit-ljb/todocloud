@@ -337,7 +337,7 @@ internal fun AiCandidatesDialog(
                         )
                     }
                     Text(
-                        "请确认后写入云端任务：",
+                        "请确认要添加的任务：",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     LazyColumn(
