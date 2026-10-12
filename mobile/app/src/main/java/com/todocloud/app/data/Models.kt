@@ -67,6 +67,8 @@ data class PlanItem(
     val reminderOffsetMinutes: Int?,
     val steps: List<PlanStep> = emptyList(),
     val note: String,
+    /** Repeat rule the adopted task gets (daily / weekdays / weekly / monthly); null = one-off. */
+    val recurrence: String? = null,
 )
 
 data class PlanMessage(

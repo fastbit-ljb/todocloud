@@ -15,6 +15,7 @@ from app.ai_parser import (
     _prepare_image_for_ai,
 )
 from app.core.config import settings
+from app.recurrence import RECURRENCE_RULES
 
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,12 @@ IANA 时区：{timezone_name}
 4. 用户没有给出全部细节时，可以基于常见场景做保守且明确的默认假设，在 summary 或 note 中说明，并允许用户继续调整；不要用准备计划代替真正执行。
 5. 标题使用“动作 + 具体对象”，步骤写本时段真正要完成的内容，避免空泛表述。
 
+重复规则：
+1. 只有用户明确表达周期性时才设置 recurrence，例如“每天背单词”用 daily，“工作日早上跑步”用 weekdays，“每周三组会”用 weekly，“每月 15 号交房租”用 monthly。
+2. 重复事项只输出一个 item，start_at 和 due_at 填最近一次的时间（weekly 要落在指定的星期几，monthly 要落在指定的日期）；App 会在完成后自动生成下一次，不要把每一次都单独列出来。
+3. 一次性的事项、“这周每天都要复习”这类只覆盖当前计划范围的安排，recurrence 为 null。设置了 recurrence 的 item 必须有 due_at。
+4. 现有任务里已经带 recurrence 的，保持原规则，不要改成 null。
+
 收件匣想法：
 {json.dumps(ideas, ensure_ascii=False)}
 
@@ -107,6 +114,7 @@ IANA 时区：{timezone_name}
       "duration_minutes": 60,
       "reminder_offset_minutes": 10,
       "steps": [{{"title": "步骤"}}],
+      "recurrence": "daily、weekdays、weekly、monthly 或 null",
       "note": "为什么这样安排或为什么暂未排期"
     }}
   ]
@@ -179,6 +187,11 @@ def _normalize_proposal(
             text = str(step.get("title") if isinstance(step, dict) else step).strip()
             if text:
                 steps.append({"title": text[:500]})
+        due_at = _normalize_iso(item.get("due_at"), reference_at)
+        recurrence = str(item.get("recurrence") or "").strip().lower()
+        # Unknown rules and rules without a due time are dropped, not guessed.
+        if recurrence not in RECURRENCE_RULES or due_at is None:
+            recurrence = None
         normalized.append(
             {
                 "source_type": source_type,
@@ -186,11 +199,12 @@ def _normalize_proposal(
                 "title": title[:200],
                 "description": str(item.get("description") or "").strip() or None,
                 "start_at": _normalize_iso(item.get("start_at"), reference_at),
-                "due_at": _normalize_iso(item.get("due_at"), reference_at),
+                "due_at": due_at,
                 "duration_minutes": duration,
                 "reminder_offset_minutes": reminder,
                 "steps": steps[:30],
                 "note": str(item.get("note") or "").strip()[:1000],
+                "recurrence": recurrence,
             }
         )
     normalized.sort(key=lambda item: item["start_at"] or item["due_at"] or "9999")

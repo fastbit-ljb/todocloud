@@ -462,6 +462,7 @@ class TodoCloudRepository(context: Context) {
             .put("reminder_offset_minutes", item.reminderOffsetMinutes.orNull())
             .put("steps", JSONArray().apply { item.steps.forEach { put(JSONObject().put("title", it.title)) } })
             .put("note", item.note)
+            .put("recurrence", item.recurrence.orNull())
     }
 
     suspend fun parseScreenshot(token: String, imageUri: Uri): AiParseResult {
@@ -793,6 +794,7 @@ class TodoCloudRepository(context: Context) {
                                     }
                                 }.orEmpty(),
                                 note = item.optString("note"),
+                                recurrence = item.optNullableString("recurrence"),
                             ),
                         )
                     }
