@@ -124,3 +124,10 @@ data class AiParseResult(
 )
 
 class ApiException(message: String, val statusCode: Int? = null) : Exception(message)
+
+/** Last successfully synced tasks and ideas, kept encrypted on the device for offline viewing. */
+data class OfflineSnapshot(
+    val tasks: List<TaskItem>,
+    val ideas: List<InboxIdea>,
+    val syncedAtMillis: Long,
+)

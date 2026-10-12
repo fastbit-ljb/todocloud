@@ -36,6 +36,7 @@ class TodoCloudRepository(context: Context) {
         .callTimeout(120, TimeUnit.SECONDS)
         .build()
     private val sessionStore = SecureSessionStore(context)
+    private val offlineStore = SecureSessionStore(context, OFFLINE_PREFERENCES_NAME)
     private val refreshMutex = Mutex()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     private val baseUrl = BuildConfig.API_BASE_URL.trimEnd('/')
@@ -94,7 +95,61 @@ class TodoCloudRepository(context: Context) {
             )
         }
         clearSession()
+        clearOfflineSnapshot()
     }
+
+    /**
+     * Saves the last synced lists in the server's own JSON shape, encrypted with the
+     * same Keystore key as the session, so they can be shown when the network is down.
+     */
+    fun saveOfflineSnapshot(email: String, tasks: List<TaskItem>, ideas: List<InboxIdea>) {
+        val payload = JSONObject()
+            .put("owner", email)
+            .put("synced_at", System.currentTimeMillis())
+            .put("tasks", JSONArray().apply { tasks.forEach { put(taskJson(it)) } })
+            .put("ideas", JSONArray().apply { ideas.forEach { put(ideaJson(it)) } })
+        runCatching { offlineStore.put(KEY_OFFLINE_SNAPSHOT, payload.toString()) }
+    }
+
+    /** The snapshot saved for [email], or null (none yet, another account's, or unreadable). */
+    fun loadOfflineSnapshot(email: String): OfflineSnapshot? {
+        val raw = offlineStore.get(KEY_OFFLINE_SNAPSHOT) ?: return null
+        return runCatching {
+            val json = JSONObject(raw)
+            if (json.optString("owner") != email) {
+                null
+            } else {
+                OfflineSnapshot(
+                    tasks = json.getJSONArray("tasks").toTaskItems(),
+                    ideas = json.getJSONArray("ideas").toIdeas(),
+                    syncedAtMillis = json.getLong("synced_at"),
+                )
+            }
+        }.getOrNull()
+    }
+
+    fun clearOfflineSnapshot() {
+        offlineStore.remove(KEY_OFFLINE_SNAPSHOT)
+    }
+
+    private fun taskJson(task: TaskItem): JSONObject = JSONObject()
+        .put("id", task.id)
+        .put("title", task.title)
+        .put("description", task.description ?: JSONObject.NULL)
+        .put("due_at", task.dueAt ?: JSONObject.NULL)
+        .put("reminder_offset_minutes", task.reminderOffsetMinutes ?: JSONObject.NULL)
+        .put("completed", task.completed)
+        .put("completed_at", task.completedAt ?: JSONObject.NULL)
+        .put("start_at", task.startAt ?: JSONObject.NULL)
+        .put("duration_minutes", task.durationMinutes ?: JSONObject.NULL)
+        .put("recurrence", task.recurrence ?: JSONObject.NULL)
+        .put("steps", JSONArray().apply {
+            task.steps.forEach { put(JSONObject().put("title", it.title).put("completed", it.completed)) }
+        })
+
+    private fun ideaJson(idea: InboxIdea): JSONObject =
+        ideaPayload(idea.content, idea.durationMinutes, idea.startAt, idea.dueAt, idea.items)
+            .put("id", idea.id)
 
     private fun parseSession(response: JSONObject): Session {
         val user = response.getJSONObject("user")
@@ -801,6 +856,8 @@ class TodoCloudRepository(context: Context) {
     }
 
     private companion object {
+        const val OFFLINE_PREFERENCES_NAME = "todocloud_offline"
+        const val KEY_OFFLINE_SNAPSHOT = "snapshot"
         const val MAX_AUTH_ATTEMPTS = 3
         const val MAX_AI_IMAGE_EDGE = 2048
         const val MAX_PLAN_IMAGES = 3
