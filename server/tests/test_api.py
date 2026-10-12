@@ -424,6 +424,82 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         other = self._auth(await self._register())
         self.assertEqual((await self.client.post(f"/plans/{plan['id']}/undo", headers=other)).status_code, 404)
 
+    async def test_import_plan_made_on_phone_then_revise_accept_undo(self) -> None:
+        from unittest import mock
+
+        auth = self._auth(await self._register())
+        task = (await self.client.post(
+            "/tasks", headers=auth, json={"title": "写周报", "due_at": "2026-10-20T18:00:00+08:00"}
+        )).json()
+        proposal = {
+            "summary": "手机上用自己的密钥排的",
+            "items": [
+                {"source_type": "task", "source_id": task["id"], "title": "写周报",
+                 "start_at": "2026-10-13T09:00:00+08:00", "due_at": "2026-10-13T10:00:00+08:00",
+                 "duration_minutes": 60, "steps": [{"title": "写初稿"}], "note": "", "recurrence": None},
+                {"source_type": "prompt", "source_id": 1, "title": "组会",
+                 "due_at": "2026-10-14T20:00:00+08:00", "note": "", "recurrence": "weekly"},
+            ],
+        }
+        messages = [{"role": "user", "content": "帮我排"}, {"role": "assistant", "content": "手机上用自己的密钥排的"}]
+        with mock.patch("app.plan_ai._call_plan_model") as model:
+            created = await self.client.post(
+                "/plans/import", headers=auth, json={"proposal": proposal, "messages": messages}
+            )
+            self.assertEqual(created.status_code, 201, created.text)
+            plan = created.json()
+            self.assertEqual(plan["status"], "draft")
+            self.assertEqual(len(plan["proposal"]["items"]), 2)
+            self.assertEqual(plan["messages"], messages)
+
+            # A question-only turn keeps the proposal; a plan turn replaces it.
+            asked = await self.client.post(
+                f"/plans/{plan['id']}/import-revision", headers=auth,
+                json={"proposal": None, "messages": messages + [{"role": "user", "content": "满吗"},
+                                                                  {"role": "assistant", "content": "不满"}]},
+            )
+            self.assertEqual(asked.status_code, 200, asked.text)
+            self.assertEqual(len(asked.json()["proposal"]["items"]), 2)
+            self.assertEqual(len(asked.json()["messages"]), 4)
+            model.assert_not_called()  # the server never calls a model for imported plans
+
+        accepted = await self.client.post(f"/plans/{plan['id']}/accept", headers=auth)
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        rules = {t["title"]: t["recurrence"] for t in (await self.client.get("/tasks", headers=auth)).json()}
+        self.assertEqual(rules, {"写周报": None, "组会": "weekly"})
+        late = await self.client.post(
+            f"/plans/{plan['id']}/import-revision", headers=auth, json={"proposal": None, "messages": []}
+        )
+        self.assertEqual(late.status_code, 409)
+        undone = await self.client.post(f"/plans/{plan['id']}/undo", headers=auth)
+        self.assertEqual(undone.status_code, 200, undone.text)
+        self.assertEqual([t["title"] for t in (await self.client.get("/tasks", headers=auth)).json()], ["写周报"])
+
+    async def test_imported_plan_cannot_touch_other_users_tasks(self) -> None:
+        owner = self._auth(await self._register())
+        victim_task = (await self.client.post(
+            "/tasks", headers=owner, json={"title": "别人的任务", "due_at": "2026-10-20T18:00:00+08:00"}
+        )).json()
+        attacker = self._auth(await self._register())
+        proposal = {"summary": "x", "items": [
+            {"source_type": "task", "source_id": victim_task["id"], "title": "改掉",
+             "due_at": "2026-10-13T10:00:00+08:00", "note": ""},
+        ]}
+        plan = (await self.client.post(
+            "/plans/import", headers=attacker, json={"proposal": proposal, "messages": []}
+        )).json()
+        accepted = await self.client.post(f"/plans/{plan['id']}/accept", headers=attacker)
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        self.assertEqual(accepted.json()["tasks"], [])
+        mine = (await self.client.get("/tasks", headers=owner)).json()
+        self.assertEqual(mine[0]["due_at"], victim_task["due_at"])  # untouched
+        other = await self.client.post(
+            f"/plans/{plan['id']}/import-revision", headers=owner, json={"proposal": None, "messages": []}
+        )
+        self.assertEqual(other.status_code, 404)
+        unauth = await self.client.post("/plans/import", json={"proposal": proposal, "messages": []})
+        self.assertEqual(unauth.status_code, 401)
+
     async def test_plan_chat_with_images(self) -> None:
         import io
         import json as jsonlib
