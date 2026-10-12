@@ -16,9 +16,9 @@
     <application
         android:allowBackup="false"
         android:name=".TodoCloudApplication"
-        android:icon="@mipmap/ic_launcher_daily"
+        android:icon="@mipmap/ic_launcher_classic_daily"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_daily"
+        android:roundIcon="@mipmap/ic_launcher_classic_daily"
         android:supportsRtl="true"
         android:theme="@style/Theme.TodoCloud">
         <activity
@@ -34,13 +34,19 @@
                 <data android:mimeType="image/*" />
             </intent-filter>
         </activity>
+        <!--
+            Launcher entries: one activity-alias per mascot set and state, see
+            branding/MascotSets.kt. Exactly one is enabled at a time. The classic set keeps the
+            original unprefixed names so upgrades keep the same home-screen entry; every other
+            set is disabled here and prefixed with its id. MascotSetsTest checks this list.
+        -->
         <activity-alias
             android:name=".launcher.Daily"
             android:enabled="true"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_daily"
+            android:icon="@mipmap/ic_launcher_classic_daily"
             android:label="@string/app_name"
-            android:roundIcon="@mipmap/ic_launcher_daily"
+            android:roundIcon="@mipmap/ic_launcher_classic_daily"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -51,9 +57,9 @@
             android:name=".launcher.Progress"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_progress"
+            android:icon="@mipmap/ic_launcher_classic_progress"
             android:label="@string/app_name"
-            android:roundIcon="@mipmap/ic_launcher_progress"
+            android:roundIcon="@mipmap/ic_launcher_classic_progress"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -64,9 +70,9 @@
             android:name=".launcher.DueSoon"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_due_soon"
+            android:icon="@mipmap/ic_launcher_classic_due_soon"
             android:label="@string/app_name"
-            android:roundIcon="@mipmap/ic_launcher_due_soon"
+            android:roundIcon="@mipmap/ic_launcher_classic_due_soon"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -77,9 +83,9 @@
             android:name=".launcher.Overdue"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_overdue"
+            android:icon="@mipmap/ic_launcher_classic_overdue"
             android:label="@string/app_name"
-            android:roundIcon="@mipmap/ic_launcher_overdue"
+            android:roundIcon="@mipmap/ic_launcher_classic_overdue"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -90,9 +96,9 @@
             android:name=".launcher.Complete"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_complete"
+            android:icon="@mipmap/ic_launcher_classic_complete"
             android:label="@string/app_name"
-            android:roundIcon="@mipmap/ic_launcher_complete"
+            android:roundIcon="@mipmap/ic_launcher_classic_complete"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -103,9 +109,9 @@
             android:name=".launcher.NoTasks"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_no_tasks"
+            android:icon="@mipmap/ic_launcher_classic_no_tasks"
             android:label="@string/app_name"
-            android:roundIcon="@mipmap/ic_launcher_no_tasks"
+            android:roundIcon="@mipmap/ic_launcher_classic_no_tasks"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -116,9 +122,9 @@
             android:name=".launcher.HalfFrozen"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_half_frozen"
+            android:icon="@mipmap/ic_launcher_classic_half_frozen"
             android:label="@string/app_name"
-            android:roundIcon="@mipmap/ic_launcher_half_frozen"
+            android:roundIcon="@mipmap/ic_launcher_classic_half_frozen"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -129,9 +135,113 @@
             android:name=".launcher.Frozen"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_frozen"
+            android:icon="@mipmap/ic_launcher_classic_frozen"
             android:label="@string/app_name"
-            android:roundIcon="@mipmap/ic_launcher_frozen"
+            android:roundIcon="@mipmap/ic_launcher_classic_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.mooncat.Daily"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_mooncat_daily"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_mooncat_daily"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.mooncat.DueSoon"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_mooncat_due_soon"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_mooncat_due_soon"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.mooncat.Overdue"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_mooncat_overdue"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_mooncat_overdue"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.mooncat.Progress"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_mooncat_progress"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_mooncat_progress"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.mooncat.Complete"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_mooncat_complete"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_mooncat_complete"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.mooncat.NoTasks"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_mooncat_no_tasks"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_mooncat_no_tasks"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.mooncat.HalfFrozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_mooncat_half_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_mooncat_half_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.mooncat.Frozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_mooncat_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_mooncat_frozen"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

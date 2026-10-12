@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Inset of the mascot picture inside the 108dp adaptive-icon foreground. Every mascot set
+        uses this one value, so all sets sit in the same launcher container. It is the value the
+        launcher icons have used since they were added.
+    -->
+    <dimen name="mascot_icon_inset">16dp</dimen>
+</resources>
