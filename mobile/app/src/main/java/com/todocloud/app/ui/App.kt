@@ -116,6 +116,7 @@ fun TodoCloudApp(
     var reminderMode by remember(context) {
         mutableStateOf(ReminderScheduler.loadReminderMode(context))
     }
+    var mascotSet by remember(context) { mutableStateOf(MascotStateManager.selectedSet(context)) }
 
     LaunchedEffect(requestedTab, requestedCalendarDate) {
         selectedTab = requestedTab.coerceIn(0, 3)
@@ -620,6 +621,7 @@ fun TodoCloudApp(
                                 selectedTab == 0 -> "我的任务"
                                 selectedTab == 3 && settingsPage == "permissions" -> "权限"
                                 selectedTab == 3 && settingsPage == "sponsor" -> "赞助开发"
+                                selectedTab == 3 && settingsPage == "mascot" -> "吉祥物"
                                 else -> tabs[selectedTab].label
                             },
                             style = MaterialTheme.typography.headlineSmall,
@@ -821,6 +823,15 @@ fun TodoCloudApp(
                     reminderMode = reminderMode,
                 )
                 "sponsor" -> SponsorSettingsScreen(paddingValues)
+                "mascot" -> MascotSettingsScreen(
+                    paddingValues = paddingValues,
+                    selected = mascotSet,
+                    shownState = remember { MascotStateManager.shownState(context) },
+                    onSelect = { set ->
+                        MascotStateManager.selectSet(context, set)
+                        mascotSet = set
+                    },
+                )
                 else -> SettingsHomeScreen(
                     context = context,
                     paddingValues = paddingValues,
@@ -838,6 +849,8 @@ fun TodoCloudApp(
                     },
                     onOpenPermissions = { settingsPage = "permissions" },
                     onOpenSponsor = { settingsPage = "sponsor" },
+                    mascotLabel = mascotSet.label,
+                    onOpenMascot = { settingsPage = "mascot" },
                     updateAvailableVersion = updateAvailableVersion,
                     checkingUpdate = checkingUpdate,
                     onCheckUpdate = {

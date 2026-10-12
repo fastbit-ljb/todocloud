@@ -5,6 +5,8 @@ import com.todocloud.app.data.TaskStep
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import org.junit.Test
 
 class MascotStateManagerTest {
@@ -110,6 +112,52 @@ class MascotStateManagerTest {
             resolve(emptyList(), now.minusSeconds(60 * 60L)),
         )
     }
+
+    @Test
+    fun launcherPlanEnablesOnlyTheChosenSetsAliasForTheState() {
+        val plan = MascotStateManager.launcherAliasPlan(
+            "com.todocloud.app",
+            MascotSets.MOON_CAT,
+            MascotState.OVERDUE,
+        )
+
+        assertEquals(MascotSets.all.size * MascotState.entries.size, plan.size)
+        assertEquals(
+            listOf("com.todocloud.app.launcher.mooncat.Overdue"),
+            plan.filter { (_, enabled) -> enabled }.map { (alias, _) -> alias },
+        )
+    }
+
+    @Test
+    fun upgradeWithoutAStoredSetCountsAsClassic() {
+        // Versions before mascot sets stored the state but no set; their alias is classic's.
+        assertTrue(alreadyShown(currentState = "COMPLETE", currentSetId = null, set = MascotSets.CLASSIC))
+        assertFalse(alreadyShown(currentState = "COMPLETE", currentSetId = null, set = MascotSets.MOON_CAT))
+    }
+
+    @Test
+    fun switchingSetsReappliesEvenWhenTheStateIsUnchanged() {
+        assertFalse(alreadyShown(currentState = "COMPLETE", currentSetId = "classic", set = MascotSets.MOON_CAT))
+        assertTrue(alreadyShown(currentState = "COMPLETE", currentSetId = "mooncat", set = MascotSets.MOON_CAT))
+        assertFalse(
+            MascotStateManager.alreadyShown(
+                configured = false,
+                currentState = "COMPLETE",
+                currentSetId = "mooncat",
+                set = MascotSets.MOON_CAT,
+                state = MascotState.COMPLETE,
+            ),
+        )
+    }
+
+    private fun alreadyShown(currentState: String, currentSetId: String?, set: MascotSet) =
+        MascotStateManager.alreadyShown(
+            configured = true,
+            currentState = currentState,
+            currentSetId = currentSetId,
+            set = set,
+            state = MascotState.COMPLETE,
+        )
 
     private fun resolve(tasks: List<TaskItem>, lastActivity: Instant): MascotState =
         MascotStateManager.resolve(tasks, lastActivity, now, ZoneOffset.UTC)

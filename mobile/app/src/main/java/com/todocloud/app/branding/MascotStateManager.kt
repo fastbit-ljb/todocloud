@@ -2,6 +2,7 @@ package com.todocloud.app.branding
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
 import com.todocloud.app.data.TaskItem
@@ -13,15 +14,16 @@ import java.time.ZoneId
 
 enum class MascotState(
     internal val launcherAlias: String,
+    val label: String,
 ) {
-    DAILY("Daily"),
-    IN_PROGRESS("Progress"),
-    DUE_SOON("DueSoon"),
-    OVERDUE("Overdue"),
-    COMPLETE("Complete"),
-    NO_TASKS("NoTasks"),
-    HALF_FROZEN("HalfFrozen"),
-    FROZEN("Frozen"),
+    DAILY("Daily", "日常"),
+    IN_PROGRESS("Progress", "进行中"),
+    DUE_SOON("DueSoon", "即将到期"),
+    OVERDUE("Overdue", "已逾期"),
+    COMPLETE("Complete", "已完成"),
+    NO_TASKS("NoTasks", "暂无任务"),
+    HALF_FROZEN("HalfFrozen", "半冻结"),
+    FROZEN("Frozen", "完全冻结"),
 }
 
 object MascotStateManager {
@@ -30,6 +32,9 @@ object MascotStateManager {
     private const val KEY_CURRENT_STATE = "current_state"
     private const val KEY_PENDING_STATE = "pending_state"
     private const val KEY_ALIASES_CONFIGURED = "aliases_configured"
+    // The set picked in Settings → 吉祥物, and the set whose alias is enabled right now.
+    private const val KEY_SELECTED_SET = "selected_set"
+    private const val KEY_CURRENT_SET = "current_set"
     private const val HALF_FROZEN_HOURS = 24L
     private const val FROZEN_HOURS = 72L
 
@@ -84,6 +89,32 @@ object MascotStateManager {
         if (!appInForeground) applyPendingLauncherState(context)
     }
 
+    /** The set chosen in Settings → 吉祥物, or [MascotSets.DEFAULT] until one is chosen. */
+    fun selectedSet(context: Context): MascotSet =
+        MascotSets.fromId(preferences(context).getString(KEY_SELECTED_SET, null))
+
+    /**
+     * Saves [set] and queues the current state again so the launcher switches to the new
+     * set's icon. Like every icon change it is applied when the app goes to the background.
+     */
+    fun selectSet(context: Context, set: MascotSet) {
+        val prefs = preferences(context)
+        prefs.edit()
+            .putString(KEY_SELECTED_SET, set.id)
+            .putString(KEY_PENDING_STATE, shownState(prefs).name)
+            .apply()
+        if (!appInForeground) applyPendingLauncherState(context)
+    }
+
+    /** The state the launcher icon shows, or will show once the app is in the background. */
+    fun shownState(context: Context): MascotState = shownState(preferences(context))
+
+    private fun shownState(prefs: SharedPreferences): MascotState {
+        val stored = prefs.getString(KEY_PENDING_STATE, null)
+            ?: prefs.getString(KEY_CURRENT_STATE, null)
+        return MascotState.entries.firstOrNull { it.name == stored } ?: MascotState.DAILY
+    }
+
     internal fun resolve(
         tasks: List<TaskItem>,
         lastActivity: Instant,
@@ -134,58 +165,101 @@ object MascotStateManager {
         val state = prefs.getString(KEY_PENDING_STATE, null)
             ?.let { stored -> MascotState.entries.firstOrNull { it.name == stored } }
             ?: return
-        val previous = prefs.getString(KEY_CURRENT_STATE, null)
-        val configured = prefs.getBoolean(KEY_ALIASES_CONFIGURED, false)
-        if (configured && previous == state.name) {
+        val set = MascotSets.fromId(prefs.getString(KEY_SELECTED_SET, null))
+        if (
+            alreadyShown(
+                configured = prefs.getBoolean(KEY_ALIASES_CONFIGURED, false),
+                currentState = prefs.getString(KEY_CURRENT_STATE, null),
+                currentSetId = prefs.getString(KEY_CURRENT_SET, null),
+                set = set,
+                state = state,
+            )
+        ) {
             prefs.edit().remove(KEY_PENDING_STATE).apply()
             return
         }
 
         val packageManager = context.packageManager
-        fun component(candidate: MascotState) = ComponentName(
-            context.packageName,
-            "${context.packageName}.launcher.${candidate.launcherAlias}",
-        )
-
         val applied = runCatching {
+            // Only aliases whose setting differs are touched, so a switch usually changes
+            // two of them rather than every alias of every set.
+            val changes = launcherAliasPlan(context.packageName, set, state)
+                .map { (alias, enabled) ->
+                    ComponentName(context.packageName, alias) to if (enabled) {
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                    } else {
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    }
+                }
+                .filter { (component, setting) ->
+                    packageManager.getComponentEnabledSetting(component) != setting
+                }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val settings = MascotState.entries.map { candidate ->
-                    PackageManager.ComponentEnabledSetting(
-                        component(candidate),
-                        if (candidate == state) {
-                            PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                        } else {
-                            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                if (changes.isNotEmpty()) {
+                    packageManager.setComponentEnabledSettings(
+                        changes.map { (component, setting) ->
+                            PackageManager.ComponentEnabledSetting(
+                                component,
+                                setting,
+                                PackageManager.DONT_KILL_APP,
+                            )
                         },
-                        PackageManager.DONT_KILL_APP,
                     )
                 }
-                packageManager.setComponentEnabledSettings(settings)
             } else {
                 // Keep at least one launcher entry enabled throughout the
                 // hand-off so older launchers never observe a missing icon.
-                packageManager.setComponentEnabledSetting(
-                    component(state),
-                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                    PackageManager.DONT_KILL_APP,
-                )
-                MascotState.entries.filterNot { it == state }.forEach { candidate ->
-                    packageManager.setComponentEnabledSetting(
-                        component(candidate),
-                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                        PackageManager.DONT_KILL_APP,
-                    )
-                }
+                changes
+                    .sortedByDescending { (_, setting) ->
+                        setting == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                    }
+                    .forEach { (component, setting) ->
+                        packageManager.setComponentEnabledSetting(
+                            component,
+                            setting,
+                            PackageManager.DONT_KILL_APP,
+                        )
+                    }
             }
         }.isSuccess
 
         if (!applied) return
         prefs.edit()
             .putString(KEY_CURRENT_STATE, state.name)
+            .putString(KEY_CURRENT_SET, set.id)
             .remove(KEY_PENDING_STATE)
             .putBoolean(KEY_ALIASES_CONFIGURED, true)
             .apply()
     }
+
+    /**
+     * Every launcher alias of every set, each paired with whether it should be enabled:
+     * only [set]'s alias for [state] is.
+     */
+    internal fun launcherAliasPlan(
+        packageName: String,
+        set: MascotSet,
+        state: MascotState,
+    ): List<Pair<String, Boolean>> = MascotSets.all.flatMap { candidateSet ->
+        MascotState.entries.map { candidateState ->
+            candidateSet.launcherAlias(packageName, candidateState) to
+                (candidateSet.id == set.id && candidateState == state)
+        }
+    }
+
+    /**
+     * Whether the launcher already shows [state] in [set]. Versions before mascot sets stored
+     * no set id; the only aliases they had are the classic set's.
+     */
+    internal fun alreadyShown(
+        configured: Boolean,
+        currentState: String?,
+        currentSetId: String?,
+        set: MascotSet,
+        state: MascotState,
+    ): Boolean = configured &&
+        currentState == state.name &&
+        (currentSetId ?: MascotSets.CLASSIC.id) == set.id
 
     private fun parseInstant(value: String?, zoneId: ZoneId): Instant? {
         if (value.isNullOrBlank()) return null

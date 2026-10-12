@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Pets
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -89,6 +90,8 @@ internal fun SettingsHomeScreen(
     onReminderModeChange: (ReminderMode) -> Unit,
     onOpenPermissions: () -> Unit,
     onOpenSponsor: () -> Unit,
+    mascotLabel: String,
+    onOpenMascot: () -> Unit,
     updateAvailableVersion: String?,
     checkingUpdate: Boolean,
     onCheckUpdate: () -> Unit,
@@ -229,6 +232,13 @@ internal fun SettingsHomeScreen(
         }
 
         SettingsGroup(title = "更多") {
+            SettingsRow(
+                icon = Icons.Outlined.Pets,
+                title = "吉祥物",
+                description = "$mascotLabel · 桌面图标跟着任务状态换表情",
+                onClick = onOpenMascot,
+            )
+            SettingsDivider()
             SettingsRow(
                 icon = Icons.Outlined.Settings,
                 title = "权限",
