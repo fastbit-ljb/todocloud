@@ -21,13 +21,17 @@ def alembic_config() -> Config:
     return config
 
 
-def _upgrade(connection: Connection) -> None:
+def _upgrade(connection: Connection, revision: str = "head") -> None:
     connection.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": _MIGRATION_LOCK_ID})
     config = alembic_config()
     config.attributes["connection"] = connection
-    command.upgrade(config, "head")
+    command.upgrade(config, revision)
 
 
 async def upgrade_to_head(engine: AsyncEngine) -> None:
+    await upgrade_to(engine, "head")
+
+
+async def upgrade_to(engine: AsyncEngine, revision: str) -> None:
     async with engine.begin() as connection:
-        await connection.run_sync(_upgrade)
+        await connection.run_sync(_upgrade, revision)
