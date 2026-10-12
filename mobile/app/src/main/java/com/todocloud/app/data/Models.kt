@@ -23,6 +23,8 @@ data class TaskItem(
     val steps: List<TaskStep> = emptyList(),
     val startAt: String? = null,
     val durationMinutes: Int? = null,
+    /** Repeat rule: daily / weekdays / weekly / monthly; null = one-off. */
+    val recurrence: String? = null,
 )
 
 /** Everything the task editor can set; times are ISO-8601 instants. */
@@ -34,6 +36,7 @@ data class TaskDraft(
     val durationMinutes: Int?,
     val reminderOffsetMinutes: Int?,
     val steps: List<TaskStep>,
+    val recurrence: String? = null,
 )
 
 data class IdeaDetail(

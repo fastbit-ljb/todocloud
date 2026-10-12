@@ -122,12 +122,14 @@ class TodoCloudRepository(context: Context) {
         steps: List<TaskStep> = emptyList(),
         startAt: String? = null,
         durationMinutes: Int? = null,
+        recurrence: String? = null,
     ): TaskItem {
         val payload = JSONObject().put("title", title)
         if (!description.isNullOrBlank()) payload.put("description", description)
         if (startAt != null) payload.put("start_at", startAt)
         if (dueAt != null) payload.put("due_at", dueAt)
         if (durationMinutes != null) payload.put("duration_minutes", durationMinutes)
+        if (recurrence != null) payload.put("recurrence", recurrence)
         if (reminderOffsetMinutes != null) {
             payload.put("reminder_offset_minutes", reminderOffsetMinutes)
         }
@@ -188,6 +190,7 @@ class TodoCloudRepository(context: Context) {
             .put("due_at", draft.dueAt.orNull())
             .put("duration_minutes", draft.durationMinutes.orNull())
             .put("reminder_offset_minutes", draft.reminderOffsetMinutes.orNull())
+            .put("recurrence", draft.recurrence.orNull())
             .put("steps", JSONArray().apply {
                 draft.steps.forEach { step ->
                     put(JSONObject().put("title", step.title).put("completed", step.completed))
@@ -647,6 +650,7 @@ class TodoCloudRepository(context: Context) {
         steps = json.optTaskSteps(),
         startAt = json.optNullableString("start_at"),
         durationMinutes = json.optNullableInt("duration_minutes"),
+        recurrence = json.optNullableString("recurrence"),
     )
 
     private fun ideaPayload(

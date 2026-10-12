@@ -23,6 +23,21 @@ internal const val NEW_TASK_DEFAULT_REMINDER_MINUTES = 10
 internal const val TASK_TITLE_MAX = 200
 internal const val TASK_STEPS_MAX = 30
 
+internal data class RecurrenceOption(val rule: String?, val label: String)
+
+/** Repeat choices in the editor; the rule strings match the server's. */
+internal val RECURRENCE_OPTIONS = listOf(
+    RecurrenceOption(null, "不重复"),
+    RecurrenceOption("daily", "每天"),
+    RecurrenceOption("weekdays", "工作日"),
+    RecurrenceOption("weekly", "每周"),
+    RecurrenceOption("monthly", "每月"),
+)
+
+/** Short label for a task card, e.g. "每周"; null for one-off tasks or unknown rules. */
+internal fun recurrenceLabel(rule: String?): String? =
+    rule?.let { value -> RECURRENCE_OPTIONS.firstOrNull { it.rule == value }?.label }
+
 /** One editable step row; [completed] is kept so editing never resets progress. */
 internal data class StepInput(val title: String, val completed: Boolean = false)
 
@@ -39,7 +54,7 @@ internal fun taskEditorError(
 
 /**
  * Turns editor state into the payload sent to the server, or null when the input is invalid.
- * A reminder only makes sense with a due time, so it is dropped when there is none.
+ * A reminder or a repeat rule only makes sense with a due time, so both are dropped when there is none.
  */
 internal fun buildTaskDraft(
     title: String,
@@ -50,6 +65,7 @@ internal fun buildTaskDraft(
     reminderOffsetMinutes: Int?,
     steps: List<StepInput>,
     zone: ZoneId = ZoneId.systemDefault(),
+    recurrence: String? = null,
 ): TaskDraft? {
     if (taskEditorError(title, startAt, dueAt) != null) return null
     fun LocalDateTime.toInstantText() = atZone(zone).toInstant().toString()
@@ -65,6 +81,7 @@ internal fun buildTaskDraft(
                 step.title.trim().takeIf(String::isNotEmpty)?.let { TaskStep(it.take(500), step.completed) }
             }
             .take(TASK_STEPS_MAX),
+        recurrence = if (dueAt == null) null else recurrence,
     )
 }
 
