@@ -374,6 +374,74 @@ async def _chat(
     )
 
 
+class ImportedMessage(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(max_length=8000)
+
+
+class PlanImportRequest(BaseModel):
+    """A plan the app generated on the phone with the user's own model key."""
+
+    proposal: PlanProposal
+    messages: list[ImportedMessage] = Field(default_factory=list, max_length=60)
+
+
+class PlanImportRevisionRequest(BaseModel):
+    # None = the turn only answered a question; the plan stays as it is.
+    proposal: PlanProposal | None = None
+    messages: list[ImportedMessage] = Field(max_length=60)
+
+
+def _validated_proposal(proposal: PlanProposal) -> dict:
+    if len(proposal.items) > 100:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="计划条目过多")
+    data = proposal.model_dump(mode="json")
+    data["summary"] = data["summary"][:1000]
+    return data
+
+
+@router.post("/import", response_model=PlanResponse, status_code=status.HTTP_201_CREATED)
+async def import_plan(
+    payload: PlanImportRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AiPlan:
+    """Store a draft made on the phone. The server calls no model here; accept checks
+    every task and idea against this user, exactly as for a server-made plan."""
+    plan = AiPlan(
+        user_id=user.id,
+        status="draft",
+        title="我的 AI 计划",
+        proposal=_validated_proposal(payload.proposal),
+        messages=[item.model_dump() for item in payload.messages],
+    )
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+    return plan
+
+
+@router.post("/{plan_id}/import-revision", response_model=PlanResponse)
+async def import_plan_revision(
+    plan_id: int,
+    payload: PlanImportRevisionRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AiPlan:
+    """Store a revision turn the phone ran with the user's own model key."""
+    plan = await db.scalar(select(AiPlan).where(AiPlan.id == plan_id, AiPlan.user_id == user.id))
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="计划不存在")
+    if plan.status != "draft":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已采用的计划不能继续修改")
+    if payload.proposal is not None:
+        plan.proposal = _validated_proposal(payload.proposal)
+    plan.messages = [item.model_dump() for item in payload.messages]
+    await db.commit()
+    await db.refresh(plan)
+    return plan
+
+
 @router.post("/{plan_id}/messages", response_model=PlanResponse)
 async def revise_plan(
     plan_id: int,
