@@ -369,6 +369,11 @@ fun TodoCloudApp(
             delay(TASK_REORDER_DELAY_MILLIS.toLong())
             prepareForReorder()
             tasks = sortTasks(tasks)
+            // Completing a recurring task makes the server create the next one.
+            if (nextCompleted && task.recurrence != null) {
+                tasks = sortTasks(withoutPendingDeletes(repository.listTasks(currentSession.token), pendingDeleteIds))
+                    .also(::scheduleTasks)
+            }
         }
     }
 
@@ -393,6 +398,10 @@ fun TodoCloudApp(
             delay(TASK_REORDER_DELAY_MILLIS.toLong())
             prepareForReorder()
             tasks = sortTasks(tasks)
+            if (nextCompleted && !task.completed && task.recurrence != null) {
+                tasks = sortTasks(withoutPendingDeletes(repository.listTasks(currentSession.token), pendingDeleteIds))
+                    .also(::scheduleTasks)
+            }
         }
     }
 
@@ -882,6 +891,7 @@ fun TodoCloudApp(
                             steps = draft.steps,
                             startAt = draft.startAt,
                             durationMinutes = draft.durationMinutes,
+                            recurrence = draft.recurrence,
                         ).also { MascotStateManager.recordMeaningfulActivity(context) }
                     } else {
                         repository.editTask(currentSession.token, existing.id, draft)

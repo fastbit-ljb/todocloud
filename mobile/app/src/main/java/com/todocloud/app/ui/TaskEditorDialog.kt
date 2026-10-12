@@ -59,6 +59,7 @@ internal fun TaskEditorDialog(
     var reminder by rememberSaveable(key) {
         mutableStateOf(if (task == null) NEW_TASK_DEFAULT_REMINDER_MINUTES else task.reminderOffsetMinutes)
     }
+    var recurrence by rememberSaveable(key) { mutableStateOf(task?.recurrence) }
     var steps by remember(key) {
         mutableStateOf(task?.steps?.map { StepInput(it.title, it.completed) }.orEmpty())
     }
@@ -127,6 +128,24 @@ internal fun TaskEditorDialog(
                             label = { Text(if (isCustom) reminderLabel(reminder) else "自定义…") },
                         )
                     }
+
+                    Text("重复", style = MaterialTheme.typography.titleSmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RECURRENCE_OPTIONS.forEach { option ->
+                            FilterChip(
+                                selected = recurrence == option.rule,
+                                onClick = { recurrence = option.rule },
+                                label = { Text(option.label) },
+                            )
+                        }
+                    }
+                    if (recurrence != null) {
+                        Text(
+                            "完成后会自动生成下一次",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 IdeaDurationSelector(
@@ -165,8 +184,10 @@ internal fun TaskEditorDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    buildTaskDraft(title, description, startAt, dueAt, durationMinutes, reminder, steps)
-                        ?.let(onSave)
+                    buildTaskDraft(
+                        title, description, startAt, dueAt, durationMinutes, reminder, steps,
+                        recurrence = recurrence,
+                    )?.let(onSave)
                 },
                 enabled = !loading && taskEditorError(title, startAt, dueAt) == null,
             ) { Text(if (loading) "保存中…" else "保存") }

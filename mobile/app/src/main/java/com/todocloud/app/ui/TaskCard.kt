@@ -240,8 +240,9 @@ internal fun TaskCard(
                                 },
                         )
                         task.dueAt?.let {
+                            val repeat = recurrenceLabel(task.recurrence)
                             Text(
-                                formatDueAt(it),
+                                if (repeat != null) "${formatDueAt(it)} · $repeat" else formatDueAt(it),
                                 modifier = Modifier.padding(start = 8.dp),
                                 color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.bodySmall,
