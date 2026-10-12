@@ -46,6 +46,9 @@ class MascotSet(
      */
     private val aliasPrefix: String,
 ) {
+    /** Settings → 账号 avatar: always this set's 日常 (01_daily) picture, whatever the task state. */
+    val avatar: Int get() = pictures[MascotState.DAILY]
+
     fun launcherAlias(packageName: String, state: MascotState): String =
         "$packageName.launcher.$aliasPrefix${state.launcherAlias}"
 }
@@ -117,6 +120,12 @@ object MascotSets {
 
     /** The stored choice; a missing or unknown id falls back to [DEFAULT]. */
     fun fromId(id: String?): MascotSet = all.firstOrNull { it.id == id } ?: DEFAULT
+
+    /**
+     * The set for a raw stored preference value. Anything that is not a known id, including a
+     * non-string left in a damaged preferences file, falls back to [DEFAULT].
+     */
+    fun fromStored(value: Any?): MascotSet = fromId(value as? String)
 
     /** The artwork's own numbering (01_daily … 08_frozen), used to lay out previews. */
     val previewOrder: List<MascotState> = listOf(

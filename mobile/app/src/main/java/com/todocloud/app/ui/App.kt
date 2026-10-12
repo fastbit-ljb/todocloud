@@ -849,7 +849,7 @@ fun TodoCloudApp(
                     },
                     onOpenPermissions = { settingsPage = "permissions" },
                     onOpenSponsor = { settingsPage = "sponsor" },
-                    mascotLabel = mascotSet.label,
+                    mascot = mascotSet,
                     onOpenMascot = { settingsPage = "mascot" },
                     updateAvailableVersion = updateAvailableVersion,
                     checkingUpdate = checkingUpdate,

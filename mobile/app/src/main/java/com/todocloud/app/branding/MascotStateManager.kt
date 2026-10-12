@@ -90,8 +90,11 @@ object MascotStateManager {
     }
 
     /** The set chosen in Settings → 吉祥物, or [MascotSets.DEFAULT] until one is chosen. */
-    fun selectedSet(context: Context): MascotSet =
-        MascotSets.fromId(preferences(context).getString(KEY_SELECTED_SET, null))
+    fun selectedSet(context: Context): MascotSet = selectedSet(preferences(context))
+
+    // Read through getAll(): getString would throw if a damaged file held a non-string here.
+    private fun selectedSet(prefs: SharedPreferences): MascotSet =
+        MascotSets.fromStored(prefs.all[KEY_SELECTED_SET])
 
     /**
      * Saves [set] and queues the current state again so the launcher switches to the new
@@ -165,7 +168,7 @@ object MascotStateManager {
         val state = prefs.getString(KEY_PENDING_STATE, null)
             ?.let { stored -> MascotState.entries.firstOrNull { it.name == stored } }
             ?: return
-        val set = MascotSets.fromId(prefs.getString(KEY_SELECTED_SET, null))
+        val set = selectedSet(prefs)
         if (
             alreadyShown(
                 configured = prefs.getBoolean(KEY_ALIASES_CONFIGURED, false),

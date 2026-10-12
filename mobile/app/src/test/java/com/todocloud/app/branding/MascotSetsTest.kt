@@ -1,5 +1,6 @@
 package com.todocloud.app.branding
 
+import com.todocloud.app.R
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.test.assertEquals
@@ -25,6 +26,27 @@ class MascotSetsTest {
         assertSame(MascotSets.CLASSIC, MascotSets.fromId(null))
         assertSame(MascotSets.CLASSIC, MascotSets.fromId("a-set-that-was-removed"))
         assertSame(MascotSets.MOON_CAT, MascotSets.fromId("mooncat"))
+    }
+
+    @Test
+    fun avatarIsEachSetsDailyPicture() {
+        assertEquals(R.drawable.mascot_classic_daily, MascotSets.CLASSIC.avatar)
+        assertEquals(R.drawable.mascot_mooncat_daily, MascotSets.MOON_CAT.avatar)
+        for (set in MascotSets.all) assertEquals(set.pictures[MascotState.DAILY], set.avatar, set.id)
+    }
+
+    @Test
+    fun unknownOrDamagedStoredIdsShowTheClassicAvatar() {
+        // What SharedPreferences.getAll() can hand back for the key: missing, unknown or
+        // mistyped strings, and other value types from a damaged file.
+        val stored = listOf<Any?>(null, "", "cloud", "CLASSIC", " mooncat", 42, 7L, true, 1.5f, setOf("mooncat"))
+        for (value in stored) {
+            val set = MascotSets.fromStored(value)
+            assertSame(MascotSets.CLASSIC, set, "stored value: $value")
+            assertEquals(R.drawable.mascot_classic_daily, set.avatar, "stored value: $value")
+        }
+        assertSame(MascotSets.MOON_CAT, MascotSets.fromStored("mooncat"))
+        assertEquals(R.drawable.mascot_mooncat_daily, MascotSets.fromStored("mooncat").avatar)
     }
 
     @Test
