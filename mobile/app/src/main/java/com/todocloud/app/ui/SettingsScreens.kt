@@ -1,6 +1,7 @@
 package com.todocloud.app.ui
 
 import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import android.app.AlarmManager
@@ -92,6 +93,8 @@ internal fun SettingsHomeScreen(
     checkingUpdate: Boolean,
     onCheckUpdate: () -> Unit,
     onLogout: () -> Unit,
+    aiKeySet: Boolean = false,
+    onEditAiKey: () -> Unit = {},
 ) {
     var showDefaultReminderPicker by rememberSaveable { mutableStateOf(false) }
 
@@ -144,6 +147,22 @@ internal fun SettingsHomeScreen(
                         )
                     }
                 }
+            }
+        }
+
+        if (session.isLocal) {
+            SettingsGroup(
+                title = "AI 模型",
+                caption = "本机模式用你自己的密钥直接调用 Gemini，任务内容不经过 TodoCloud 服务器",
+            ) {
+                SettingsRow(
+                    icon = androidx.compose.material.icons.Icons.Outlined.AutoAwesome,
+                    title = "Gemini API 密钥",
+                    description = if (aiKeySet) "已填写 · ${com.todocloud.app.data.LocalAiConfig.MODEL}"
+                    else "未填写，AI 计划和识别任务需要它",
+                    onClick = onEditAiKey,
+                    badge = !aiKeySet,
+                )
             }
         }
 
