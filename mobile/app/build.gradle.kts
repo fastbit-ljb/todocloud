@@ -73,4 +73,6 @@ dependencies {
     implementation(libs.okhttp)
     testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM unit tests (Android's copy is a stub off-device).
+    testImplementation("org.json:json:20240303")
 }

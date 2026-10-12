@@ -96,6 +96,11 @@ fun TodoCloudApp(
     var searching by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var shareLoading by remember { mutableStateOf(false) }
+    // Local mode's own model key (Settings → AI 模型).
+    var aiKeySet by remember { mutableStateOf(repository.aiKeys.apiKey != null) }
+    var showAiKeyDialog by remember { mutableStateOf(false) }
+    var aiKeyChecking by remember { mutableStateOf(false) }
+    var aiKeyError by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     var showIdeaComposer by rememberSaveable { mutableStateOf(false) }
     var editingIdea by remember { mutableStateOf<InboxIdea?>(null) }
@@ -863,6 +868,11 @@ fun TodoCloudApp(
                             session = null
                         }
                     },
+                    aiKeySet = aiKeySet,
+                    onEditAiKey = {
+                        aiKeyError = null
+                        showAiKeyDialog = true
+                    },
                 )
             }
         }
@@ -975,6 +985,39 @@ fun TodoCloudApp(
             },
         )
         }
+
+    if (showAiKeyDialog) {
+        AiKeyDialog(
+            keySet = aiKeySet,
+            checking = aiKeyChecking,
+            error = aiKeyError,
+            onSave = { key ->
+                scope.launch {
+                    aiKeyChecking = true
+                    aiKeyError = null
+                    try {
+                        repository.checkAiKey(key)
+                        repository.aiKeys.apiKey = key
+                        aiKeySet = true
+                        showAiKeyDialog = false
+                        android.widget.Toast.makeText(context, "密钥可用，已保存", android.widget.Toast.LENGTH_SHORT).show()
+                    } catch (exception: ApiException) {
+                        aiKeyError = exception.message
+                    } catch (_: Exception) {
+                        aiKeyError = "验证失败，请检查网络后重试"
+                    } finally {
+                        aiKeyChecking = false
+                    }
+                }
+            },
+            onClear = {
+                repository.aiKeys.apiKey = null
+                aiKeySet = false
+                showAiKeyDialog = false
+            },
+            onDismiss = { showAiKeyDialog = false },
+        )
+    }
 
     sharedContent?.let { content ->
         // Content from the system share sheet. Waits behind the login screen when

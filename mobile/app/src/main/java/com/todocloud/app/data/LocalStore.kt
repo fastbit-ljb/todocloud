@@ -27,6 +27,7 @@ internal class LocalStore private constructor(context: Context) {
     private var loaded = false
     private var tasks = mutableListOf<TaskItem>()
     private var ideas = mutableListOf<InboxIdea>()
+    private var plans = mutableListOf<JSONObject>()
     private var nextId = 1
 
     suspend fun listTasks(): List<TaskItem> = read { tasks.toList() }
@@ -123,7 +124,166 @@ internal class LocalStore private constructor(context: Context) {
     suspend fun clear() = write {
         tasks.clear()
         ideas.clear()
+        plans.clear()
     }
+
+    // ---- AI plans (mirrors server/app/api/plans.py) ----
+
+    /** Ideas and open tasks in the shape the planning prompt expects. */
+    suspend fun planningSources(ideaIds: Collection<Int>?): Pair<List<JSONObject>, List<JSONObject>> = read {
+        val chosen = if (ideaIds == null) ideas else ideas.filter { it.id in ideaIds }
+        chosen.map(::encodeIdea) to tasks.filter { !it.completed }.map { task ->
+            JSONObject()
+                .put("id", task.id)
+                .put("title", task.title)
+                .put("description", task.description.orNull())
+                .put("start_at", task.startAt.orNull())
+                .put("due_at", task.dueAt.orNull())
+                .put("duration_minutes", task.durationMinutes.orNull())
+                .put("steps", JSONArray().apply {
+                    task.steps.forEach { put(JSONObject().put("title", it.title).put("completed", it.completed)) }
+                })
+                .put("recurrence", task.recurrence.orNull())
+        }
+    }
+
+    suspend fun listPlans(): List<AiPlan> = read { plans.takeLast(10).reversed().map(::decodePlan) }
+
+    suspend fun createPlan(proposal: JSONObject, messages: List<PlanMessage>): AiPlan = write {
+        val plan = JSONObject()
+            .put("id", nextId++)
+            .put("status", "draft")
+            .put("proposal", proposal)
+            .put("messages", encodeMessages(messages))
+        plans.add(plan)
+        decodePlan(plan)
+    }
+
+    /** The draft's current proposal and conversation, for a revision turn. */
+    suspend fun draftForRevision(planId: Int): Pair<JSONObject, List<PlanMessage>> = read {
+        val plan = findPlan(planId)
+        if (plan.optString("status") != "draft") throw ApiException("已采用的计划不能继续修改", 409)
+        JSONObject(plan.getJSONObject("proposal").toString()) to decodeMessages(plan.optJSONArray("messages"))
+    }
+
+    /** Stores a revision turn: a new proposal (or null = question answered, plan unchanged). */
+    suspend fun saveRevision(planId: Int, proposal: JSONObject?, messages: List<PlanMessage>): AiPlan = write {
+        val plan = findPlan(planId)
+        if (proposal != null) plan.put("proposal", proposal)
+        plan.put("messages", encodeMessages(messages))
+        decodePlan(plan)
+    }
+
+    suspend fun acceptPlan(planId: Int, chosen: List<PlanItem>?): PlanAcceptResult = write {
+        val plan = findPlan(planId)
+        if (plan.optString("status") != "draft") throw ApiException("这份计划已经采用", 409)
+        val proposal = plan.getJSONObject("proposal")
+        val proposed = decodeItems(proposal.optJSONArray("items"))
+        val selected = if (chosen == null) proposed else {
+            val keys = proposed.map { it.sourceType to it.sourceId }.toSet()
+            if (chosen.any { (it.sourceType to it.sourceId) !in keys }) throw ApiException("包含不属于这份计划的安排", 422)
+            if (chosen.isEmpty()) throw ApiException("请至少选择一项安排", 400)
+            chosen
+        }
+        val createdIds = JSONArray()
+        val convertedIdeas = JSONArray()
+        val snapshots = JSONArray()
+        val changed = mutableListOf<TaskItem>()
+        for (item in selected) {
+            val rule = item.recurrence?.takeIf { it in RECURRENCE_RULES && item.dueAt != null }
+            val steps = item.steps.map { TaskStep(it.title) }
+            when (item.sourceType) {
+                "task" -> {
+                    val task = tasks.firstOrNull { it.id == item.sourceId && !it.completed } ?: continue
+                    snapshots.put(encodeTask(task))
+                    val updated = task.copy(
+                        startAt = item.startAt,
+                        dueAt = item.dueAt,
+                        durationMinutes = item.durationMinutes,
+                        reminderOffsetMinutes = item.reminderOffsetMinutes ?: task.reminderOffsetMinutes,
+                        steps = steps.ifEmpty { task.steps },
+                        recurrence = rule ?: task.recurrence.takeIf { item.dueAt != null },
+                    )
+                    changed += replace(updated)
+                }
+                "prompt" -> {
+                    val created = TaskItem(
+                        id = nextId++, title = item.title, description = item.description,
+                        dueAt = item.dueAt, reminderOffsetMinutes = item.reminderOffsetMinutes,
+                        completed = false, completedAt = null, steps = steps,
+                        startAt = item.startAt, durationMinutes = item.durationMinutes, recurrence = rule,
+                    )
+                    tasks.add(created)
+                    createdIds.put(created.id)
+                    changed += created
+                }
+                else -> {
+                    val idea = ideas.firstOrNull { it.id == item.sourceId } ?: continue
+                    ideas.remove(idea)
+                    convertedIdeas.put(encodeIdea(idea))
+                    val created = TaskItem(
+                        id = nextId++, title = item.title,
+                        description = item.description ?: idea.content.takeIf { it != item.title },
+                        dueAt = item.dueAt, reminderOffsetMinutes = item.reminderOffsetMinutes,
+                        completed = false, completedAt = null,
+                        steps = steps.ifEmpty { idea.items.map { TaskStep(it.content) } },
+                        startAt = item.startAt, durationMinutes = item.durationMinutes ?: idea.durationMinutes,
+                        recurrence = rule,
+                    )
+                    tasks.add(created)
+                    createdIds.put(created.id)
+                    changed += created
+                }
+            }
+        }
+        plan.put("proposal", JSONObject()
+            .put("summary", proposal.optString("summary"))
+            .put("items", JSONArray().apply { selected.forEach { put(encodePlanItem(it)) } }))
+        plan.put("accept_record", JSONObject()
+            .put("created_task_ids", createdIds)
+            .put("converted_ideas", convertedIdeas)
+            .put("task_snapshots", snapshots)
+            .put("original_items", proposal.optJSONArray("items") ?: JSONArray()))
+        plan.put("status", "accepted")
+        plan.put("accepted_at", System.currentTimeMillis())
+        PlanAcceptResult(decodePlan(plan), changed)
+    }
+
+    suspend fun undoPlan(planId: Int): PlanUndoResult = write {
+        val plan = findPlan(planId)
+        val record = plan.optJSONObject("accept_record")
+        if (plan.optString("status") != "accepted" || record == null) throw ApiException("这份计划不能撤回", 409)
+        if (System.currentTimeMillis() - plan.optLong("accepted_at") > UNDO_WINDOW_MILLIS) {
+            throw ApiException("采用超过 24 小时的计划不能撤回", 409)
+        }
+        val createdIds = record.optJSONArray("created_task_ids")?.let { a -> (0 until a.length()).map(a::getInt) }.orEmpty()
+        val deleted = tasks.filter { it.id in createdIds }.map { it.id }
+        tasks.removeAll { it.id in createdIds }
+        record.optJSONArray("converted_ideas")?.mapObjects(::decodeIdea)?.forEach { idea ->
+            if (ideas.none { it.id == idea.id }) ideas.add(0, idea)
+        }
+        val restored = mutableListOf<TaskItem>()
+        record.optJSONArray("task_snapshots")?.mapObjects(::decodeTask)?.forEach { before ->
+            val current = tasks.firstOrNull { it.id == before.id } ?: return@forEach
+            restored += replace(
+                current.copy(
+                    startAt = before.startAt, dueAt = before.dueAt, durationMinutes = before.durationMinutes,
+                    reminderOffsetMinutes = before.reminderOffsetMinutes, steps = before.steps,
+                    recurrence = before.recurrence,
+                ),
+            )
+        }
+        plan.put("proposal", JSONObject()
+            .put("summary", plan.getJSONObject("proposal").optString("summary"))
+            .put("items", record.optJSONArray("original_items") ?: JSONArray()))
+        plan.remove("accept_record")
+        plan.remove("accepted_at")
+        plan.put("status", "draft")
+        PlanUndoResult(decodePlan(plan), deleted, restored)
+    }
+
+    private fun findPlan(id: Int): JSONObject =
+        plans.firstOrNull { it.optInt("id") == id } ?: throw ApiException("计划不存在", 404)
 
     // Same completion rules as the server: finishing a recurring task creates the next
     // occurrence (steps reset) and the rule moves to it, so re-checking never duplicates.
@@ -181,10 +341,11 @@ internal class LocalStore private constructor(context: Context) {
                 val json = JSONObject(raw)
                 tasks = json.getJSONArray("tasks").mapObjects(::decodeTask).toMutableList()
                 ideas = json.getJSONArray("ideas").mapObjects(::decodeIdea).toMutableList()
+                plans = json.optJSONArray("plans")?.mapObjects { it }?.toMutableList() ?: mutableListOf()
                 nextId = json.optInt("next_id", 1)
             }
         }
-        val maxId = (tasks.map { it.id } + ideas.map { it.id }).maxOrNull() ?: 0
+        val maxId = (tasks.map { it.id } + ideas.map { it.id } + plans.map { it.optInt("id") }).maxOrNull() ?: 0
         nextId = maxOf(nextId, maxId + 1)
         loaded = true
     }
@@ -195,12 +356,14 @@ internal class LocalStore private constructor(context: Context) {
             .put("next_id", nextId)
             .put("tasks", JSONArray().apply { tasks.forEach { put(encodeTask(it)) } })
             .put("ideas", JSONArray().apply { ideas.forEach { put(encodeIdea(it)) } })
+            .put("plans", JSONArray().apply { plans.takeLast(20).forEach { put(it) } })
         storage.put(KEY_DATA, json.toString())
     }
 
     companion object {
         private const val PREFERENCES_NAME = "todocloud_local_data"
         private const val KEY_DATA = "data"
+        private const val UNDO_WINDOW_MILLIS = 24L * 60 * 60 * 1000
 
         @Volatile private var instance: LocalStore? = null
 
@@ -267,3 +430,51 @@ private fun decodeIdea(json: JSONObject) = InboxIdea(
     dueAt = json.optText("due_at"),
     items = json.optJSONArray("items")?.mapObjects { IdeaDetail(it.optString("content")) }.orEmpty(),
 )
+
+private fun encodePlanItem(item: PlanItem): JSONObject = JSONObject()
+    .put("source_type", item.sourceType)
+    .put("source_id", item.sourceId)
+    .put("title", item.title)
+    .put("description", item.description.orNull())
+    .put("start_at", item.startAt.orNull())
+    .put("due_at", item.dueAt.orNull())
+    .put("duration_minutes", item.durationMinutes.orNull())
+    .put("reminder_offset_minutes", item.reminderOffsetMinutes.orNull())
+    .put("steps", JSONArray().apply { item.steps.forEach { put(JSONObject().put("title", it.title)) } })
+    .put("note", item.note)
+    .put("recurrence", item.recurrence.orNull())
+
+private fun decodeItems(array: JSONArray?): List<PlanItem> = array?.mapObjects { item ->
+    PlanItem(
+        sourceType = item.getString("source_type"),
+        sourceId = item.getInt("source_id"),
+        title = item.getString("title"),
+        description = item.optText("description"),
+        startAt = item.optText("start_at"),
+        dueAt = item.optText("due_at"),
+        durationMinutes = item.optIntOrNull("duration_minutes"),
+        reminderOffsetMinutes = item.optIntOrNull("reminder_offset_minutes"),
+        steps = item.optJSONArray("steps")?.mapObjects { PlanStep(it.optString("title")) }.orEmpty(),
+        note = item.optString("note"),
+        recurrence = item.optText("recurrence"),
+    )
+}.orEmpty()
+
+private fun encodeMessages(messages: List<PlanMessage>): JSONArray = JSONArray().apply {
+    messages.forEach { put(JSONObject().put("role", it.role).put("content", it.content)) }
+}
+
+private fun decodeMessages(array: JSONArray?): List<PlanMessage> =
+    array?.mapObjects { PlanMessage(it.optString("role"), it.optString("content")) }.orEmpty()
+
+private fun decodePlan(json: JSONObject): AiPlan {
+    val proposal = json.optJSONObject("proposal") ?: JSONObject()
+    return AiPlan(
+        id = json.getInt("id"),
+        status = json.optString("status", "draft"),
+        title = "我的 AI 计划",
+        summary = proposal.optString("summary"),
+        items = decodeItems(proposal.optJSONArray("items")),
+        messages = decodeMessages(json.optJSONArray("messages")),
+    )
+}

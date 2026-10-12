@@ -199,7 +199,7 @@ internal fun LoginScreen(
                 Text("先不登录，在本机使用")
             }
             Text(
-                "数据只加密保存在这台手机上，不会上传。AI 功能需要登录。",
+                "数据只加密保存在这台手机上，不会上传。AI 功能可以在设置里填写自己的 API 密钥后使用。",
                 modifier = Modifier.padding(top = 8.dp, start = 8.dp, end = 8.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall,
