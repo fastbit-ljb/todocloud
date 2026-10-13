@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Pets
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -74,6 +75,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.todocloud.app.BuildConfig
 import com.todocloud.app.R
+import com.todocloud.app.branding.MascotSet
+import com.todocloud.app.branding.MascotState
 import com.todocloud.app.data.Session
 import com.todocloud.app.data.isLocal
 import com.todocloud.app.notification.ReminderScheduler.ReminderMode
@@ -89,6 +92,9 @@ internal fun SettingsHomeScreen(
     onReminderModeChange: (ReminderMode) -> Unit,
     onOpenPermissions: () -> Unit,
     onOpenSponsor: () -> Unit,
+    mascot: MascotSet,
+    mascotState: MascotState,
+    onOpenMascot: () -> Unit,
     updateAvailableVersion: String?,
     checkingUpdate: Boolean,
     onCheckUpdate: () -> Unit,
@@ -112,19 +118,7 @@ internal fun SettingsHomeScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                androidx.compose.foundation.layout.Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        if (local) "本" else session.email.take(1).uppercase(),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
+                MascotAvatar(mascot, mascotState)
                 Column(
                     modifier = Modifier.weight(1f).padding(horizontal = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -229,6 +223,13 @@ internal fun SettingsHomeScreen(
         }
 
         SettingsGroup(title = "更多") {
+            SettingsRow(
+                icon = Icons.Outlined.Pets,
+                title = "吉祥物",
+                description = "${mascot.label} · 桌面图标跟着任务状态换表情",
+                onClick = onOpenMascot,
+            )
+            SettingsDivider()
             SettingsRow(
                 icon = Icons.Outlined.Settings,
                 title = "权限",
