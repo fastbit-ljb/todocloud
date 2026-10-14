@@ -11,7 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -42,6 +46,24 @@ import androidx.compose.foundation.layout.widthIn
 import com.todocloud.app.data.TaskItem
 import java.time.LocalDate
 import java.time.YearMonth
+
+/** Flame shown on a past calendar day that had tasks due. */
+internal enum class PastDayFlame { ALL_DONE, UNFINISHED }
+
+/**
+ * Days before [today] with tasks due get a flame: red when every task was
+ * completed, ice blue while any is still open. Today, future days and days
+ * without tasks get none.
+ */
+internal fun pastDayFlame(date: LocalDate, today: LocalDate, dayTasks: List<TaskItem>): PastDayFlame? {
+    if (!date.isBefore(today) || dayTasks.isEmpty()) return null
+    return if (dayTasks.all { it.completed }) PastDayFlame.ALL_DONE else PastDayFlame.UNFINISHED
+}
+
+// Fixed colours: the user asked for a red and an ice-blue flame, so they do not
+// follow the system theme colour (same reasoning as the fixed error red).
+private val FlameRed = Color(0xFFF0473A)
+private val FlameIceBlue = Color(0xFF38B6F0)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -101,7 +123,8 @@ internal fun CalendarScreen(
                 TextButton(onClick = { moveMonth(1) }) { Text("›") }
             }
             Text(
-                "颜色越深表示当天未完成任务越多，格子下方数字是未完成任务数；今天有未完成任务时使用红色。",
+                "颜色越深表示当天未完成任务越多，格子下方数字是未完成任务数；今天有未完成任务时使用红色。" +
+                    "过去的日子：红色火焰表示当天任务全部完成，冰蓝色火焰表示还有没完成的。",
                 modifier = Modifier.padding(top = 4.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -131,7 +154,9 @@ internal fun CalendarScreen(
                                 val date = visibleMonth.atDay(day)
                                 val selected = date == selectedDate
                                 val taskCount = pendingTaskCountsByDate[date] ?: 0
-                                val isToday = date == LocalDate.now()
+                                val today = LocalDate.now()
+                                val isToday = date == today
+                                val flame = pastDayFlame(date, today, tasksByDate[date].orEmpty())
                                 val taskColorFraction = (0.22f + (taskCount - 1).coerceAtLeast(0) * 0.12f)
                                     .coerceAtMost(0.62f)
                                 val dayColor = if (taskCount == 0) {
@@ -164,7 +189,18 @@ internal fun CalendarScreen(
                                             color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
                                             else MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
-                                        if (taskCount > 0) {
+                                        if (flame != null) {
+                                            Icon(
+                                                Icons.Rounded.LocalFireDepartment,
+                                                contentDescription = if (flame == PastDayFlame.ALL_DONE) {
+                                                    "当天任务全部完成"
+                                                } else {
+                                                    "当天还有 $taskCount 件未完成"
+                                                },
+                                                tint = if (flame == PastDayFlame.ALL_DONE) FlameRed else FlameIceBlue,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        } else if (taskCount > 0) {
                                             Box(
                                                 modifier = Modifier
                                                     .widthIn(min = 22.dp)
