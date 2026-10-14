@@ -115,8 +115,92 @@ object MascotSets {
         aliasPrefix = "mooncat.",
     )
 
+    val SILVER_GUARD = MascotSet(
+        id = "silverguard",
+        label = "银辉守卫",
+        pictures = StateResources(
+            daily = R.drawable.mascot_silverguard_daily,
+            dueSoon = R.drawable.mascot_silverguard_due_soon,
+            overdue = R.drawable.mascot_silverguard_overdue,
+            inProgress = R.drawable.mascot_silverguard_progress,
+            complete = R.drawable.mascot_silverguard_complete,
+            noTasks = R.drawable.mascot_silverguard_no_tasks,
+            halfFrozen = R.drawable.mascot_silverguard_half_frozen,
+            frozen = R.drawable.mascot_silverguard_frozen,
+        ),
+        launcherIcons = StateResources(
+            daily = R.mipmap.ic_launcher_silverguard_daily,
+            dueSoon = R.mipmap.ic_launcher_silverguard_due_soon,
+            overdue = R.mipmap.ic_launcher_silverguard_overdue,
+            inProgress = R.mipmap.ic_launcher_silverguard_progress,
+            complete = R.mipmap.ic_launcher_silverguard_complete,
+            noTasks = R.mipmap.ic_launcher_silverguard_no_tasks,
+            halfFrozen = R.mipmap.ic_launcher_silverguard_half_frozen,
+            frozen = R.mipmap.ic_launcher_silverguard_frozen,
+        ),
+        aliasPrefix = "silverguard.",
+    )
+
+    val BLONDE_ACADEMY = MascotSet(
+        id = "blondeacademy",
+        label = "金辉学姬",
+        pictures = StateResources(
+            daily = R.drawable.mascot_blondeacademy_daily,
+            dueSoon = R.drawable.mascot_blondeacademy_due_soon,
+            overdue = R.drawable.mascot_blondeacademy_overdue,
+            inProgress = R.drawable.mascot_blondeacademy_progress,
+            complete = R.drawable.mascot_blondeacademy_complete,
+            noTasks = R.drawable.mascot_blondeacademy_no_tasks,
+            halfFrozen = R.drawable.mascot_blondeacademy_half_frozen,
+            frozen = R.drawable.mascot_blondeacademy_frozen,
+        ),
+        launcherIcons = StateResources(
+            daily = R.mipmap.ic_launcher_blondeacademy_daily,
+            dueSoon = R.mipmap.ic_launcher_blondeacademy_due_soon,
+            overdue = R.mipmap.ic_launcher_blondeacademy_overdue,
+            inProgress = R.mipmap.ic_launcher_blondeacademy_progress,
+            complete = R.mipmap.ic_launcher_blondeacademy_complete,
+            noTasks = R.mipmap.ic_launcher_blondeacademy_no_tasks,
+            halfFrozen = R.mipmap.ic_launcher_blondeacademy_half_frozen,
+            frozen = R.mipmap.ic_launcher_blondeacademy_frozen,
+        ),
+        aliasPrefix = "blondeacademy.",
+    )
+
+    val BLUE_WITCH = MascotSet(
+        id = "bluewitch",
+        label = "蓝晶魔女",
+        pictures = StateResources(
+            daily = R.drawable.mascot_bluewitch_daily,
+            dueSoon = R.drawable.mascot_bluewitch_due_soon,
+            overdue = R.drawable.mascot_bluewitch_overdue,
+            inProgress = R.drawable.mascot_bluewitch_progress,
+            complete = R.drawable.mascot_bluewitch_complete,
+            noTasks = R.drawable.mascot_bluewitch_no_tasks,
+            halfFrozen = R.drawable.mascot_bluewitch_half_frozen,
+            frozen = R.drawable.mascot_bluewitch_frozen,
+        ),
+        launcherIcons = StateResources(
+            daily = R.mipmap.ic_launcher_bluewitch_daily,
+            dueSoon = R.mipmap.ic_launcher_bluewitch_due_soon,
+            overdue = R.mipmap.ic_launcher_bluewitch_overdue,
+            inProgress = R.mipmap.ic_launcher_bluewitch_progress,
+            complete = R.mipmap.ic_launcher_bluewitch_complete,
+            noTasks = R.mipmap.ic_launcher_bluewitch_no_tasks,
+            halfFrozen = R.mipmap.ic_launcher_bluewitch_half_frozen,
+            frozen = R.mipmap.ic_launcher_bluewitch_frozen,
+        ),
+        aliasPrefix = "bluewitch.",
+    )
+
     /** In the order the settings page lists them. */
-    val all: List<MascotSet> = listOf(CLASSIC, MOON_CAT)
+    val all: List<MascotSet> = listOf(
+        CLASSIC,
+        MOON_CAT,
+        SILVER_GUARD,
+        BLONDE_ACADEMY,
+        BLUE_WITCH,
+    )
 
     /** Used by fresh installs and by upgrades from versions without mascot sets. */
     val DEFAULT: MascotSet = CLASSIC
