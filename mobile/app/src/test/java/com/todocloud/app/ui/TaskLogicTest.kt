@@ -5,9 +5,11 @@ import com.todocloud.app.data.AiTaskStep
 import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TaskStep
 import java.time.Instant
+import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.Test
 
@@ -66,6 +68,23 @@ class TaskLogicTest {
         val open = task(3)
         assertEquals(listOf(1, 3), visibleHomeTasks(listOf(recent, old, open)).map { it.id })
         assertEquals(listOf(1, 2, 3), visibleCalendarTasks(listOf(recent, old, open)).map { it.id })
+    }
+
+    @Test
+    fun pastDayFlame_redWhenAllDoneBlueWhenUnfinished() {
+        val today = LocalDate.of(2026, 10, 14)
+        val yesterday = today.minusDays(1)
+        val done = task(1, completed = true, completedAt = "2026-10-13T09:00:00Z")
+        val open = task(2)
+
+        assertEquals(PastDayFlame.ALL_DONE, pastDayFlame(yesterday, today, listOf(done)))
+        assertEquals(PastDayFlame.UNFINISHED, pastDayFlame(yesterday, today, listOf(done, open)))
+        assertEquals(PastDayFlame.UNFINISHED, pastDayFlame(today.minusDays(30), today, listOf(open)))
+        // No flame on a past day without tasks, on today or on a future day.
+        assertNull(pastDayFlame(yesterday, today, emptyList()))
+        assertNull(pastDayFlame(today, today, listOf(done)))
+        assertNull(pastDayFlame(today, today, listOf(open)))
+        assertNull(pastDayFlame(today.plusDays(1), today, listOf(open)))
     }
 
     @Test
