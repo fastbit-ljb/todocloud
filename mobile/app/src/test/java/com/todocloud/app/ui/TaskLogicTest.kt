@@ -148,6 +148,12 @@ class TaskLogicTest {
         }
         // Capped: five and more look the same.
         assertEquals(pastDayFlameColor(PastDayFlame.ALL_DONE, 5), pastDayFlameColor(PastDayFlame.ALL_DONE, 9))
+        // The streak counter is grey with no streak and red from the first day on.
+        assertEquals(FlameUnlitGrey, flameStreakColor(0))
+        assertEquals(FlameRed, flameStreakColor(1))
+        assertEquals(FlameRed, flameStreakColor(30))
+        val grey = flameStreakColor(0)
+        assertTrue(maxOf(grey.red, grey.green, grey.blue) - minOf(grey.red, grey.green, grey.blue) < 0.05f, "grey has no hue")
     }
 
     @Test

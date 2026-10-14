@@ -2,6 +2,7 @@ package com.todocloud.app.ui
 
 import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -69,6 +70,9 @@ internal val FlameIcon: ImageVector by lazy {
 // Fixed colours: the user asked for red and ice-blue flames, so they do not
 // follow the system theme colour (same reasoning as the fixed error red).
 internal val FlameRed = Color(0xFFF0473A)
+// The streak counter at 0: no streak yet, so the flame is unlit. Dark enough for the
+// white "0" to stay readable, light enough to show on a dark top bar.
+internal val FlameUnlitGrey = Color(0xFF868B90)
 private val FlameRedLight = Color(0xFFFF8A7A)
 private val FlameRedDeep = Color(0xFFB3140C)
 private val FlameBlueLight = Color(0xFF7FD3F7)
@@ -108,8 +112,12 @@ internal fun flameStreak(tasks: List<TaskItem>, today: LocalDate): Int {
     return streak
 }
 
+/** Counter colour: grey while there is no streak, the fixed red from 1 up. */
+internal fun flameStreakColor(count: Int): Color = if (count > 0) FlameRed else FlameUnlitGrey
+
 /**
- * The streak counter: the flame in its fixed red with the count inside. When
+ * The streak counter: the flame with the count inside, red from 1 up and grey
+ * at 0. When
  * the count changes it plays a short animation -- a bounce and a rising "+1"
  * when it goes up, a shake and a falling "-1" when it goes down. [lastShown]
  * is held by the caller so a change made while the counter was off screen
@@ -135,6 +143,13 @@ internal fun FlameStreakBadge(
     val shake = remember { Animatable(0f) }
     val burst = remember { Animatable(1f) } // 0 -> 1 while the +1 / -1 label plays
     var burstDelta by remember { mutableIntStateOf(0) }
+    // Fades between grey and red as the streak starts or ends, alongside the bounce/shake.
+    val tint by animateColorAsState(
+        targetValue = flameStreakColor(count),
+        // Snapped, not faded, for the first count after loading (see lastShown below).
+        animationSpec = tween(durationMillis = if (motionOff || lastShown.value == null) 0 else 300),
+        label = "flameStreakTint",
+    )
 
     LaunchedEffect(count, animateChanges) {
         // A restarted effect must not leave a half-played animation behind.
@@ -182,7 +197,7 @@ internal fun FlameStreakBadge(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(FlameIcon, contentDescription = null, tint = FlameRed, modifier = Modifier.size(size))
+            Icon(FlameIcon, contentDescription = null, tint = tint, modifier = Modifier.size(size))
             AnimatedContent(
                 targetState = count,
                 transitionSpec = {
