@@ -1,5 +1,6 @@
 package com.todocloud.app.ui
 
+import androidx.compose.ui.graphics.luminance
 import com.todocloud.app.data.AiTaskCandidate
 import com.todocloud.app.data.AiTaskStep
 import com.todocloud.app.data.TaskItem
@@ -85,6 +86,74 @@ class TaskLogicTest {
         assertNull(pastDayFlame(today, today, listOf(done)))
         assertNull(pastDayFlame(today, today, listOf(open)))
         assertNull(pastDayFlame(today.plusDays(1), today, listOf(open)))
+    }
+
+    @Test
+    fun flameStreak_countsConsecutiveFullyDoneDaysAndTodayOnlyOnceItIsDone() {
+        val today = LocalDate.of(2026, 10, 14)
+        val now = Instant.now().toString()
+        var nextId = 0
+        fun due(daysAgo: Long, done: Boolean) = task(
+            ++nextId,
+            dueAt = "${today.minusDays(daysAgo)}T12:00:00Z",
+            completed = done,
+            completedAt = if (done) now else null,
+        )
+
+        // 3 days ago broke the streak; 2 days ago and yesterday were fully done; 4 days ago
+        // had no tasks; the day before that does not count past the break.
+        val history = listOf(
+            due(5, done = true),
+            due(3, done = false),
+            due(2, done = true), due(2, done = true),
+            due(1, done = true),
+        )
+        assertEquals(2, flameStreak(history, today))
+        assertEquals(0, flameStreak(emptyList(), today))
+
+        // All of today's tasks done: +1.
+        val todayDone = history + due(0, done = true)
+        assertEquals(3, flameStreak(todayDone, today))
+        // A new task due today: back to -1, but the earlier streak is not broken.
+        val todayReopened = todayDone + due(0, done = false)
+        assertEquals(2, flameStreak(todayReopened, today))
+        // Finishing it brings the +1 back.
+        val todayFinished = todayDone + due(0, done = true)
+        assertEquals(3, flameStreak(todayFinished, today))
+
+        // A day without tasks is skipped, not a break; future and undated tasks are ignored.
+        val withGapAndNoise = listOf(due(3, done = true), due(1, done = true)) +
+            due(-1, done = false) + task(++nextId)
+        assertEquals(2, flameStreak(withGapAndNoise, today))
+        // An open task on an earlier day ends the streak even when yesterday had none.
+        assertEquals(0, flameStreak(listOf(due(2, done = false)), today))
+    }
+
+    @Test
+    fun pastDayFlameColor_deepensWithTheTaskCount() {
+        fun redLuminance(count: Int) = pastDayFlameColor(PastDayFlame.ALL_DONE, count).luminance()
+        fun blueLuminance(count: Int) = pastDayFlameColor(PastDayFlame.UNFINISHED, count).luminance()
+
+        assertEquals(0f, flameDepth(1))
+        assertEquals(1f, flameDepth(5))
+        assertEquals(1f, flameDepth(12))
+        assertEquals(0f, flameDepth(0))
+        for (count in 1 until 5) {
+            assertTrue(redLuminance(count + 1) < redLuminance(count), "red deepens at $count")
+            assertTrue(blueLuminance(count + 1) < blueLuminance(count), "blue deepens at $count")
+            val red = pastDayFlameColor(PastDayFlame.ALL_DONE, count)
+            val blue = pastDayFlameColor(PastDayFlame.UNFINISHED, count)
+            assertTrue(red.red > red.blue, "still red at $count")
+            assertTrue(blue.blue > blue.red, "still blue at $count")
+        }
+        // Capped: five and more look the same.
+        assertEquals(pastDayFlameColor(PastDayFlame.ALL_DONE, 5), pastDayFlameColor(PastDayFlame.ALL_DONE, 9))
+        // The streak counter is grey with no streak and red from the first day on.
+        assertEquals(FlameUnlitGrey, flameStreakColor(0))
+        assertEquals(FlameRed, flameStreakColor(1))
+        assertEquals(FlameRed, flameStreakColor(30))
+        val grey = flameStreakColor(0)
+        assertTrue(maxOf(grey.red, grey.green, grey.blue) - minOf(grey.red, grey.green, grey.blue) < 0.05f, "grey has no hue")
     }
 
     @Test

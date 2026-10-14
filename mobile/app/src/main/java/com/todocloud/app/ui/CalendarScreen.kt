@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -53,17 +51,12 @@ internal enum class PastDayFlame { ALL_DONE, UNFINISHED }
 /**
  * Days before [today] with tasks due get a flame: red when every task was
  * completed, ice blue while any is still open. Today, future days and days
- * without tasks get none.
+ * without tasks get none. Colours: [pastDayFlameColor].
  */
 internal fun pastDayFlame(date: LocalDate, today: LocalDate, dayTasks: List<TaskItem>): PastDayFlame? {
     if (!date.isBefore(today) || dayTasks.isEmpty()) return null
     return if (dayTasks.all { it.completed }) PastDayFlame.ALL_DONE else PastDayFlame.UNFINISHED
 }
-
-// Fixed colours: the user asked for a red and an ice-blue flame, so they do not
-// follow the system theme colour (same reasoning as the fixed error red).
-private val FlameRed = Color(0xFFF0473A)
-private val FlameIceBlue = Color(0xFF38B6F0)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -124,7 +117,8 @@ internal fun CalendarScreen(
             }
             Text(
                 "颜色越深表示当天未完成任务越多，格子下方数字是未完成任务数；今天有未完成任务时使用红色。" +
-                    "过去的日子：红色火焰表示当天任务全部完成，冰蓝色火焰表示还有没完成的。",
+                    "过去的日子：红色火焰表示当天任务全部完成，完成得越多红色越深；" +
+                    "冰蓝色火焰表示还有没完成的，没完成的越多蓝色越深。",
                 modifier = Modifier.padding(top = 4.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -190,14 +184,20 @@ internal fun CalendarScreen(
                                             else MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                         if (flame != null) {
+                                            // Completed count on a fully-done day, open count otherwise.
+                                            val flameCount = if (flame == PastDayFlame.ALL_DONE) {
+                                                tasksByDate[date].orEmpty().size
+                                            } else {
+                                                taskCount
+                                            }
                                             Icon(
-                                                Icons.Rounded.LocalFireDepartment,
+                                                FlameIcon,
                                                 contentDescription = if (flame == PastDayFlame.ALL_DONE) {
-                                                    "当天任务全部完成"
+                                                    "当天 $flameCount 件任务全部完成"
                                                 } else {
                                                     "当天还有 $taskCount 件未完成"
                                                 },
-                                                tint = if (flame == PastDayFlame.ALL_DONE) FlameRed else FlameIceBlue,
+                                                tint = pastDayFlameColor(flame, flameCount),
                                                 modifier = Modifier.size(16.dp),
                                             )
                                         } else if (taskCount > 0) {

@@ -124,6 +124,15 @@ fun TodoCloudApp(
     val mascotState = remember(context, tasksLoaded, tasks, selectedTab, settingsPage) {
         MascotStateManager.displayState(context, tasks, tasksLoaded)
     }
+    // Streak counter in the top bar; follows every task change the same way.
+    val flameStreakCount = remember(tasks, pendingDeleteIds, selectedTab) {
+        flameStreak(tasks.filter { it.id !in pendingDeleteIds }, java.time.LocalDate.now())
+    }
+    // Last count the counter showed, so its +1 / -1 animation also plays for a change made
+    // while it was off screen. Cleared on account switch: a different account's count is
+    // not a change.
+    val flameStreakShown = rememberSaveable { mutableStateOf<Int?>(null) }
+    LaunchedEffect(session?.token) { flameStreakShown.value = null }
 
     LaunchedEffect(requestedTab, requestedCalendarDate) {
         selectedTab = requestedTab.coerceIn(0, 3)
@@ -650,6 +659,22 @@ fun TodoCloudApp(
                     }
                 },
                 actions = {
+                    if (selectedTab == 0 || selectedTab == 1) {
+                        FlameStreakBadge(
+                            count = flameStreakCount,
+                            animateChanges = tasksLoaded,
+                            lastShown = flameStreakShown,
+                            // From the task page it opens the calendar, where the flames are.
+                            onClick = if (selectedTab == 0) {
+                                {
+                                    showAddMenu = false
+                                    selectedTab = 1
+                                }
+                            } else {
+                                null
+                            },
+                        )
+                    }
                     if (selectedTab == 0 && !searching) {
                         IconButton(onClick = {
                             showAddMenu = false
