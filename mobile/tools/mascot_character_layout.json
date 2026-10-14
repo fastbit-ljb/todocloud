@@ -1,0 +1,47 @@
+{
+  "canvas_size": 1254,
+  "subject_height": 1000,
+  "subject_center_x": 627,
+  "subject_bottom": 1150,
+  "sets": {
+    "silverguard": {
+      "source_folder": "silver-guard-8states-v2-unified-paper",
+      "subjects": {
+        "01_daily": [309, 223, 946, 1066],
+        "02_due_soon": [244, 120, 1048, 1171],
+        "03_overdue": [188, 47, 1074, 1206],
+        "04_progress": [251, 164, 1008, 1158],
+        "05_complete": [238, 164, 1017, 1158],
+        "06_no_tasks": [249, 125, 1026, 1142],
+        "07_half_frozen": [275, 178, 1007, 1115],
+        "08_frozen": [227, 146, 1041, 1146]
+      }
+    },
+    "blondeacademy": {
+      "source_folder": "blonde-academy-8states-v2-unified-paper",
+      "subjects": {
+        "01_daily": [201, 166, 1060, 1132],
+        "02_due_soon": [200, 166, 1061, 1133],
+        "03_overdue": [94, 48, 1156, 1221],
+        "04_progress": [120, 57, 1142, 1198],
+        "05_complete": [197, 166, 1062, 1132],
+        "06_no_tasks": [148, 115, 1108, 1183],
+        "07_half_frozen": [135, 92, 1123, 1185],
+        "08_frozen": [146, 106, 1117, 1169]
+      }
+    },
+    "bluewitch": {
+      "source_folder": "blue-witch-8states-v2-unified-paper",
+      "subjects": {
+        "01_daily": [182, 129, 1080, 1188],
+        "02_due_soon": [142, 86, 1123, 1207],
+        "03_overdue": [125, 27, 1148, 1216],
+        "04_progress": [181, 129, 1081, 1189],
+        "05_complete": [132, 82, 1127, 1227],
+        "06_no_tasks": [181, 123, 1082, 1189],
+        "07_half_frozen": [141, 80, 1123, 1221],
+        "08_frozen": [122, 21, 1144, 1230]
+      }
+    }
+  }
+}
