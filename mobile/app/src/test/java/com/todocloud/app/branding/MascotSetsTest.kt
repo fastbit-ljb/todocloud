@@ -17,7 +17,10 @@ class MascotSetsTest {
     @Test
     fun setIdsAreStable() {
         // Stored in preferences and part of resource and alias names.
-        assertEquals(listOf("classic", "mooncat"), MascotSets.all.map { it.id })
+        assertEquals(
+            listOf("classic", "mooncat", "silverguard", "blondeacademy", "bluewitch"),
+            MascotSets.all.map { it.id },
+        )
     }
 
     @Test
@@ -26,10 +29,13 @@ class MascotSetsTest {
         assertSame(MascotSets.CLASSIC, MascotSets.fromId(null))
         assertSame(MascotSets.CLASSIC, MascotSets.fromId("a-set-that-was-removed"))
         assertSame(MascotSets.MOON_CAT, MascotSets.fromId("mooncat"))
+        assertSame(MascotSets.SILVER_GUARD, MascotSets.fromId("silverguard"))
+        assertSame(MascotSets.BLONDE_ACADEMY, MascotSets.fromId("blondeacademy"))
+        assertSame(MascotSets.BLUE_WITCH, MascotSets.fromId("bluewitch"))
     }
 
     @Test
-    fun avatarAndLauncherIconShowTheSameArtworkForAllEightStatesOfBothSets() {
+    fun avatarAndLauncherIconShowTheSameArtworkForAllEightStatesOfEverySet() {
         // Artwork file stems, in the source folders' 01_daily … 08_frozen order.
         val keys = listOf("daily", "due_soon", "overdue", "progress", "complete", "no_tasks", "half_frozen", "frozen")
         assertEquals(keys, MascotSets.previewOrder.map { snakeCase(it.launcherAlias) })
@@ -63,7 +69,7 @@ class MascotSetsTest {
                 checked++
             }
         }
-        assertEquals(2 * 8, checked)
+        assertEquals(MascotSets.all.size * 8, checked)
     }
 
     @Test

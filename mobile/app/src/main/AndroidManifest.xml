@@ -248,6 +248,318 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverguard.Daily"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverguard_daily"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverguard_daily"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverguard.DueSoon"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverguard_due_soon"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverguard_due_soon"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverguard.Overdue"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverguard_overdue"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverguard_overdue"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverguard.Progress"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverguard_progress"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverguard_progress"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverguard.Complete"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverguard_complete"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverguard_complete"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverguard.NoTasks"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverguard_no_tasks"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverguard_no_tasks"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverguard.HalfFrozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverguard_half_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverguard_half_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverguard.Frozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverguard_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverguard_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.blondeacademy.Daily"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_blondeacademy_daily"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_blondeacademy_daily"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.blondeacademy.DueSoon"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_blondeacademy_due_soon"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_blondeacademy_due_soon"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.blondeacademy.Overdue"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_blondeacademy_overdue"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_blondeacademy_overdue"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.blondeacademy.Progress"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_blondeacademy_progress"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_blondeacademy_progress"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.blondeacademy.Complete"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_blondeacademy_complete"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_blondeacademy_complete"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.blondeacademy.NoTasks"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_blondeacademy_no_tasks"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_blondeacademy_no_tasks"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.blondeacademy.HalfFrozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_blondeacademy_half_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_blondeacademy_half_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.blondeacademy.Frozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_blondeacademy_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_blondeacademy_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.bluewitch.Daily"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_bluewitch_daily"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_bluewitch_daily"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.bluewitch.DueSoon"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_bluewitch_due_soon"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_bluewitch_due_soon"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.bluewitch.Overdue"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_bluewitch_overdue"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_bluewitch_overdue"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.bluewitch.Progress"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_bluewitch_progress"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_bluewitch_progress"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.bluewitch.Complete"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_bluewitch_complete"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_bluewitch_complete"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.bluewitch.NoTasks"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_bluewitch_no_tasks"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_bluewitch_no_tasks"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.bluewitch.HalfFrozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_bluewitch_half_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_bluewitch_half_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.bluewitch.Frozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_bluewitch_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_bluewitch_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name=".notification.AlarmActivity"
             android:excludeFromRecents="true"
