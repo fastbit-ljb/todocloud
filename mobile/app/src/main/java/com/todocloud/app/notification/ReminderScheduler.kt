@@ -14,6 +14,16 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.OffsetDateTime
 
+/**
+ * Temporary permission-audit delay. Every eligible task reminder is scheduled
+ * once, five seconds after the task is saved or rescheduled, regardless of the
+ * reminder offset selected in the editor. Keep this out of production releases.
+ */
+internal const val REMINDER_PERMISSION_TEST_DELAY_MILLIS = 5_000L
+
+internal fun permissionTestTriggerAtMillis(dueMillis: Long, nowMillis: Long): Long? =
+    if (dueMillis > nowMillis) nowMillis + REMINDER_PERMISSION_TEST_DELAY_MILLIS else null
+
 object ReminderScheduler {
     const val CHANNEL_ID = "task_reminders"
     const val ALARM_SERVICE_CHANNEL_ID = "alarm_service"
@@ -85,13 +95,14 @@ object ReminderScheduler {
         cancelAlarmOnly(context, task.id)
         context.getSystemService(NotificationManager::class.java).cancel(task.id)
         val dueAt = task.dueAt ?: return forgetStoredTask(context, task.id)
-        val offset = task.reminderOffsetMinutes ?: return forgetStoredTask(context, task.id)
+        if (task.reminderOffsetMinutes == null) return forgetStoredTask(context, task.id)
         if (task.completed) return forgetStoredTask(context, task.id)
 
         val dueMillis = runCatching { OffsetDateTime.parse(dueAt).toInstant().toEpochMilli() }.getOrNull()
             ?: return forgetStoredTask(context, task.id)
-        val requestedTrigger = dueMillis - offset * 60_000L
         val now = System.currentTimeMillis()
+        val triggerAt = permissionTestTriggerAtMillis(dueMillis, now)
+            ?: return forgetStoredTask(context, task.id)
         val mode = loadReminderMode(context)
         if (mode != ReminderMode.ALARM) {
             forgetStoredTask(context, task.id)
@@ -103,13 +114,6 @@ object ReminderScheduler {
             clearDismissedAlarm(context, task.id)
         }
 
-        // Keep the formal 1.0.0 notification behavior unchanged.
-        if (mode == ReminderMode.NOTIFICATION && requestedTrigger <= now) {
-            return forgetStoredTask(context, task.id)
-        }
-        if (dueMillis <= now) return forgetStoredTask(context, task.id)
-
-        val triggerAt = if (requestedTrigger <= now) now + 1_000L else requestedTrigger
         val pendingIntent = pendingIntent(context, task, mode)
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         try {
