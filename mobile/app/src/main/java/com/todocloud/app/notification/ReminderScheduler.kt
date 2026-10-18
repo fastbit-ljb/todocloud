@@ -1,6 +1,5 @@
 package com.todocloud.app.notification
 
-import android.Manifest
 import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.app.NotificationChannel
@@ -8,7 +7,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Process
 import com.todocloud.app.MainActivity
@@ -16,34 +14,35 @@ import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TaskStep
 import org.json.JSONArray
 import org.json.JSONObject
-import java.time.Instant
 import java.time.OffsetDateTime
-import java.time.ZoneOffset
 
-/**
- * Temporary permission-audit interval. Eligible task reminders start ten seconds
- * after scheduling and repeat while the task remains due in the future. The
- * editor's reminder offset is ignored. Keep this out of production releases.
- */
-internal const val REMINDER_PERMISSION_TEST_DELAY_MILLIS = 10_000L
-
-internal fun permissionTestTriggerAtMillis(dueMillis: Long, nowMillis: Long): Long? =
-    if (dueMillis > nowMillis) nowMillis + REMINDER_PERMISSION_TEST_DELAY_MILLIS else null
+/** Computes a one-shot reminder from the task's due time and selected offset. */
+internal fun reminderTriggerAtMillis(
+    dueMillis: Long,
+    offsetMinutes: Int,
+    nowMillis: Long,
+    mode: ReminderScheduler.ReminderMode,
+): Long? {
+    if (dueMillis <= nowMillis) return null
+    val requestedTrigger = dueMillis - offsetMinutes * 60_000L
+    if (mode == ReminderScheduler.ReminderMode.NOTIFICATION && requestedTrigger <= nowMillis) return null
+    return if (requestedTrigger <= nowMillis) nowMillis + 1_000L else requestedTrigger
+}
 
 object ReminderScheduler {
     const val CHANNEL_ID = "task_reminders"
-    // Use a fresh channel for this audit build. Android keeps an existing
-    // channel's lock-screen policy across app updates.
-    const val ALARM_SERVICE_CHANNEL_ID = "alarm_service_fullscreen_test"
+    // A new channel migrates the old lock-screen-hidden policy. Android keeps
+    // channel settings across app updates, so reusing "alarm_service" is unsafe.
+    const val ALARM_SERVICE_CHANNEL_ID = "alarm_service_v2"
     private const val CHANNEL_NAME = "任务提醒"
     private const val ALARM_SERVICE_CHANNEL_NAME = "闹钟运行中"
     private const val PREFERENCES_NAME = "reminder_settings"
     private const val REMINDER_MODE_KEY = "reminder_mode"
     private const val STORED_ALARM_IDS_KEY = "stored_alarm_ids"
     private const val STORED_ALARM_PREFIX = "stored_alarm_"
-    private const val PERMISSION_TEST_DURATION_MILLIS = 10 * 60 * 1000L
+    private const val DISMISSED_ALARM_PREFIX = "dismissed_alarm_"
     private const val OPSTR_SCHEDULE_EXACT_ALARM_COMPAT = "android:schedule_exact_alarm"
-    const val PERMISSION_TEST_TASK_ID = -1
+    private const val LEGACY_PERMISSION_TEST_TASK_ID = -1
 
     enum class ReminderMode {
         NOTIFICATION,
@@ -99,25 +98,6 @@ object ReminderScheduler {
             .edit()
             .putString(REMINDER_MODE_KEY, mode.name)
             .apply()
-        ensurePermissionTestRunning(context)
-    }
-
-    fun hasRequiredPermissions(context: Context, mode: ReminderMode): Boolean {
-        val notificationManager = context.getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) return false
-        if (!notificationManager.areNotificationsEnabled()) return false
-        if (mode != ReminderMode.ALARM) return true
-
-        if (!canScheduleExactAlarms(context)) return false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
-            !notificationManager.canUseFullScreenIntent()
-        ) {
-            return false
-        }
-        return true
     }
 
     fun canScheduleExactAlarms(context: Context): Boolean {
@@ -137,61 +117,31 @@ object ReminderScheduler {
         return mode == AppOpsManager.MODE_ALLOWED || mode == AppOpsManager.MODE_DEFAULT
     }
 
-    /** Run a local-only reminder audit for ten minutes, without creating a cloud task. */
-    fun ensurePermissionTestRunning(context: Context) {
-        val mode = loadReminderMode(context)
-        if (mode == ReminderMode.ALARM) createAlarmServiceChannel(context)
-        if (!hasRequiredPermissions(context, mode)) {
-            cancel(context, PERMISSION_TEST_TASK_ID)
-            return
-        }
-        val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-        val stored = runCatching {
-            JSONObject(prefs.getString(STORED_ALARM_PREFIX + PERMISSION_TEST_TASK_ID, null).orEmpty())
-        }.getOrNull()
-        val now = System.currentTimeMillis()
-        val existingDueAt = stored?.optString("dueAt")
-        val existingDueMillis = existingDueAt?.let {
-            runCatching { OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull()
-        }
-        val dueAt = if (existingDueMillis != null && existingDueMillis > now) {
-            existingDueAt
-        } else {
-            OffsetDateTime.ofInstant(
-                Instant.ofEpochMilli(now + PERMISSION_TEST_DURATION_MILLIS),
-                ZoneOffset.UTC,
-            ).toString()
-        }
-        schedule(
-            context,
-            TaskItem(
-                id = PERMISSION_TEST_TASK_ID,
-                title = "权限测试提醒（每 10 秒）",
-                description = "本机测试，不会创建云端任务；10 分钟后自动停止。",
-                dueAt = dueAt,
-                reminderOffsetMinutes = 0,
-                completed = false,
-                completedAt = null,
-            ),
-        )
-    }
-
     fun schedule(context: Context, task: TaskItem) {
+        if (task.id <= 0) return cancel(context, task.id)
         cancelAlarmOnly(context, task.id)
         context.getSystemService(NotificationManager::class.java).cancel(task.id)
         val dueAt = task.dueAt ?: return forgetStoredTask(context, task.id)
-        if (task.reminderOffsetMinutes == null) return forgetStoredTask(context, task.id)
+        val offset = task.reminderOffsetMinutes ?: return forgetStoredTask(context, task.id)
         if (task.completed) return forgetStoredTask(context, task.id)
 
         val dueMillis = runCatching { OffsetDateTime.parse(dueAt).toInstant().toEpochMilli() }.getOrNull()
             ?: return forgetStoredTask(context, task.id)
         val now = System.currentTimeMillis()
-        val triggerAt = permissionTestTriggerAtMillis(dueMillis, now)
-            ?: return forgetStoredTask(context, task.id)
         val mode = loadReminderMode(context)
+        if (mode != ReminderMode.ALARM) {
+            forgetStoredTask(context, task.id)
+        } else if (isAlarmDismissed(context, task)) {
+            // A one-shot alarm must not ring again just because the task list
+            // is reloaded after the user stops it.
+            return
+        } else {
+            clearDismissedAlarm(context, task.id)
+        }
+
+        val triggerAt = reminderTriggerAtMillis(dueMillis, offset, now, mode)
+            ?: return forgetStoredTask(context, task.id)
         val pendingIntent = pendingIntent(context, task, mode)
-        // Keep the payload locally so the receiver can schedule the next test
-        // reminder and reboot/time-change restoration can rebuild it.
         rememberTask(context, task, mode)
         scheduleAlarm(context, task.id, mode, triggerAt, pendingIntent)
     }
@@ -202,50 +152,10 @@ object ReminderScheduler {
         forgetStoredTask(context, taskId)
     }
 
-    /** Returns false when a canceled or expired reminder must not be shown. */
-    fun scheduleNextPermissionTestReminder(context: Context, deliveredIntent: Intent): Boolean {
-        val taskId = deliveredIntent.getIntExtra(ReminderReceiver.EXTRA_TASK_ID, 0)
-        if (taskId == 0) return false
-        val raw = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-            .getString(STORED_ALARM_PREFIX + taskId, null) ?: return false
-        val stored = runCatching { JSONObject(raw) }.getOrNull() ?: return false
-        val dueAt = stored.optString("dueAt")
-        val mode = if (stored.optString("mode") == ReminderMode.ALARM.name) {
-            ReminderMode.ALARM
-        } else {
-            ReminderMode.NOTIFICATION
-        }
-        if (!hasRequiredPermissions(context, mode)) {
-            forgetStoredTask(context, taskId)
-            return false
-        }
-        if (dueAt != deliveredIntent.getStringExtra(ReminderReceiver.EXTRA_DUE_AT) ||
-            stored.optInt("offset", Int.MIN_VALUE) !=
-            deliveredIntent.getIntExtra(ReminderReceiver.EXTRA_REMINDER_OFFSET, Int.MIN_VALUE) ||
-            (mode == ReminderMode.ALARM) !=
-            deliveredIntent.getBooleanExtra(ReminderReceiver.EXTRA_ALARM_MODE, false)
-        ) return false
-        val dueMillis = runCatching { OffsetDateTime.parse(dueAt).toInstant().toEpochMilli() }.getOrNull()
-            ?: run {
-                forgetStoredTask(context, taskId)
-                return false
-            }
-        val triggerAt = permissionTestTriggerAtMillis(dueMillis, System.currentTimeMillis())
-            ?: run {
-                forgetStoredTask(context, taskId)
-                return false
-            }
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            taskId,
-            deliveredIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        scheduleAlarm(context, taskId, mode, triggerAt, pendingIntent)
-        return true
-    }
-
     fun restoreScheduledTasks(context: Context) {
+        // Upgrade from permission-audit APKs without leaving their local-only
+        // repeating reminder or notification behind. Real user tasks are untouched.
+        cancel(context, LEGACY_PERMISSION_TEST_TASK_ID)
         val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
         val ids = prefs.getStringSet(STORED_ALARM_IDS_KEY, emptySet()).orEmpty().toList()
         ids.forEach { rawId ->
@@ -288,6 +198,30 @@ object ReminderScheduler {
                 .remove(STORED_ALARM_PREFIX + taskId)
                 .apply()
         }
+    }
+
+    fun markAlarmDismissed(context: Context, taskId: Int, dueAt: String?, offsetMinutes: Int) {
+        val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+        val stored = runCatching {
+            JSONObject(prefs.getString(STORED_ALARM_PREFIX + taskId, null).orEmpty())
+        }.getOrNull()
+        val effectiveDueAt = dueAt ?: stored?.optString("dueAt")?.takeIf { it.isNotBlank() }
+        val effectiveOffset = if (dueAt == null) {
+            stored?.optInt("offset", offsetMinutes) ?: offsetMinutes
+        } else {
+            offsetMinutes
+        }
+        context
+            .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(
+                DISMISSED_ALARM_PREFIX + taskId,
+                JSONObject()
+                    .put("dueAt", effectiveDueAt)
+                    .put("offset", effectiveOffset)
+                    .toString(),
+            )
+            .apply()
     }
 
     private fun cancelAlarmOnly(context: Context, taskId: Int) {
@@ -359,6 +293,24 @@ object ReminderScheduler {
                 alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
             }
         }
+    }
+
+    private fun isAlarmDismissed(context: Context, task: TaskItem): Boolean {
+        val raw = context
+            .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .getString(DISMISSED_ALARM_PREFIX + task.id, null)
+            ?: return false
+        val dismissed = runCatching { JSONObject(raw) }.getOrNull() ?: return false
+        return dismissed.optString("dueAt") == task.dueAt &&
+            dismissed.optInt("offset", Int.MIN_VALUE) == task.reminderOffsetMinutes
+    }
+
+    private fun clearDismissedAlarm(context: Context, taskId: Int) {
+        context
+            .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(DISMISSED_ALARM_PREFIX + taskId)
+            .apply()
     }
 
     private fun pendingIntent(

@@ -8,21 +8,26 @@ import com.todocloud.app.branding.MascotStateManager
 
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (!ReminderScheduler.scheduleNextPermissionTestReminder(context, intent)) return
         val taskId = intent.getIntExtra(EXTRA_TASK_ID, 0)
+        // Ignore pending broadcasts left by temporary permission-audit builds.
+        if (taskId <= 0) return ReminderScheduler.cancel(context, taskId)
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "任务提醒"
         val description = intent.getStringExtra(EXTRA_DESCRIPTION)
         val steps = intent.getStringExtra(EXTRA_STEPS)
+        val dueAt = intent.getStringExtra(EXTRA_DUE_AT)
+        val reminderOffset = intent.getIntExtra(EXTRA_REMINDER_OFFSET, 0)
         val alarmMode = intent.getBooleanExtra(EXTRA_ALARM_MODE, false)
-        if (taskId != ReminderScheduler.PERMISSION_TEST_TASK_ID) {
-            MascotStateManager.showReminderState(context)
-        }
+        MascotStateManager.showReminderState(context)
         if (alarmMode) {
+            ReminderScheduler.markAlarmDismissed(context, taskId, dueAt, reminderOffset)
+            ReminderScheduler.forgetStoredTask(context, taskId)
             val serviceIntent = Intent(context, AlarmService::class.java).apply {
                 putExtra(EXTRA_TASK_ID, taskId)
                 putExtra(EXTRA_TITLE, title)
                 putExtra(EXTRA_DESCRIPTION, description)
                 putExtra(EXTRA_STEPS, steps)
+                putExtra(EXTRA_DUE_AT, dueAt)
+                putExtra(EXTRA_REMINDER_OFFSET, reminderOffset)
             }
             runCatching {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -33,6 +38,13 @@ class ReminderReceiver : BroadcastReceiver() {
             }
         } else {
             showNotification(context, taskId, title)
+            // Notification reminders are one-shot too. Do not leave an old
+            // copy in the restore store after it has been delivered.
+            if (context.getSystemService(android.app.NotificationManager::class.java)
+                    .areNotificationsEnabled()
+            ) {
+                ReminderScheduler.forgetStoredTask(context, taskId)
+            }
         }
     }
 
@@ -69,7 +81,6 @@ class ReminderReceiver : BroadcastReceiver() {
                 .setAutoCancel(true)
                 .setCategory(android.app.Notification.CATEGORY_REMINDER)
                 .build()
-            if (taskId == ReminderScheduler.PERMISSION_TEST_TASK_ID) manager.cancel(taskId)
             manager.notify(taskId, notification)
         }
     }
