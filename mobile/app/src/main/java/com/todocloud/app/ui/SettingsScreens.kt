@@ -448,7 +448,6 @@ internal fun PermissionSettingsScreen(
     val exactAlarmsEnabled = remember(permissionRefreshToken) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
     }
-    val overlayEnabled = remember(permissionRefreshToken) { Settings.canDrawOverlays(context) }
     val fullScreenIntentEnabled = remember(permissionRefreshToken) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
             notificationManager.canUseFullScreenIntent()
@@ -458,6 +457,7 @@ internal fun PermissionSettingsScreen(
             powerManager.isIgnoringBatteryOptimizations(context.packageName)
     }
     val chineseOem = remember { isChineseOem() }
+    val needsOemAlarmDisplayGuide = remember { requiresOemAlarmDisplayGuide() }
     var showReminderPermissionGuide by rememberSaveable { mutableStateOf(false) }
     var showBackgroundLockGuide by rememberSaveable { mutableStateOf(false) }
 
@@ -493,13 +493,6 @@ internal fun PermissionSettingsScreen(
             ) { Text("开启精确闹钟权限") }
         }
         if (reminderMode == ReminderMode.ALARM) {
-            PermissionStateRow("悬浮窗", overlayEnabled, "后台或锁屏时显示停止界面")
-            if (!overlayEnabled) {
-                OutlinedButton(
-                    onClick = { requestAlarmPermissions(context) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("开启闹钟显示权限") }
-            }
             PermissionStateRow("全屏闹钟", fullScreenIntentEnabled, "锁屏时显示停止闹钟界面")
             if (!fullScreenIntentEnabled) {
                 OutlinedButton(
@@ -515,6 +508,16 @@ internal fun PermissionSettingsScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("开启全屏闹钟提醒") }
+            }
+            if (needsOemAlarmDisplayGuide) {
+                Text(
+                    oemAlarmDisplayGuidance(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = { openAppDetailsSettings(context) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("打开应用权限设置") }
             }
         }
 
@@ -736,7 +739,6 @@ internal fun SettingsScreen(
     val exactAlarmsEnabled = remember(permissionRefreshToken) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
     }
-    val overlayEnabled = remember(permissionRefreshToken) { Settings.canDrawOverlays(context) }
     val fullScreenIntentEnabled = remember(permissionRefreshToken) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
             notificationManager.canUseFullScreenIntent()
@@ -746,6 +748,7 @@ internal fun SettingsScreen(
             powerManager.isIgnoringBatteryOptimizations(context.packageName)
     }
     val chineseOem = remember { isChineseOem() }
+    val needsOemAlarmDisplayGuide = remember { requiresOemAlarmDisplayGuide() }
     val needsReminderPermissionGuide = !notificationsEnabled ||
         !backgroundRunAllowed ||
         !exactAlarmsEnabled ||
@@ -880,15 +883,6 @@ internal fun SettingsScreen(
                     Text("开启精确提醒权限")
                 }
             }
-            if (reminderMode == ReminderMode.ALARM && !overlayEnabled) {
-                Text("悬浮窗权限未开启，闹钟可能无法在后台或锁屏时显示。", color = MaterialTheme.colorScheme.error)
-                OutlinedButton(
-                    onClick = { requestAlarmPermissions(context) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("开启闹钟显示权限")
-                }
-            }
             if (reminderMode == ReminderMode.ALARM && !fullScreenIntentEnabled) {
                 Text("全屏提醒权限未开启，锁屏时可能无法显示停止闹钟界面。", color = MaterialTheme.colorScheme.error)
                 OutlinedButton(
@@ -905,6 +899,18 @@ internal fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("开启全屏闹钟提醒")
+                }
+            }
+            if (reminderMode == ReminderMode.ALARM && needsOemAlarmDisplayGuide) {
+                Text(
+                    oemAlarmDisplayGuidance(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = { openAppDetailsSettings(context) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("打开应用权限设置")
                 }
             }
             OutlinedButton(

@@ -104,23 +104,6 @@ internal fun saveDefaultReminderOffset(context: Context, offsetMinutes: Int?) {
 }
 
 internal fun requestAlarmPermissions(context: Context) {
-    if (!Settings.canDrawOverlays(context)) {
-        android.app.AlertDialog.Builder(context)
-            .setTitle("开启闹钟提醒")
-            .setMessage("允许 TodoCloud 显示在其他应用上层，闹钟才能在后台或锁屏时及时显示。")
-            .setNegativeButton("稍后", null)
-            .setPositiveButton("去开启") { _, _ ->
-                context.startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:${context.packageName}"),
-                    ),
-                )
-            }
-            .show()
-        return
-    }
-
     val alarmManager = context.getSystemService(AlarmManager::class.java)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
         android.app.AlertDialog.Builder(context)
@@ -155,7 +138,17 @@ internal fun requestAlarmPermissions(context: Context) {
                     )
                 }
                 .show()
+            return
         }
+    }
+
+    if (requiresOemAlarmDisplayGuide()) {
+        android.app.AlertDialog.Builder(context)
+            .setTitle("允许闹钟从后台显示")
+            .setMessage(oemAlarmDisplayGuidance())
+            .setNegativeButton("稍后", null)
+            .setPositiveButton("打开设置") { _, _ -> openAppDetailsSettings(context) }
+            .show()
     }
 }
 
@@ -219,6 +212,28 @@ internal fun isChineseOem(): Boolean {
     ).any(manufacturer::contains)
 }
 
+internal fun requiresOemAlarmDisplayGuide(): Boolean = isChineseOem()
+
+internal fun oemAlarmDisplayGuidance(): String {
+    val manufacturer = Build.MANUFACTURER.lowercase(Locale.ROOT)
+    val instruction = when {
+        manufacturer.contains("oppo") ||
+            manufacturer.contains("oneplus") ||
+            manufacturer.contains("realme") ->
+            "特殊应用权限 → 后台弹出界面"
+        manufacturer.contains("xiaomi") ||
+            manufacturer.contains("redmi") ||
+            manufacturer.contains("blackshark") ->
+            "应用权限管理 → 其他权限 → 后台弹出界面"
+        manufacturer.contains("vivo") ->
+            "应用与权限管理 → 权限管理 → 后台弹出界面（或悬浮窗）"
+        else ->
+            "应用权限设置中的后台弹出、后台启动界面或类似选项"
+    }
+    return "为了让闹钟在你使用其他应用时自动显示停止界面，请允许：$instruction。" +
+        "不同系统名称可能略有差异；如果没有这个选项，只需保留标准的通知和全屏通知权限。"
+}
+
 internal fun oemBackgroundGuidance(): String {
     val manufacturer = Build.MANUFACTURER.lowercase(Locale.ROOT)
     return when {
@@ -229,11 +244,11 @@ internal fun oemBackgroundGuidance(): String {
         manufacturer.contains("honor") ->
             "荣耀：应用启动管理 → TodoCloud → 允许自启动和后台活动；电池 → 不限制。"
         manufacturer.contains("oppo") ->
-            "OPPO：应用管理 → 自启动 → 允许；耗电管理 → 允许后台运行/不限制。"
+            "OPPO：特殊应用权限 → 后台弹出界面 → 允许；同时允许自启动，并将耗电管理设为允许后台运行/不限制。"
         manufacturer.contains("vivo") ->
             "vivo：应用与权限管理 → 自启动 → 允许；电量管理 → 不限制。"
         manufacturer.contains("oneplus") || manufacturer.contains("realme") ->
-            "一加/realme：应用信息 → 电池 → 不限制，并允许自启动和后台活动。"
+            "一加/realme：特殊应用权限 → 后台弹出界面 → 允许；电池设为不限制，并允许自启动和后台活动。"
         manufacturer.contains("meizu") ->
             "魅族：应用管理 → 权限管理 → 自启动，并将电池策略设为不限制。"
         else ->

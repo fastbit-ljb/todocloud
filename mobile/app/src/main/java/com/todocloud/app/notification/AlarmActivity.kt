@@ -54,7 +54,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
-import com.todocloud.app.MainActivity
 import com.todocloud.app.ui.theme.TodoCloudTheme
 
 class AlarmActivity : ComponentActivity() {
@@ -76,7 +75,6 @@ class AlarmActivity : ComponentActivity() {
                 override fun handleOnBackPressed() = Unit
             },
         )
-        val taskId = intent.getIntExtra(ReminderReceiver.EXTRA_TASK_ID, 0)
         val title = intent.getStringExtra(ReminderReceiver.EXTRA_TITLE) ?: "任务提醒"
         val description = intent.getStringExtra(ReminderReceiver.EXTRA_DESCRIPTION)
         val steps = parseSteps(intent.getStringExtra(ReminderReceiver.EXTRA_STEPS))
@@ -86,7 +84,7 @@ class AlarmActivity : ComponentActivity() {
                     title = title,
                     description = description,
                     steps = steps,
-                    onStop = { stopAlarm(taskId) },
+                    onStop = ::stopAlarm,
                     onMuteChanged = { muted ->
                         startService(
                             Intent(
@@ -100,10 +98,11 @@ class AlarmActivity : ComponentActivity() {
         }
     }
 
-    private fun stopAlarm(taskId: Int) {
+    private fun stopAlarm() {
         stopService(Intent(this, AlarmService::class.java))
-        startActivity(MainActivity.intent(this, taskId))
-        finish()
+        // AlarmActivity lives in its own temporary task. Removing that task
+        // reveals whichever app the user was using before the alarm appeared.
+        finishAndRemoveTask()
     }
 
     companion object {
