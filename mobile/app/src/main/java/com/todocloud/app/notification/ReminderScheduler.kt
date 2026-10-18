@@ -28,7 +28,9 @@ internal fun permissionTestTriggerAtMillis(dueMillis: Long, nowMillis: Long): Lo
 
 object ReminderScheduler {
     const val CHANNEL_ID = "task_reminders"
-    const val ALARM_SERVICE_CHANNEL_ID = "alarm_service"
+    // Use a fresh channel for this audit build. Android keeps an existing
+    // channel's lock-screen policy across app updates.
+    const val ALARM_SERVICE_CHANNEL_ID = "alarm_service_fullscreen_test"
     private const val CHANNEL_NAME = "任务提醒"
     private const val ALARM_SERVICE_CHANNEL_NAME = "闹钟运行中"
     private const val PREFERENCES_NAME = "reminder_settings"
@@ -64,16 +66,15 @@ object ReminderScheduler {
             NotificationChannel(
                 ALARM_SERVICE_CHANNEL_ID,
                 ALARM_SERVICE_CHANNEL_NAME,
-                // Full-screen intents are only honored reliably on a high-
-                // importance channel. The channel remains silent, badge-free,
-                // and hidden on the lock screen so it is not a task reminder.
+                // Full-screen intents require a high-importance channel. The
+                // channel itself is silent because AlarmService plays the alarm.
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
                 description = "闹钟响铃期间的系统运行保障，不发送任务通知"
                 setSound(null, null)
                 enableVibration(false)
                 setShowBadge(false)
-                lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             },
         )
     }

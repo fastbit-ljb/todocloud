@@ -75,7 +75,7 @@ class AlarmService : Service() {
             .setContentText(title)
             .setCategory(Notification.CATEGORY_ALARM)
             .setOngoing(true)
-            .setVisibility(Notification.VISIBILITY_SECRET)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setFullScreenIntent(fullScreenIntent, true)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
