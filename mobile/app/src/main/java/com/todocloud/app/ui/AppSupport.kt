@@ -2,7 +2,6 @@ package com.todocloud.app.ui
 
 import android.app.AlarmManager
 import android.app.NotificationManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -17,7 +16,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
-import com.todocloud.app.notification.ReminderAccessibilityService
 import com.todocloud.app.data.TaskItem
 import java.time.Instant
 import java.time.LocalDate
@@ -200,22 +198,6 @@ internal fun openAppDetailsSettings(context: Context) {
             Uri.parse("package:${context.packageName}"),
         ),
     )
-}
-
-internal fun openAccessibilitySettings(context: Context) {
-    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-}
-
-internal fun isAccessibilityServiceEnabled(context: Context): Boolean {
-    val expectedService = ComponentName(
-        context,
-        ReminderAccessibilityService::class.java,
-    ).flattenToString()
-    val enabledServices = Settings.Secure.getString(
-        context.contentResolver,
-        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-    ).orEmpty()
-    return enabledServices.split(':').any { it.equals(expectedService, ignoreCase = true) }
 }
 
 internal fun isChineseOem(): Boolean {
