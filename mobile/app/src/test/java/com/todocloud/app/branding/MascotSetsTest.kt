@@ -18,7 +18,10 @@ class MascotSetsTest {
     fun setIdsAreStable() {
         // Stored in preferences and part of resource and alias names.
         assertEquals(
-            listOf("classic", "mooncat", "silverguard", "blondeacademy", "bluewitch"),
+            listOf(
+                "classic", "mooncat", "silverguard", "blondeacademy", "bluewitch",
+                "silverwitchsimple", "silverwitchdetail", "silverstudentsimple", "silverstudentdetail",
+            ),
             MascotSets.all.map { it.id },
         )
     }
@@ -32,6 +35,10 @@ class MascotSetsTest {
         assertSame(MascotSets.SILVER_GUARD, MascotSets.fromId("silverguard"))
         assertSame(MascotSets.BLONDE_ACADEMY, MascotSets.fromId("blondeacademy"))
         assertSame(MascotSets.BLUE_WITCH, MascotSets.fromId("bluewitch"))
+        assertSame(MascotSets.SILVER_WITCH_SIMPLE, MascotSets.fromId("silverwitchsimple"))
+        assertSame(MascotSets.SILVER_WITCH_DETAIL, MascotSets.fromId("silverwitchdetail"))
+        assertSame(MascotSets.SILVER_STUDENT_SIMPLE, MascotSets.fromId("silverstudentsimple"))
+        assertSame(MascotSets.SILVER_STUDENT_DETAIL, MascotSets.fromId("silverstudentdetail"))
     }
 
     @Test
