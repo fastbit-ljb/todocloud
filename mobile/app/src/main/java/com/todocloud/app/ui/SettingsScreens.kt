@@ -4,7 +4,6 @@ import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
@@ -180,15 +179,17 @@ internal fun SettingsHomeScreen(
                 title = "闹钟提醒",
                 description = "到点响铃并显示停止界面，不发送任务通知",
                 onClick = {
-                    onReminderModeChange(ReminderMode.ALARM)
-                    requestAlarmPermissions(context)
+                    if (requestAlarmPermissions(context)) {
+                        onReminderModeChange(ReminderMode.ALARM)
+                    }
                 },
                 trailing = {
                     RadioButton(
                         selected = reminderMode == ReminderMode.ALARM,
                         onClick = {
-                            onReminderModeChange(ReminderMode.ALARM)
-                            requestAlarmPermissions(context)
+                            if (requestAlarmPermissions(context)) {
+                                onReminderModeChange(ReminderMode.ALARM)
+                            }
                         },
                     )
                 },
@@ -427,9 +428,6 @@ internal fun PermissionSettingsScreen(
     val notificationManager = remember(context) {
         context.getSystemService(NotificationManager::class.java)
     }
-    val alarmManager = remember(context) {
-        context.getSystemService(AlarmManager::class.java)
-    }
     val powerManager = remember(context) {
         context.getSystemService(PowerManager::class.java)
     }
@@ -443,10 +441,10 @@ internal fun PermissionSettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val notificationsEnabled = remember(permissionRefreshToken) {
-        notificationManager.areNotificationsEnabled()
+        areNotificationsAvailable(context)
     }
     val exactAlarmsEnabled = remember(permissionRefreshToken) {
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+        com.todocloud.app.notification.ReminderScheduler.canScheduleExactAlarms(context)
     }
     val fullScreenIntentEnabled = remember(permissionRefreshToken) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
@@ -515,9 +513,9 @@ internal fun PermissionSettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedButton(
-                    onClick = { openAppDetailsSettings(context) },
+                    onClick = { openOemAlarmDisplaySettings(context) },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("打开应用权限设置") }
+                ) { Text("打开后台弹出界面设置") }
             }
         }
 
@@ -716,9 +714,6 @@ internal fun SettingsScreen(
     val notificationManager = remember(context) {
         context.getSystemService(NotificationManager::class.java)
     }
-    val alarmManager = remember(context) {
-        context.getSystemService(AlarmManager::class.java)
-    }
     val powerManager = remember(context) {
         context.getSystemService(PowerManager::class.java)
     }
@@ -734,10 +729,10 @@ internal fun SettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val notificationsEnabled = remember(permissionRefreshToken) {
-        notificationManager.areNotificationsEnabled()
+        areNotificationsAvailable(context)
     }
     val exactAlarmsEnabled = remember(permissionRefreshToken) {
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+        com.todocloud.app.notification.ReminderScheduler.canScheduleExactAlarms(context)
     }
     val fullScreenIntentEnabled = remember(permissionRefreshToken) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
@@ -805,8 +800,9 @@ internal fun SettingsScreen(
                 icon = { Icon(Icons.Outlined.Alarm, contentDescription = null) },
                 selected = reminderMode == ReminderMode.ALARM,
                 onClick = {
-                    onReminderModeChange(ReminderMode.ALARM)
-                    requestAlarmPermissions(context)
+                    if (requestAlarmPermissions(context)) {
+                        onReminderModeChange(ReminderMode.ALARM)
+                    }
                 },
             )
             OutlinedButton(
@@ -907,10 +903,10 @@ internal fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedButton(
-                    onClick = { openAppDetailsSettings(context) },
+                    onClick = { openOemAlarmDisplaySettings(context) },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("打开应用权限设置")
+                    Text("打开后台弹出界面设置")
                 }
             }
             OutlinedButton(

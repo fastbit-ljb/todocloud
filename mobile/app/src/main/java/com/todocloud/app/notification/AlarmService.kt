@@ -3,6 +3,7 @@ package com.todocloud.app.notification
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.ActivityOptions
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -63,11 +64,9 @@ class AlarmService : Service() {
     }
 
     private fun startForegroundSafely(taskId: Int, title: String) {
-        val fullScreenIntent = PendingIntent.getActivity(
-            this,
+        val fullScreenIntent = alarmActivityPendingIntent(
             taskId,
             AlarmActivity.intent(this, taskId, title),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = Notification.Builder(this, ReminderScheduler.ALARM_SERVICE_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
@@ -91,13 +90,51 @@ class AlarmService : Service() {
 
     private fun openAlarmWindow(taskId: Int, title: String, description: String?, steps: String?) {
         runCatching {
-            startActivity(
-                AlarmActivity.intent(this, taskId, title, description, steps).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                },
-            )
+            val alarmIntent = AlarmActivity.intent(this, taskId, title, description, steps)
+            if (Build.VERSION.SDK_INT >= 34) {
+                alarmActivityPendingIntent(taskId, alarmIntent).send(
+                    this,
+                    0,
+                    null,
+                    null,
+                    null,
+                    null,
+                    ActivityOptions.makeBasic().apply {
+                        pendingIntentBackgroundActivityStartMode =
+                            backgroundActivityStartMode()
+                    }.toBundle(),
+                )
+            } else {
+                startActivity(alarmIntent)
+            }
         }
     }
+
+    private fun alarmActivityPendingIntent(taskId: Int, intent: Intent): PendingIntent {
+        val creatorOptions = if (Build.VERSION.SDK_INT >= 35) {
+            ActivityOptions.makeBasic().apply {
+                pendingIntentCreatorBackgroundActivityStartMode =
+                    backgroundActivityStartMode()
+            }.toBundle()
+        } else {
+            null
+        }
+        return PendingIntent.getActivity(
+            this,
+            taskId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            creatorOptions,
+        )
+    }
+
+    private fun backgroundActivityStartMode(): Int =
+        if (Build.VERSION.SDK_INT >= 36) {
+            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+        } else {
+            @Suppress("DEPRECATION")
+            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+        }
 
     private fun acquireWakeLock() {
         wakeLock = getSystemService(PowerManager::class.java)

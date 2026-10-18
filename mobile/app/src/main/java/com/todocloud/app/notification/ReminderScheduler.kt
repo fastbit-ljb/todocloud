@@ -1,12 +1,16 @@
 package com.todocloud.app.notification
 
+import android.Manifest
 import android.app.AlarmManager
+import android.app.AppOpsManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Process
 import com.todocloud.app.MainActivity
 import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TaskStep
@@ -38,6 +42,7 @@ object ReminderScheduler {
     private const val STORED_ALARM_IDS_KEY = "stored_alarm_ids"
     private const val STORED_ALARM_PREFIX = "stored_alarm_"
     private const val PERMISSION_TEST_DURATION_MILLIS = 10 * 60 * 1000L
+    private const val OPSTR_SCHEDULE_EXACT_ALARM_COMPAT = "android:schedule_exact_alarm"
     const val PERMISSION_TEST_TASK_ID = -1
 
     enum class ReminderMode {
@@ -96,8 +101,48 @@ object ReminderScheduler {
         ensurePermissionTestRunning(context)
     }
 
+    fun hasRequiredPermissions(context: Context, mode: ReminderMode): Boolean {
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return false
+        if (!notificationManager.areNotificationsEnabled()) return false
+        if (mode != ReminderMode.ALARM) return true
+
+        if (!canScheduleExactAlarms(context)) return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            !notificationManager.canUseFullScreenIntent()
+        ) {
+            return false
+        }
+        return true
+    }
+
+    fun canScheduleExactAlarms(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        if (!alarmManager.canScheduleExactAlarms()) return false
+
+        // Some OEM and custom ROMs report true above while the underlying
+        // AppOp is still denied. setAlarmClock then throws and an inexact
+        // fallback loses the foreground-service exemption.
+        val appOps = context.getSystemService(AppOpsManager::class.java)
+        val mode = appOps.unsafeCheckOpNoThrow(
+            OPSTR_SCHEDULE_EXACT_ALARM_COMPAT,
+            Process.myUid(),
+            context.packageName,
+        )
+        return mode == AppOpsManager.MODE_ALLOWED || mode == AppOpsManager.MODE_DEFAULT
+    }
+
     /** Run a local-only reminder audit for ten minutes, without creating a cloud task. */
     fun ensurePermissionTestRunning(context: Context) {
+        val mode = loadReminderMode(context)
+        if (!hasRequiredPermissions(context, mode)) {
+            cancel(context, PERMISSION_TEST_TASK_ID)
+            return
+        }
         val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
         val stored = runCatching {
             JSONObject(prefs.getString(STORED_ALARM_PREFIX + PERMISSION_TEST_TASK_ID, null).orEmpty())
@@ -167,6 +212,10 @@ object ReminderScheduler {
             ReminderMode.ALARM
         } else {
             ReminderMode.NOTIFICATION
+        }
+        if (!hasRequiredPermissions(context, mode)) {
+            forgetStoredTask(context, taskId)
+            return false
         }
         if (dueAt != deliveredIntent.getStringExtra(ReminderReceiver.EXTRA_DUE_AT) ||
             stored.optInt("offset", Int.MIN_VALUE) !=
@@ -300,7 +349,13 @@ object ReminderScheduler {
                 alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
             }
         } catch (_: SecurityException) {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            // Alarm mode must remain exact: exact alarms are exempt from the
+            // background foreground-service start restriction. Falling back
+            // to an inexact alarm can display briefly and then crash when the
+            // system rejects AlarmService.startForeground().
+            if (mode != ReminderMode.ALARM) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            }
         }
     }
 
