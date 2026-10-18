@@ -93,6 +93,7 @@ object ReminderScheduler {
     }
 
     fun saveReminderMode(context: Context, mode: ReminderMode) {
+        if (mode == ReminderMode.ALARM) createAlarmServiceChannel(context)
         context
             .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -139,6 +140,7 @@ object ReminderScheduler {
     /** Run a local-only reminder audit for ten minutes, without creating a cloud task. */
     fun ensurePermissionTestRunning(context: Context) {
         val mode = loadReminderMode(context)
+        if (mode == ReminderMode.ALARM) createAlarmServiceChannel(context)
         if (!hasRequiredPermissions(context, mode)) {
             cancel(context, PERMISSION_TEST_TASK_ID)
             return

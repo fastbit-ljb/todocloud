@@ -12,7 +12,9 @@ import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -22,6 +24,8 @@ class AlarmService : Service() {
     private var vibrator: Vibrator? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var activeTaskId: Int? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingWindowOpen: Runnable? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -58,8 +62,8 @@ class AlarmService : Service() {
         acquireWakeLock()
         startSound()
         startVibration()
-        openAlarmWindow(taskId, title, description, steps)
         activeTaskId = taskId
+        scheduleAlarmWindow(taskId, title, description, steps)
         return START_NOT_STICKY
     }
 
@@ -108,6 +112,26 @@ class AlarmService : Service() {
                 startActivity(alarmIntent)
             }
         }
+    }
+
+    private fun scheduleAlarmWindow(
+        taskId: Int,
+        title: String,
+        description: String?,
+        steps: String?,
+    ) {
+        pendingWindowOpen?.let(mainHandler::removeCallbacks)
+        val action = Runnable {
+            pendingWindowOpen = null
+            if (activeTaskId == taskId) {
+                openAlarmWindow(taskId, title, description, steps)
+            }
+        }
+        pendingWindowOpen = action
+        // On a cold process start, foreground-service promotion is observed by
+        // the system asynchronously. Give it a short head start before asking
+        // the OEM background-popup gate to display the alarm activity.
+        mainHandler.postDelayed(action, ALARM_WINDOW_COLD_START_DELAY_MILLIS)
     }
 
     private fun alarmActivityPendingIntent(taskId: Int, intent: Intent): PendingIntent {
@@ -184,6 +208,8 @@ class AlarmService : Service() {
 
     private fun stopRinging() {
         activeTaskId = null
+        pendingWindowOpen?.let(mainHandler::removeCallbacks)
+        pendingWindowOpen = null
         runCatching { player?.stop() }
         runCatching { player?.release() }
         player = null
@@ -204,5 +230,6 @@ class AlarmService : Service() {
         const val ACTION_STOP = "com.todocloud.app.notification.STOP_ALARM"
         const val ACTION_MUTE = "com.todocloud.app.notification.MUTE_ALARM"
         const val ACTION_UNMUTE = "com.todocloud.app.notification.UNMUTE_ALARM"
+        private const val ALARM_WINDOW_COLD_START_DELAY_MILLIS = 400L
     }
 }
