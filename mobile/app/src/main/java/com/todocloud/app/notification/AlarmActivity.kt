@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
+import java.lang.ref.WeakReference
 import com.todocloud.app.ui.theme.TodoCloudTheme
 
 class AlarmActivity : ComponentActivity() {
@@ -106,7 +107,21 @@ class AlarmActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            focusedAlarmActivity = WeakReference(this)
+        } else {
+            clearFocusedAlarmWindow()
+        }
         Log.i(AlarmService.LOG_TAG, "alarm_page_focus=$hasFocus")
+    }
+
+    override fun onPause() {
+        clearFocusedAlarmWindow()
+        super.onPause()
+    }
+
+    private fun clearFocusedAlarmWindow() {
+        if (focusedAlarmActivity?.get() === this) focusedAlarmActivity = null
     }
 
     private fun stopAlarm() {
@@ -117,6 +132,11 @@ class AlarmActivity : ComponentActivity() {
     }
 
     companion object {
+        private var focusedAlarmActivity: WeakReference<AlarmActivity>? = null
+
+        internal fun hasFocusedAlarmWindow(): Boolean =
+            focusedAlarmActivity?.get()?.hasWindowFocus() == true
+
         fun intent(
             context: Context,
             taskId: Int,

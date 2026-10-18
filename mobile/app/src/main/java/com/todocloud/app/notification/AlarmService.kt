@@ -52,7 +52,23 @@ class AlarmService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (activeTaskId == taskId) return START_NOT_STICKY
+        val deliveryAction = alarmDeliveryAction(
+            activeTaskId = activeTaskId,
+            incomingTaskId = taskId,
+            alarmWindowFocused = AlarmActivity.hasFocusedAlarmWindow(),
+        )
+        Log.i(LOG_TAG, "alarm_delivery task=$taskId active=$activeTaskId action=$deliveryAction")
+        when (deliveryAction) {
+            AlarmDeliveryAction.KEEP_CURRENT_ALARM -> return START_NOT_STICKY
+            AlarmDeliveryAction.SHOW_EXISTING_ALARM -> {
+                // Swiping the main task away can leave this ringing service
+                // and its separate alarm task alive. A repeated delivery must
+                // restore the page without restarting sound or changing mute.
+                openAlarmWindow(taskId, title, description, steps)
+                return START_NOT_STICKY
+            }
+            AlarmDeliveryAction.START_RINGING -> Unit
+        }
 
         stopRinging()
         ReminderScheduler.createAlarmServiceChannel(this)
