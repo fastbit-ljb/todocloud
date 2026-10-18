@@ -68,16 +68,29 @@ class MascotStateManagerTest {
     }
 
     @Test
-    fun allTasksCompletedShowsComplete() {
+    fun allTasksDueTodayAndCompletedShowsComplete() {
         val state = resolve(
             tasks = listOf(
-                task(id = 1, completed = true),
-                task(id = 2, completed = true),
+                task(id = 1, dueAt = "2026-10-07T08:00:00Z", completed = true),
+                task(id = 2, dueAt = "2026-10-07T17:00:00Z", completed = true),
             ),
             lastActivity = now,
         )
 
         assertEquals(MascotState.COMPLETE, state)
+    }
+
+    @Test
+    fun completedHistoryWithoutTasksTodayShowsNoTasks() {
+        val state = resolve(
+            tasks = listOf(
+                task(id = 1, dueAt = "2026-10-05T17:00:00Z", completed = true),
+                task(id = 2, dueAt = "2026-10-06T17:00:00Z", completed = true),
+            ),
+            lastActivity = now.minusSeconds(4 * 24 * 60 * 60L),
+        )
+
+        assertEquals(MascotState.NO_TASKS, state)
     }
 
     @Test

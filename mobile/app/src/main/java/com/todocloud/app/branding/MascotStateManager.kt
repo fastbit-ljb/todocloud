@@ -195,8 +195,21 @@ object MascotStateManager {
         }
         if (hasDueSoonTask) return MascotState.DUE_SOON
 
-        if (tasks.isNotEmpty() && pendingTasks.isEmpty()) {
-            return MascotState.COMPLETE
+        // COMPLETE describes today's result, not the contents of the whole
+        // synced history. Completed tasks remain in the snapshot for days, so
+        // treating "all loaded tasks are complete" as today's completion made
+        // a day with no tasks look finished instead of resting.
+        val todayTasks = tasks.filter { task ->
+            parseInstant(task.dueAt, zoneId)
+                ?.atZone(zoneId)
+                ?.toLocalDate() == today
+        }
+        if (pendingTasks.isEmpty()) {
+            return if (todayTasks.isNotEmpty() && todayTasks.all { it.completed }) {
+                MascotState.COMPLETE
+            } else {
+                MascotState.NO_TASKS
+            }
         }
 
         val hasPartialProgress = tasks.any { it.completed } ||
@@ -208,7 +221,6 @@ object MascotStateManager {
         val inactiveHours = Duration.between(lastActivity, now).toHours().coerceAtLeast(0L)
         if (inactiveHours >= FROZEN_HOURS) return MascotState.FROZEN
         if (inactiveHours >= HALF_FROZEN_HOURS) return MascotState.HALF_FROZEN
-        if (pendingTasks.isEmpty()) return MascotState.NO_TASKS
         return MascotState.DAILY
     }
 
