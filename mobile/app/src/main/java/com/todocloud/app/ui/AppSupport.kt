@@ -262,7 +262,7 @@ internal fun openOemAlarmDisplaySettings(context: Context) {
     candidates.firstOrNull { startSettingsActivity(context, it) }
 }
 
-private fun startSettingsActivity(context: Context, intent: Intent): Boolean = runCatching {
+internal fun startSettingsActivity(context: Context, intent: Intent): Boolean = runCatching {
     if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     context.startActivity(intent)
     true
@@ -314,29 +314,28 @@ internal fun oemAlarmDisplayGuidance(): String {
         else ->
             "应用权限设置中的后台弹出、后台启动界面或类似选项"
     }
-    return "为了让闹钟在你使用其他应用时自动显示停止界面，请允许：$instruction。" +
-        "不同系统名称可能略有差异；如果没有这个选项，请使用「后台显示闹钟页面」中的系统悬浮窗授权。"
+    return "若只响铃不弹页，请在「$instruction」中允许后台显示；没有此项可跳过。"
 }
 
 internal fun oemBackgroundGuidance(): String {
     val manufacturer = Build.MANUFACTURER.lowercase(Locale.ROOT)
     return when {
         manufacturer.contains("xiaomi") || manufacturer.contains("redmi") ->
-            "小米/红米：应用信息 → 自启动 → 允许；电池 → 无限制。"
+            "应用信息 → 自启动 → 允许。"
         manufacturer.contains("huawei") ->
-            "华为：应用启动 → TodoCloud → 关闭自动管理，并允许自启动、后台活动和关联启动。"
+            "应用启动 → TodoCloud → 手动管理，允许自启动和后台活动。"
         manufacturer.contains("honor") ->
-            "荣耀：应用启动管理 → TodoCloud → 允许自启动和后台活动；电池 → 不限制。"
+            "应用启动管理 → TodoCloud → 允许自启动和后台活动。"
         manufacturer.contains("oppo") ->
-            "OPPO：特殊应用权限 → 后台弹出界面 → 允许；同时允许自启动，并将耗电管理设为允许后台运行/不限制。"
+            "应用详情 → 耗电管理：允许自启动和后台活动（如有）。"
         manufacturer.contains("vivo") ->
-            "vivo：应用与权限管理 → 自启动 → 允许；电量管理 → 不限制。"
+            "应用与权限 → 自启动 → 允许。"
         manufacturer.contains("oneplus") || manufacturer.contains("realme") ->
-            "一加/realme：特殊应用权限 → 后台弹出界面 → 允许；电池设为不限制，并允许自启动和后台活动。"
+            "应用详情 → 耗电管理：允许自启动和后台活动（如有）。"
         manufacturer.contains("meizu") ->
-            "魅族：应用管理 → 权限管理 → 自启动，并将电池策略设为不限制。"
+            "应用管理 → 权限管理 → 自启动 → 允许。"
         else ->
-            "系统设置 → 应用 → TodoCloud → 电池/自启动，允许后台活动并选择不限制。"
+            "应用详情 → 自启动／后台活动 → 允许（如有）。"
     }
 }
 
