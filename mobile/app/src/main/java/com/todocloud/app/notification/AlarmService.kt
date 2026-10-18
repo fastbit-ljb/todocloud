@@ -20,6 +20,7 @@ class AlarmService : Service() {
     private var player: MediaPlayer? = null
     private var vibrator: Vibrator? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var activeTaskId: Int? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -48,6 +49,7 @@ class AlarmService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (activeTaskId == taskId) return START_NOT_STICKY
 
         stopRinging()
         ReminderScheduler.createAlarmServiceChannel(this)
@@ -56,6 +58,7 @@ class AlarmService : Service() {
         startSound()
         startVibration()
         openAlarmWindow(taskId, title, description, steps)
+        activeTaskId = taskId
         return START_NOT_STICKY
     }
 
@@ -143,6 +146,7 @@ class AlarmService : Service() {
     }
 
     private fun stopRinging() {
+        activeTaskId = null
         runCatching { player?.stop() }
         runCatching { player?.release() }
         player = null

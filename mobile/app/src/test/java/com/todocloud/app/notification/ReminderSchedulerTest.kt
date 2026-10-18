@@ -6,8 +6,9 @@ import org.junit.Test
 
 class ReminderSchedulerTest {
     @Test
-    fun permissionTestReminderFiresFiveSecondsAfterScheduling() {
-        assertEquals(15_000L, permissionTestTriggerAtMillis(dueMillis = 60_000L, nowMillis = 10_000L))
+    fun permissionTestReminderRepeatsTenSecondsAfterEachDelivery() {
+        assertEquals(20_000L, permissionTestTriggerAtMillis(dueMillis = 60_000L, nowMillis = 10_000L))
+        assertEquals(30_000L, permissionTestTriggerAtMillis(dueMillis = 60_000L, nowMillis = 20_000L))
     }
 
     @Test

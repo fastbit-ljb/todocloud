@@ -15,11 +15,11 @@ import org.json.JSONObject
 import java.time.OffsetDateTime
 
 /**
- * Temporary permission-audit delay. Every eligible task reminder is scheduled
- * once, five seconds after the task is saved or rescheduled, regardless of the
- * reminder offset selected in the editor. Keep this out of production releases.
+ * Temporary permission-audit interval. Eligible task reminders start ten seconds
+ * after scheduling and repeat while the task remains due in the future. The
+ * editor's reminder offset is ignored. Keep this out of production releases.
  */
-internal const val REMINDER_PERMISSION_TEST_DELAY_MILLIS = 5_000L
+internal const val REMINDER_PERMISSION_TEST_DELAY_MILLIS = 10_000L
 
 internal fun permissionTestTriggerAtMillis(dueMillis: Long, nowMillis: Long): Long? =
     if (dueMillis > nowMillis) nowMillis + REMINDER_PERMISSION_TEST_DELAY_MILLIS else null
@@ -33,7 +33,6 @@ object ReminderScheduler {
     private const val REMINDER_MODE_KEY = "reminder_mode"
     private const val STORED_ALARM_IDS_KEY = "stored_alarm_ids"
     private const val STORED_ALARM_PREFIX = "stored_alarm_"
-    private const val DISMISSED_ALARM_PREFIX = "dismissed_alarm_"
 
     enum class ReminderMode {
         NOTIFICATION,
@@ -104,47 +103,56 @@ object ReminderScheduler {
         val triggerAt = permissionTestTriggerAtMillis(dueMillis, now)
             ?: return forgetStoredTask(context, task.id)
         val mode = loadReminderMode(context)
-        if (mode != ReminderMode.ALARM) {
-            forgetStoredTask(context, task.id)
-        } else if (isAlarmDismissed(context, task)) {
-            // A one-shot alarm must not ring again just because the task list
-            // is reloaded after the user stops it.
-            return
-        } else {
-            clearDismissedAlarm(context, task.id)
-        }
-
         val pendingIntent = pendingIntent(context, task, mode)
-        val alarmManager = context.getSystemService(AlarmManager::class.java)
-        try {
-            // Keep the complete reminder payload locally. AlarmManager can
-            // wake the app after it has been removed from Recents, and this
-            // store lets us rebuild the entry after reboot/time changes too.
-            rememberTask(context, task, mode)
-            if (mode == ReminderMode.ALARM) {
-                val showIntent = PendingIntent.getActivity(
-                    context,
-                    task.id,
-                    MainActivity.intent(context, task.id),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                )
-                alarmManager.setAlarmClock(
-                    AlarmManager.AlarmClockInfo(triggerAt, showIntent),
-                    pendingIntent,
-                )
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager.canScheduleExactAlarms()) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-            } else {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-            }
-        } catch (_: SecurityException) {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-        }
+        // Keep the payload locally so the receiver can schedule the next test
+        // reminder and reboot/time-change restoration can rebuild it.
+        rememberTask(context, task, mode)
+        scheduleAlarm(context, task.id, mode, triggerAt, pendingIntent)
     }
 
     fun cancel(context: Context, taskId: Int) {
         cancelAlarmOnly(context, taskId)
+        context.getSystemService(NotificationManager::class.java).cancel(taskId)
         forgetStoredTask(context, taskId)
+    }
+
+    /** Returns false when a canceled or expired reminder must not be shown. */
+    fun scheduleNextPermissionTestReminder(context: Context, deliveredIntent: Intent): Boolean {
+        val taskId = deliveredIntent.getIntExtra(ReminderReceiver.EXTRA_TASK_ID, 0)
+        if (taskId <= 0) return false
+        val raw = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .getString(STORED_ALARM_PREFIX + taskId, null) ?: return false
+        val stored = runCatching { JSONObject(raw) }.getOrNull() ?: return false
+        val dueAt = stored.optString("dueAt")
+        val mode = if (stored.optString("mode") == ReminderMode.ALARM.name) {
+            ReminderMode.ALARM
+        } else {
+            ReminderMode.NOTIFICATION
+        }
+        if (dueAt != deliveredIntent.getStringExtra(ReminderReceiver.EXTRA_DUE_AT) ||
+            stored.optInt("offset", Int.MIN_VALUE) !=
+            deliveredIntent.getIntExtra(ReminderReceiver.EXTRA_REMINDER_OFFSET, Int.MIN_VALUE) ||
+            (mode == ReminderMode.ALARM) !=
+            deliveredIntent.getBooleanExtra(ReminderReceiver.EXTRA_ALARM_MODE, false)
+        ) return false
+        val dueMillis = runCatching { OffsetDateTime.parse(dueAt).toInstant().toEpochMilli() }.getOrNull()
+            ?: run {
+                forgetStoredTask(context, taskId)
+                return false
+            }
+        val triggerAt = permissionTestTriggerAtMillis(dueMillis, System.currentTimeMillis())
+            ?: run {
+                forgetStoredTask(context, taskId)
+                return false
+            }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            taskId,
+            deliveredIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        scheduleAlarm(context, taskId, mode, triggerAt, pendingIntent)
+        return true
     }
 
     fun restoreScheduledTasks(context: Context) {
@@ -192,30 +200,6 @@ object ReminderScheduler {
         }
     }
 
-    fun markAlarmDismissed(context: Context, taskId: Int, dueAt: String?, offsetMinutes: Int) {
-        val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-        val stored = runCatching {
-            JSONObject(prefs.getString(STORED_ALARM_PREFIX + taskId, null).orEmpty())
-        }.getOrNull()
-        val effectiveDueAt = dueAt ?: stored?.optString("dueAt")?.takeIf { it.isNotBlank() }
-        val effectiveOffset = if (dueAt == null) {
-            stored?.optInt("offset", offsetMinutes) ?: offsetMinutes
-        } else {
-            offsetMinutes
-        }
-        context
-            .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(
-                DISMISSED_ALARM_PREFIX + taskId,
-                JSONObject()
-                    .put("dueAt", effectiveDueAt)
-                    .put("offset", effectiveOffset)
-                    .toString(),
-            )
-            .apply()
-    }
-
     private fun cancelAlarmOnly(context: Context, taskId: Int) {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         val pendingIntent = PendingIntent.getBroadcast(
@@ -251,22 +235,34 @@ object ReminderScheduler {
             .apply()
     }
 
-    private fun isAlarmDismissed(context: Context, task: TaskItem): Boolean {
-        val raw = context
-            .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-            .getString(DISMISSED_ALARM_PREFIX + task.id, null)
-            ?: return false
-        val dismissed = runCatching { JSONObject(raw) }.getOrNull() ?: return false
-        return dismissed.optString("dueAt") == task.dueAt &&
-            dismissed.optInt("offset", Int.MIN_VALUE) == task.reminderOffsetMinutes
-    }
-
-    private fun clearDismissedAlarm(context: Context, taskId: Int) {
-        context
-            .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .remove(DISMISSED_ALARM_PREFIX + taskId)
-            .apply()
+    private fun scheduleAlarm(
+        context: Context,
+        taskId: Int,
+        mode: ReminderMode,
+        triggerAt: Long,
+        pendingIntent: PendingIntent,
+    ) {
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        try {
+            if (mode == ReminderMode.ALARM) {
+                val showIntent = PendingIntent.getActivity(
+                    context,
+                    taskId,
+                    MainActivity.intent(context, taskId),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+                alarmManager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(triggerAt, showIntent),
+                    pendingIntent,
+                )
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager.canScheduleExactAlarms()) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            } else {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            }
+        } catch (_: SecurityException) {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+        }
     }
 
     private fun pendingIntent(
