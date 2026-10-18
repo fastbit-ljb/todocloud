@@ -1,63 +1,59 @@
 package com.todocloud.app.ui
 
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BackgroundBatterySettingsTest {
     @Test
-    fun supportedSystemOpensPerAppBatteryPageWithoutOpeningAnotherScreen() {
-        val attempted = mutableListOf<BackgroundBatteryDestination>()
-        val result = launchBackgroundBatterySettings {
-            attempted += it
-            true
-        }
-        assertEquals(BackgroundBatteryDestination.APP_BATTERY, result)
-        assertEquals(listOf(BackgroundBatteryDestination.APP_BATTERY), attempted)
-    }
-
-    @Test
-    fun protectedBatteryPageFallsBackToAppDetails() {
-        val attempted = mutableListOf<BackgroundBatteryDestination>()
-        val result = launchBackgroundBatterySettings {
-            attempted += it
-            if (it == BackgroundBatteryDestination.APP_BATTERY) throw SecurityException("Not exported")
-            true
-        }
-        assertEquals(BackgroundBatteryDestination.APP_DETAILS, result)
-        assertEquals(listOf(BackgroundBatteryDestination.APP_BATTERY, BackgroundBatteryDestination.APP_DETAILS), attempted)
-    }
-
-    @Test
-    fun unavailableAppPagesFallBackToBatteryOptimizationList() {
-        assertEquals(
-            BackgroundBatteryDestination.OPTIMIZATION_LIST,
-            launchBackgroundBatterySettings { it == BackgroundBatteryDestination.OPTIMIZATION_LIST },
-        )
-    }
-
-    @Test
-    fun noAvailableSettingsReportsFailureInsteadOfPretendingItOpened() {
-        assertEquals(BackgroundBatteryDestination.UNAVAILABLE, launchBackgroundBatterySettings { false })
-    }
-
-    @Test
-    fun colorOsFamilyUsesTheChoiceShownInTheUserScreenshot() {
+    fun colorOsFamilyNamesTheActualOemPolicyInsteadOfTheGenericBatterySwitch() {
         listOf("OPPO", "OnePlus", "realme").forEach { maker ->
             val guide = backgroundBatteryGuide(maker)
+            assertTrue(guide.choice.contains("耗电管理"))
             assertTrue(guide.choice.contains("完全允许后台行为"))
-            assertTrue(guide.path.contains("耗电管理"))
-            assertTrue(guide.path.contains("不限制"))
-            assertTrue(guide.choice.contains("无限制"))
+            assertFalse(guide.choice.contains("无限制"))
         }
     }
 
     @Test
-    fun otherManufacturersHaveShortInstructionsForTheirDifferentLabels() {
-        assertTrue(backgroundBatteryGuide("Xiaomi").path.contains("无限制"))
-        assertTrue(backgroundBatteryGuide("HONOR").path.contains("关闭自动管理"))
+    fun colorOsGuideExplainsThatAllowBackgroundUseDoesNotOverrideSmartOptimization() {
+        val guide = backgroundBatteryGuide("OPPO")
+        assertTrue(guide.note.contains("允许后台使用"))
+        assertTrue(guide.note.contains("智能优化"))
+        assertTrue(guide.note.contains("以「耗电管理」为准"))
+    }
+
+    @Test
+    fun manualPathStartsAtTheLauncherAndNamesTheSettingToFind() {
+        val guide = backgroundBatteryGuide("realme")
+        assertTrue(guide.path.startsWith("长按 TodoCloud 图标"))
+        assertTrue(guide.path.contains("应用信息 → 耗电管理 → 完全允许后台行为"))
+    }
+
+    @Test
+    fun xiaomiGuideUsesItsOwnUnrestrictedPolicyName() {
+        val guide = backgroundBatteryGuide("Xiaomi")
+        assertTrue(guide.path.contains("省电策略"))
+        assertTrue(guide.path.contains("无限制"))
+        assertTrue(guide.note.contains("无法读取"))
+    }
+
+    @Test
+    fun huaweiAndHonorExplainManualStartupManagement() {
+        listOf("HUAWEI", "HONOR").forEach { maker ->
+            val guide = backgroundBatteryGuide(maker)
+            assertTrue(guide.path.contains("关闭自动管理"))
+            assertTrue(guide.path.contains("后台活动"))
+        }
+    }
+
+    @Test
+    fun unknownDevicesHaveManualGuidanceInsteadOfAnEnabledClaim() {
         val unknown = backgroundBatteryGuide("unknown")
-        assertTrue(unknown.path.contains("电池用量"))
+        assertTrue(unknown.path.contains("耗电管理／电池"))
         assertTrue(unknown.path.contains("允许后台活动"))
+        assertTrue(unknown.note.contains("手动确认"))
+        assertTrue(unknown.note.contains("无法读取是否已放行"))
+        assertFalse(unknown.choice.contains("已开启"))
     }
 }

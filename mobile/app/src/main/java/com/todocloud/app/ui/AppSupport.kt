@@ -166,20 +166,6 @@ internal fun areNotificationsAvailable(context: Context): Boolean {
     return context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
 }
 
-internal fun requestBackgroundRunPermission(context: Context) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-    val packageUri = Uri.parse("package:${context.packageName}")
-    runCatching {
-        context.startActivity(
-            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri),
-        )
-    }.onFailure {
-        context.startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri),
-        )
-    }
-}
-
 internal fun openNotificationSettings(context: Context) {
     context.startActivity(
         Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {

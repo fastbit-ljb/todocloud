@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -428,9 +427,6 @@ internal fun PermissionSettingsScreen(
     val notificationManager = remember(context) {
         context.getSystemService(NotificationManager::class.java)
     }
-    val powerManager = remember(context) {
-        context.getSystemService(PowerManager::class.java)
-    }
     val lifecycleOwner = LocalLifecycleOwner.current
     var permissionRefreshToken by remember { mutableStateOf(0) }
     DisposableEffect(lifecycleOwner) {
@@ -452,10 +448,6 @@ internal fun PermissionSettingsScreen(
     }
     val alarmBackgroundDisplayEnabled = remember(permissionRefreshToken) {
         Settings.canDrawOverlays(context)
-    }
-    val backgroundRunAllowed = remember(permissionRefreshToken) {
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-            powerManager.isIgnoringBatteryOptimizations(context.packageName)
     }
     val chineseOem = remember { isChineseOem() }
     val needsOemAlarmDisplayGuide = remember { requiresOemAlarmDisplayGuide() }
@@ -524,7 +516,7 @@ internal fun PermissionSettingsScreen(
         }
 
         Text("后台运行", style = MaterialTheme.typography.titleMedium)
-        BackgroundBatterySettings(context, systemOptimizationExempt = backgroundRunAllowed)
+        BackgroundBatterySettings(context)
         if (chineseOem) {
             TextButton(
                 onClick = { showBackgroundLockGuide = true },
@@ -551,7 +543,7 @@ internal fun PermissionSettingsScreen(
                 ) {
                     Text("请按下面的项目检查设置，国产手机尤其需要确认电池、自启动和后台活动。")
                     Text(if (notificationsEnabled) "通知已开启：用于通知栏提醒" else "通知未开启：无法显示通知栏提醒")
-                    BackgroundBatterySettings(context, systemOptimizationExempt = backgroundRunAllowed)
+                    BackgroundBatterySettings(context)
                     Text(if (exactAlarmsEnabled) "精确闹钟已开启：用于准时提醒" else "精确闹钟未开启：可能延迟或漏提醒")
                     if (chineseOem) {
                         Text("若被清理后漏提醒，请允许自启动和后台活动。")
@@ -695,9 +687,6 @@ internal fun SettingsScreen(
     val notificationManager = remember(context) {
         context.getSystemService(NotificationManager::class.java)
     }
-    val powerManager = remember(context) {
-        context.getSystemService(PowerManager::class.java)
-    }
     val lifecycleOwner = LocalLifecycleOwner.current
     var permissionRefreshToken by remember { mutableStateOf(0) }
     DisposableEffect(lifecycleOwner) {
@@ -722,14 +711,9 @@ internal fun SettingsScreen(
     val alarmBackgroundDisplayEnabled = remember(permissionRefreshToken) {
         Settings.canDrawOverlays(context)
     }
-    val backgroundRunAllowed = remember(permissionRefreshToken) {
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-            powerManager.isIgnoringBatteryOptimizations(context.packageName)
-    }
     val chineseOem = remember { isChineseOem() }
     val needsOemAlarmDisplayGuide = remember { requiresOemAlarmDisplayGuide() }
     val needsReminderPermissionGuide = !notificationsEnabled ||
-        !backgroundRunAllowed ||
         !exactAlarmsEnabled ||
         chineseOem
     var showDefaultReminderPicker by rememberSaveable { mutableStateOf(false) }
@@ -827,9 +811,6 @@ internal fun SettingsScreen(
                         if (!notificationsEnabled) {
                             Text("• 通知权限：未开启", color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
-                        if (!backgroundRunAllowed) {
-                            Text("• 电池使用：可能受到优化限制", color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        }
                         if (!exactAlarmsEnabled) {
                             Text("• 精确闹钟：未开启", color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
@@ -902,7 +883,7 @@ internal fun SettingsScreen(
             ) {
                 Text("查看完整权限指引")
             }
-            BackgroundBatterySettings(context, systemOptimizationExempt = backgroundRunAllowed)
+            BackgroundBatterySettings(context)
             if (chineseOem) {
                 TextButton(
                     onClick = { showBackgroundLockGuide = true },
@@ -1014,7 +995,7 @@ internal fun SettingsScreen(
                             Text("开启通知权限")
                         }
                     }
-                    BackgroundBatterySettings(context, systemOptimizationExempt = backgroundRunAllowed)
+                    BackgroundBatterySettings(context)
                     Text(
                         if (exactAlarmsEnabled) "精确闹钟已开启：用于准时提醒" else "精确闹钟未开启：可能延迟或漏提醒",
                         color = if (exactAlarmsEnabled) {

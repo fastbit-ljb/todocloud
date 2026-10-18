@@ -30,68 +30,37 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
-internal enum class BackgroundBatteryDestination {
-    APP_BATTERY,
-    APP_DETAILS,
-    OPTIMIZATION_LIST,
-    UNAVAILABLE,
-}
-
-internal fun launchBackgroundBatterySettings(
-    launch: (BackgroundBatteryDestination) -> Boolean,
-): BackgroundBatteryDestination = listOf(
-    BackgroundBatteryDestination.APP_BATTERY,
-    BackgroundBatteryDestination.APP_DETAILS,
-    BackgroundBatteryDestination.OPTIMIZATION_LIST,
-).firstOrNull { destination -> runCatching { launch(destination) }.getOrDefault(false) }
-    ?: BackgroundBatteryDestination.UNAVAILABLE
-
-internal data class BackgroundBatteryGuide(val choice: String, val path: String)
+internal data class BackgroundBatteryGuide(
+    val choice: String,
+    val path: String,
+    val note: String = "需在手机设置中手动确认，软件无法读取是否已放行。",
+)
 
 internal fun backgroundBatteryGuide(manufacturer: String): BackgroundBatteryGuide {
     val maker = manufacturer.lowercase(Locale.ROOT)
     return when {
         listOf("oppo", "oneplus", "realme").any(maker::contains) -> BackgroundBatteryGuide(
-            "请选择「完全允许后台行为」或「无限制」。",
-            "应用详情 → 耗电管理（或电池）→ 完全允许后台行为／不限制／无限制。",
+            "请在「耗电管理」中选择「完全允许后台行为」。",
+            "长按 TodoCloud 图标 → 应用信息 → 耗电管理 → 完全允许后台行为。",
+            "只开「允许后台使用」仍可能被智能优化限制；请以「耗电管理」为准。",
         )
         listOf("xiaomi", "redmi", "poco", "blackshark").any(maker::contains) -> BackgroundBatteryGuide(
             "将省电策略设为「无限制」。",
-            "应用详情 → 省电策略（或电池）→ 无限制。",
+            "长按 TodoCloud 图标 → 应用信息 → 省电策略（或电池）→ 无限制。",
         )
         listOf("huawei", "honor").any(maker::contains) -> BackgroundBatteryGuide(
             "将应用启动设为手动管理，允许后台活动和自启动。",
-            "应用详情 → 应用启动管理 → 关闭自动管理，允许后台活动和自启动。",
+            "长按 TodoCloud 图标 → 应用信息 → 应用启动管理 → 关闭自动管理，允许后台活动和自启动。",
         )
         else -> BackgroundBatteryGuide(
             "请选择「不限制」或「允许后台活动」。",
-            "应用详情 → 耗电管理／电池／电池用量 → 不限制／无限制／允许后台活动。",
+            "长按 TodoCloud 图标 → 应用信息 → 耗电管理／电池 → 不限制／无限制／允许后台活动。",
         )
-    }
-}
-
-private fun openBackgroundBatterySettings(context: Context): BackgroundBatteryDestination {
-    val packageUri = Uri.parse("package:${context.packageName}")
-    return launchBackgroundBatterySettings { destination ->
-        val intent = when (destination) {
-            // AOSP's per-app battery action is not part of the public SDK.
-            // OEMs may omit or protect it: only try it, never assume support.
-            BackgroundBatteryDestination.APP_BATTERY -> Intent(
-                "android.settings.VIEW_ADVANCED_POWER_USAGE_DETAIL",
-                packageUri,
-            ).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-            BackgroundBatteryDestination.APP_DETAILS ->
-                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
-            BackgroundBatteryDestination.OPTIMIZATION_LIST ->
-                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-            BackgroundBatteryDestination.UNAVAILABLE -> return@launchBackgroundBatterySettings false
-        }
-        startSettingsActivity(context, intent)
     }
 }
 
 @Composable
-internal fun BackgroundBatterySettings(context: Context, systemOptimizationExempt: Boolean) {
+internal fun BackgroundBatterySettings(context: Context) {
     val guide = backgroundBatteryGuide(Build.MANUFACTURER)
     var showHelp by rememberSaveable { mutableStateOf(false) }
 
@@ -105,48 +74,31 @@ internal fun BackgroundBatterySettings(context: Context, systemOptimizationExemp
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("后台耗电管理", style = MaterialTheme.typography.titleMedium)
+            // Neither opening a system page nor Android's Doze allowlist
+            // proves that the separate OEM background policy is unrestricted.
+            // Do not expose a switch or save a synthetic "enabled" state.
+            Text(
+                "需手动确认，软件无法检测此项",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(
                 "后台受限时，提醒可能延迟或收不到。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(guide.choice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // Always available: Android's Doze exemption does not tell us
-            // whether the OEM's separate background policy is unrestricted.
             OutlinedButton(
-                onClick = {
-                    val destination = openBackgroundBatterySettings(context)
-                    val hint = when (destination) {
-                        BackgroundBatteryDestination.APP_BATTERY -> guide.choice
-                        BackgroundBatteryDestination.APP_DETAILS -> guide.path
-                        BackgroundBatteryDestination.OPTIMIZATION_LIST -> "选择 TodoCloud，允许不优化；厂商耗电设置仍需确认。"
-                        BackgroundBatteryDestination.UNAVAILABLE -> null
-                    }
-                    if (hint == null) {
-                        showHelp = true
-                    } else {
-                        Toast.makeText(context, hint, Toast.LENGTH_LONG).show()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) { Text("打开后台耗电设置") }
-            TextButton(
                 onClick = { showHelp = true },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) { Text("找不到设置？") }
-            if (!systemOptimizationExempt) {
-                TextButton(
-                    onClick = { requestBackgroundRunPermission(context) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) { Text("放行系统省电优化") }
-            }
+            ) { Text("查看手动设置方法") }
         }
     }
 
     if (showHelp) {
         AlertDialog(
             onDismissRequest = { showHelp = false },
-            title = { Text("设置后台不受限") },
+            title = { Text("手动设置后台耗电") },
             text = {
                 Column(
                     modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()),
@@ -154,7 +106,7 @@ internal fun BackgroundBatterySettings(context: Context, systemOptimizationExemp
                 ) {
                     Text(guide.path)
                     Text(
-                        "系统省电白名单不等于厂商后台已放行，此项需要你手动确认。",
+                        guide.note,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -168,11 +120,11 @@ internal fun BackgroundBatterySettings(context: Context, systemOptimizationExemp
                     )
                     if (startSettingsActivity(context, intent)) {
                         showHelp = false
-                        Toast.makeText(context, guide.path, Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, guide.choice, Toast.LENGTH_LONG).show()
                     } else {
                         Toast.makeText(context, "请长按 TodoCloud 图标 → 应用信息，再按上方路径设置。", Toast.LENGTH_LONG).show()
                     }
-                }) { Text("打开应用详情") }
+                }) { Text("打开应用信息") }
             },
             dismissButton = {
                 TextButton(onClick = { showHelp = false }) { Text("知道了") }
