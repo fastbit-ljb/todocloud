@@ -1,0 +1,220 @@
+{
+  "canvas_size": 1254,
+  "subject_height": 1000,
+  "subject_center_x": 627,
+  "subject_bottom": 1150,
+  "sets": {
+    "silverstudentdetail": {
+      "source_folder": "silverstudentdetail",
+      "subjects": {
+        "01_daily": [
+          4,
+          3,
+          1250,
+          1249
+        ],
+        "02_due_soon": [
+          4,
+          3,
+          1251,
+          1250
+        ],
+        "03_overdue": [
+          4,
+          3,
+          1251,
+          1250
+        ],
+        "04_progress": [
+          4,
+          3,
+          1251,
+          1250
+        ],
+        "05_complete": [
+          4,
+          3,
+          1251,
+          1250
+        ],
+        "06_no_tasks": [
+          5,
+          3,
+          1251,
+          1250
+        ],
+        "07_half_frozen": [
+          4,
+          3,
+          1252,
+          1250
+        ],
+        "08_frozen": [
+          4,
+          3,
+          1250,
+          1254
+        ]
+      }
+    },
+    "silverstudentsimple": {
+      "source_folder": "silverstudentsimple",
+      "subjects": {
+        "01_daily": [
+          12,
+          1,
+          1241,
+          1247
+        ],
+        "02_due_soon": [
+          11,
+          0,
+          1242,
+          1247
+        ],
+        "03_overdue": [
+          12,
+          1,
+          1241,
+          1247
+        ],
+        "04_progress": [
+          12,
+          0,
+          1242,
+          1247
+        ],
+        "05_complete": [
+          11,
+          1,
+          1241,
+          1246
+        ],
+        "06_no_tasks": [
+          12,
+          1,
+          1242,
+          1246
+        ],
+        "07_half_frozen": [
+          12,
+          1,
+          1241,
+          1248
+        ],
+        "08_frozen": [
+          13,
+          1,
+          1242,
+          1254
+        ]
+      }
+    },
+    "silverwitchdetail": {
+      "source_folder": "silverwitchdetail",
+      "subjects": {
+        "01_daily": [
+          11,
+          0,
+          1254,
+          1254
+        ],
+        "02_due_soon": [
+          11,
+          0,
+          1254,
+          1254
+        ],
+        "03_overdue": [
+          10,
+          0,
+          1254,
+          1254
+        ],
+        "04_progress": [
+          12,
+          0,
+          1254,
+          1254
+        ],
+        "05_complete": [
+          11,
+          0,
+          1254,
+          1254
+        ],
+        "06_no_tasks": [
+          11,
+          0,
+          1254,
+          1254
+        ],
+        "07_half_frozen": [
+          11,
+          0,
+          1254,
+          1254
+        ],
+        "08_frozen": [
+          11,
+          0,
+          1254,
+          1254
+        ]
+      }
+    },
+    "silverwitchsimple": {
+      "source_folder": "silverwitchsimple",
+      "subjects": {
+        "01_daily": [
+          19,
+          1,
+          1251,
+          1244
+        ],
+        "02_due_soon": [
+          19,
+          1,
+          1252,
+          1245
+        ],
+        "03_overdue": [
+          19,
+          1,
+          1251,
+          1244
+        ],
+        "04_progress": [
+          19,
+          1,
+          1252,
+          1244
+        ],
+        "05_complete": [
+          18,
+          1,
+          1251,
+          1244
+        ],
+        "06_no_tasks": [
+          19,
+          1,
+          1251,
+          1244
+        ],
+        "07_half_frozen": [
+          20,
+          1,
+          1251,
+          1244
+        ],
+        "08_frozen": [
+          19,
+          1,
+          1251,
+          1253
+        ]
+      }
+    }
+  }
+}

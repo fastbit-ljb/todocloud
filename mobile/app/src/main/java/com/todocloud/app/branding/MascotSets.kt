@@ -193,6 +193,110 @@ object MascotSets {
         aliasPrefix = "bluewitch.",
     )
 
+    val SILVER_WITCH_SIMPLE = MascotSet(
+        id = "silverwitchsimple",
+        label = "银月魔女·简约",
+        pictures = StateResources(
+            daily = R.drawable.mascot_silverwitchsimple_daily,
+            dueSoon = R.drawable.mascot_silverwitchsimple_due_soon,
+            overdue = R.drawable.mascot_silverwitchsimple_overdue,
+            inProgress = R.drawable.mascot_silverwitchsimple_progress,
+            complete = R.drawable.mascot_silverwitchsimple_complete,
+            noTasks = R.drawable.mascot_silverwitchsimple_no_tasks,
+            halfFrozen = R.drawable.mascot_silverwitchsimple_half_frozen,
+            frozen = R.drawable.mascot_silverwitchsimple_frozen,
+        ),
+        launcherIcons = StateResources(
+            daily = R.mipmap.ic_launcher_silverwitchsimple_daily,
+            dueSoon = R.mipmap.ic_launcher_silverwitchsimple_due_soon,
+            overdue = R.mipmap.ic_launcher_silverwitchsimple_overdue,
+            inProgress = R.mipmap.ic_launcher_silverwitchsimple_progress,
+            complete = R.mipmap.ic_launcher_silverwitchsimple_complete,
+            noTasks = R.mipmap.ic_launcher_silverwitchsimple_no_tasks,
+            halfFrozen = R.mipmap.ic_launcher_silverwitchsimple_half_frozen,
+            frozen = R.mipmap.ic_launcher_silverwitchsimple_frozen,
+        ),
+        aliasPrefix = "silverwitchsimple.",
+    )
+
+    val SILVER_WITCH_DETAIL = MascotSet(
+        id = "silverwitchdetail",
+        label = "银月魔女·细节",
+        pictures = StateResources(
+            daily = R.drawable.mascot_silverwitchdetail_daily,
+            dueSoon = R.drawable.mascot_silverwitchdetail_due_soon,
+            overdue = R.drawable.mascot_silverwitchdetail_overdue,
+            inProgress = R.drawable.mascot_silverwitchdetail_progress,
+            complete = R.drawable.mascot_silverwitchdetail_complete,
+            noTasks = R.drawable.mascot_silverwitchdetail_no_tasks,
+            halfFrozen = R.drawable.mascot_silverwitchdetail_half_frozen,
+            frozen = R.drawable.mascot_silverwitchdetail_frozen,
+        ),
+        launcherIcons = StateResources(
+            daily = R.mipmap.ic_launcher_silverwitchdetail_daily,
+            dueSoon = R.mipmap.ic_launcher_silverwitchdetail_due_soon,
+            overdue = R.mipmap.ic_launcher_silverwitchdetail_overdue,
+            inProgress = R.mipmap.ic_launcher_silverwitchdetail_progress,
+            complete = R.mipmap.ic_launcher_silverwitchdetail_complete,
+            noTasks = R.mipmap.ic_launcher_silverwitchdetail_no_tasks,
+            halfFrozen = R.mipmap.ic_launcher_silverwitchdetail_half_frozen,
+            frozen = R.mipmap.ic_launcher_silverwitchdetail_frozen,
+        ),
+        aliasPrefix = "silverwitchdetail.",
+    )
+
+    val SILVER_STUDENT_SIMPLE = MascotSet(
+        id = "silverstudentsimple",
+        label = "银樱学姬·简约",
+        pictures = StateResources(
+            daily = R.drawable.mascot_silverstudentsimple_daily,
+            dueSoon = R.drawable.mascot_silverstudentsimple_due_soon,
+            overdue = R.drawable.mascot_silverstudentsimple_overdue,
+            inProgress = R.drawable.mascot_silverstudentsimple_progress,
+            complete = R.drawable.mascot_silverstudentsimple_complete,
+            noTasks = R.drawable.mascot_silverstudentsimple_no_tasks,
+            halfFrozen = R.drawable.mascot_silverstudentsimple_half_frozen,
+            frozen = R.drawable.mascot_silverstudentsimple_frozen,
+        ),
+        launcherIcons = StateResources(
+            daily = R.mipmap.ic_launcher_silverstudentsimple_daily,
+            dueSoon = R.mipmap.ic_launcher_silverstudentsimple_due_soon,
+            overdue = R.mipmap.ic_launcher_silverstudentsimple_overdue,
+            inProgress = R.mipmap.ic_launcher_silverstudentsimple_progress,
+            complete = R.mipmap.ic_launcher_silverstudentsimple_complete,
+            noTasks = R.mipmap.ic_launcher_silverstudentsimple_no_tasks,
+            halfFrozen = R.mipmap.ic_launcher_silverstudentsimple_half_frozen,
+            frozen = R.mipmap.ic_launcher_silverstudentsimple_frozen,
+        ),
+        aliasPrefix = "silverstudentsimple.",
+    )
+
+    val SILVER_STUDENT_DETAIL = MascotSet(
+        id = "silverstudentdetail",
+        label = "银樱学姬·细节",
+        pictures = StateResources(
+            daily = R.drawable.mascot_silverstudentdetail_daily,
+            dueSoon = R.drawable.mascot_silverstudentdetail_due_soon,
+            overdue = R.drawable.mascot_silverstudentdetail_overdue,
+            inProgress = R.drawable.mascot_silverstudentdetail_progress,
+            complete = R.drawable.mascot_silverstudentdetail_complete,
+            noTasks = R.drawable.mascot_silverstudentdetail_no_tasks,
+            halfFrozen = R.drawable.mascot_silverstudentdetail_half_frozen,
+            frozen = R.drawable.mascot_silverstudentdetail_frozen,
+        ),
+        launcherIcons = StateResources(
+            daily = R.mipmap.ic_launcher_silverstudentdetail_daily,
+            dueSoon = R.mipmap.ic_launcher_silverstudentdetail_due_soon,
+            overdue = R.mipmap.ic_launcher_silverstudentdetail_overdue,
+            inProgress = R.mipmap.ic_launcher_silverstudentdetail_progress,
+            complete = R.mipmap.ic_launcher_silverstudentdetail_complete,
+            noTasks = R.mipmap.ic_launcher_silverstudentdetail_no_tasks,
+            halfFrozen = R.mipmap.ic_launcher_silverstudentdetail_half_frozen,
+            frozen = R.mipmap.ic_launcher_silverstudentdetail_frozen,
+        ),
+        aliasPrefix = "silverstudentdetail.",
+    )
+
     /** In the order the settings page lists them. */
     val all: List<MascotSet> = listOf(
         CLASSIC,
@@ -200,6 +304,10 @@ object MascotSets {
         SILVER_GUARD,
         BLONDE_ACADEMY,
         BLUE_WITCH,
+        SILVER_WITCH_SIMPLE,
+        SILVER_WITCH_DETAIL,
+        SILVER_STUDENT_SIMPLE,
+        SILVER_STUDENT_DETAIL,
     )
 
     /** Used by fresh installs and by upgrades from versions without mascot sets. */

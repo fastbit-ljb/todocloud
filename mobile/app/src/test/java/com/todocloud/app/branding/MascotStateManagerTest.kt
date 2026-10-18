@@ -115,17 +115,18 @@ class MascotStateManagerTest {
 
     @Test
     fun launcherPlanEnablesOnlyTheChosenSetsAliasForTheState() {
-        val plan = MascotStateManager.launcherAliasPlan(
-            "com.todocloud.app",
-            MascotSets.MOON_CAT,
-            MascotState.OVERDUE,
-        )
-
-        assertEquals(MascotSets.all.size * MascotState.entries.size, plan.size)
-        assertEquals(
-            listOf("com.todocloud.app.launcher.mooncat.Overdue"),
-            plan.filter { (_, enabled) -> enabled }.map { (alias, _) -> alias },
-        )
+        for (set in MascotSets.all) {
+            for (state in MascotState.entries) {
+                val plan = MascotStateManager.launcherAliasPlan("com.todocloud.app", set, state)
+                assertEquals(MascotSets.all.size * MascotState.entries.size, plan.size)
+                assertEquals(plan.size, plan.map { (alias, _) -> alias }.toSet().size)
+                assertEquals(
+                    listOf(set.launcherAlias("com.todocloud.app", state)),
+                    plan.filter { (_, enabled) -> enabled }.map { (alias, _) -> alias },
+                    "${set.id} ${state.name}",
+                )
+            }
+        }
     }
 
     @Test
