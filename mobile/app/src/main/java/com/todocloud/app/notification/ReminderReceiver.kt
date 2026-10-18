@@ -9,6 +9,8 @@ import com.todocloud.app.branding.MascotStateManager
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val taskId = intent.getIntExtra(EXTRA_TASK_ID, 0)
+        // Ignore pending broadcasts left by temporary permission-audit builds.
+        if (taskId <= 0) return ReminderScheduler.cancel(context, taskId)
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "任务提醒"
         val description = intent.getStringExtra(EXTRA_DESCRIPTION)
         val steps = intent.getStringExtra(EXTRA_STEPS)

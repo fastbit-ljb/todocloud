@@ -1,10 +1,12 @@
 package com.todocloud.app.ui
 
-import android.app.AlarmManager
+import android.Manifest
 import android.app.NotificationManager
+import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -12,12 +14,11 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import com.todocloud.app.notification.ReminderScheduler
 import androidx.compose.ui.geometry.Rect
-import com.todocloud.app.notification.ReminderAccessibilityService
 import com.todocloud.app.data.TaskItem
 import java.time.Instant
 import java.time.LocalDate
@@ -105,74 +106,64 @@ internal fun saveDefaultReminderOffset(context: Context, offsetMinutes: Int?) {
         .apply()
 }
 
-internal fun requestAlarmPermissions(context: Context) {
-    if (!Settings.canDrawOverlays(context)) {
-        android.app.AlertDialog.Builder(context)
-            .setTitle("开启闹钟提醒")
-            .setMessage("允许 TodoCloud 显示在其他应用上层，闹钟才能在后台或锁屏时及时显示。")
-            .setNegativeButton("稍后", null)
-            .setPositiveButton("去开启") { _, _ ->
-                context.startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:${context.packageName}"),
-                    ),
-                )
-            }
-            .show()
-        return
+/**
+ * Opens the first missing system permission needed by alarm mode.
+ *
+ * @return true when the standard Android permissions are already available.
+ * Overlay access is optional for ringing; request it separately so Android
+ * can also display the alarm page while another app is in the foreground.
+ */
+internal fun requestAlarmPermissions(context: Context): Boolean {
+    val notificationManager = context.getSystemService(NotificationManager::class.java)
+    if (!areNotificationsAvailable(context)) {
+        openNotificationSettings(context)
+        return false
     }
 
-    val alarmManager = context.getSystemService(AlarmManager::class.java)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-        android.app.AlertDialog.Builder(context)
-            .setTitle("开启精确闹钟")
-            .setMessage("允许 TodoCloud 在设定的时间准确响铃。")
-            .setNegativeButton("稍后", null)
-            .setPositiveButton("去开启") { _, _ ->
-                context.startActivity(
-                    Intent(
-                        Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                        Uri.parse("package:${context.packageName}"),
-                    ),
-                )
-            }
-            .show()
-        return
+    if (!ReminderScheduler.canScheduleExactAlarms(context)) {
+        openExactAlarmSettings(context)
+        return false
     }
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-        val notificationManager = context.getSystemService(NotificationManager::class.java)
         if (!notificationManager.canUseFullScreenIntent()) {
-            android.app.AlertDialog.Builder(context)
-                .setTitle("允许全屏闹钟")
-                .setMessage("允许闹钟在锁屏或使用其他应用时显示停止界面。")
-                .setNegativeButton("稍后", null)
-                .setPositiveButton("去开启") { _, _ ->
-                    context.startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
-                            Uri.parse("package:${context.packageName}"),
-                        ),
-                    )
-                }
-                .show()
+            openFullScreenAlarmSettings(context)
+            return false
         }
+    }
+
+    if (!Settings.canDrawOverlays(context)) {
+        // Optional for ringing. This is the standard Android exemption that
+        // also permits the alarm page to appear over another foreground app.
+        openAlarmBackgroundDisplaySettings(context)
+    }
+    return true
+}
+
+internal fun openAlarmBackgroundDisplaySettings(context: Context) {
+    val permissionIntent = Intent(
+        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+        Uri.parse("package:${context.packageName}"),
+    )
+    if (startSettingsActivity(context, permissionIntent)) {
+        // Android 11+ may display the app list. Its per-app activity can be
+        // protected by INTERNAL_SYSTEM_WINDOW, which third-party apps cannot use.
+        android.widget.Toast.makeText(
+            context,
+            "若显示应用列表，请选择 TodoCloud，再允许显示在其他应用上层。",
+            android.widget.Toast.LENGTH_LONG,
+        ).show()
+    } else {
+        openAppDetailsSettings(context)
     }
 }
 
-internal fun requestBackgroundRunPermission(context: Context) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-    val packageUri = Uri.parse("package:${context.packageName}")
-    runCatching {
-        context.startActivity(
-            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri),
-        )
-    }.onFailure {
-        context.startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri),
-        )
-    }
+internal fun areNotificationsAvailable(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+        PackageManager.PERMISSION_GRANTED
+    ) return false
+    return context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
 }
 
 internal fun openNotificationSettings(context: Context) {
@@ -193,6 +184,76 @@ internal fun openExactAlarmSettings(context: Context) {
     }
 }
 
+internal fun openFullScreenAlarmSettings(context: Context) {
+    val packageUri = Uri.parse("package:${context.packageName}")
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+        startSettingsActivity(
+            context,
+            Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, packageUri),
+        )
+    ) return
+    openOemAlarmDisplaySettings(context)
+}
+
+/**
+ * ColorOS exposes background-popup access on a vendor-owned per-app permission
+ * page. There is no public Android intent for that switch, so try the known
+ * ColorOS package generations and keep the standard app-details page as a safe
+ * fallback for other systems.
+ */
+internal fun openOemAlarmDisplaySettings(context: Context) {
+    val packageName = context.packageName
+    val packageUri = Uri.parse("package:$packageName")
+    val manufacturer = Build.MANUFACTURER.lowercase(Locale.ROOT)
+    val candidates = buildList {
+        if (manufacturer.contains("oppo") ||
+            manufacturer.contains("oneplus") ||
+            manufacturer.contains("realme")
+        ) {
+            add(
+                Intent("oppo.intent.action.APP_PERMISSION").apply {
+                    data = packageUri
+                    putExtra("packageName", packageName)
+                    putExtra("pkgName", packageName)
+                },
+            )
+            add(
+                Intent().apply {
+                    component = ComponentName(
+                        "com.coloros.securitypermission",
+                        "com.coloros.securitypermission.permission.PermissionAppAllPermissionActivity",
+                    )
+                    data = packageUri
+                    putExtra("packageName", packageName)
+                    putExtra("pkgName", packageName)
+                },
+            )
+            listOf("com.oplus.safecenter", "com.coloros.safecenter", "com.oppo.safe")
+                .forEach { settingsPackage ->
+                    add(
+                        Intent().apply {
+                            component = ComponentName(
+                                settingsPackage,
+                                "$settingsPackage.permission.PermissionAppAllPermissionActivity",
+                            )
+                            data = packageUri
+                            putExtra("packageName", packageName)
+                            putExtra("pkgName", packageName)
+                        },
+                    )
+                }
+        }
+        add(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri))
+    }
+    candidates.firstOrNull { startSettingsActivity(context, it) }
+}
+
+internal fun startSettingsActivity(context: Context, intent: Intent): Boolean = runCatching {
+    if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(intent)
+    true
+}.getOrDefault(false)
+
 internal fun openAppDetailsSettings(context: Context) {
     context.startActivity(
         Intent(
@@ -200,22 +261,6 @@ internal fun openAppDetailsSettings(context: Context) {
             Uri.parse("package:${context.packageName}"),
         ),
     )
-}
-
-internal fun openAccessibilitySettings(context: Context) {
-    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-}
-
-internal fun isAccessibilityServiceEnabled(context: Context): Boolean {
-    val expectedService = ComponentName(
-        context,
-        ReminderAccessibilityService::class.java,
-    ).flattenToString()
-    val enabledServices = Settings.Secure.getString(
-        context.contentResolver,
-        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-    ).orEmpty()
-    return enabledServices.split(':').any { it.equals(expectedService, ignoreCase = true) }
 }
 
 internal fun isChineseOem(): Boolean {
@@ -237,25 +282,46 @@ internal fun isChineseOem(): Boolean {
     ).any(manufacturer::contains)
 }
 
+internal fun requiresOemAlarmDisplayGuide(): Boolean = isChineseOem()
+
+internal fun oemAlarmDisplayGuidance(): String {
+    val manufacturer = Build.MANUFACTURER.lowercase(Locale.ROOT)
+    val instruction = when {
+        manufacturer.contains("oppo") ||
+            manufacturer.contains("oneplus") ||
+            manufacturer.contains("realme") ->
+            "特殊应用权限 → 后台弹出界面"
+        manufacturer.contains("xiaomi") ||
+            manufacturer.contains("redmi") ||
+            manufacturer.contains("blackshark") ->
+            "应用权限管理 → 其他权限 → 后台弹出界面"
+        manufacturer.contains("vivo") ->
+            "应用与权限管理 → 权限管理 → 后台弹出界面（或悬浮窗）"
+        else ->
+            "应用权限设置中的后台弹出、后台启动界面或类似选项"
+    }
+    return "若只响铃不弹页，请在「$instruction」中允许后台显示；没有此项可跳过。"
+}
+
 internal fun oemBackgroundGuidance(): String {
     val manufacturer = Build.MANUFACTURER.lowercase(Locale.ROOT)
     return when {
         manufacturer.contains("xiaomi") || manufacturer.contains("redmi") ->
-            "小米/红米：应用信息 → 自启动 → 允许；电池 → 无限制。"
+            "应用信息 → 自启动 → 允许。"
         manufacturer.contains("huawei") ->
-            "华为：应用启动 → TodoCloud → 关闭自动管理，并允许自启动、后台活动和关联启动。"
+            "应用启动 → TodoCloud → 手动管理，允许自启动和后台活动。"
         manufacturer.contains("honor") ->
-            "荣耀：应用启动管理 → TodoCloud → 允许自启动和后台活动；电池 → 不限制。"
+            "应用启动管理 → TodoCloud → 允许自启动和后台活动。"
         manufacturer.contains("oppo") ->
-            "OPPO：应用管理 → 自启动 → 允许；耗电管理 → 允许后台运行/不限制。"
+            "应用详情 → 耗电管理：允许自启动和后台活动（如有）。"
         manufacturer.contains("vivo") ->
-            "vivo：应用与权限管理 → 自启动 → 允许；电量管理 → 不限制。"
+            "应用与权限 → 自启动 → 允许。"
         manufacturer.contains("oneplus") || manufacturer.contains("realme") ->
-            "一加/realme：应用信息 → 电池 → 不限制，并允许自启动和后台活动。"
+            "应用详情 → 耗电管理：允许自启动和后台活动（如有）。"
         manufacturer.contains("meizu") ->
-            "魅族：应用管理 → 权限管理 → 自启动，并将电池策略设为不限制。"
+            "应用管理 → 权限管理 → 自启动 → 允许。"
         else ->
-            "系统设置 → 应用 → TodoCloud → 电池/自启动，允许后台活动并选择不限制。"
+            "应用详情 → 自启动／后台活动 → 允许（如有）。"
     }
 }
 

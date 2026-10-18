@@ -1,7 +1,5 @@
 <resources>
     <string name="app_name">TodoCloud</string>
-    <string name="accessibility_service_label">TodoCloud 后台提醒辅助</string>
-    <string name="accessibility_service_description">仅用于在部分国产系统中恢复 TodoCloud 的提醒调度，不读取屏幕内容，也不会代替用户点击。</string>
     <string name="widget_calendar_description">查看未来七天的 TodoCloud 任务</string>
     <string name="widget_month_calendar_description">查看整月每天的 TodoCloud 任务数</string>
     <string name="widget_week_label">TodoCloud · 未来七天</string>

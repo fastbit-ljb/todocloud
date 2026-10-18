@@ -4,13 +4,11 @@ import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -178,17 +176,19 @@ internal fun SettingsHomeScreen(
             SettingsRow(
                 icon = Icons.Outlined.Alarm,
                 title = "闹钟提醒",
-                description = "到点响铃并显示停止界面，不发送任务通知",
+                description = "到点响铃；允许后台显示后自动打开停止界面",
                 onClick = {
-                    onReminderModeChange(ReminderMode.ALARM)
-                    requestAlarmPermissions(context)
+                    if (requestAlarmPermissions(context)) {
+                        onReminderModeChange(ReminderMode.ALARM)
+                    }
                 },
                 trailing = {
                     RadioButton(
                         selected = reminderMode == ReminderMode.ALARM,
                         onClick = {
-                            onReminderModeChange(ReminderMode.ALARM)
-                            requestAlarmPermissions(context)
+                            if (requestAlarmPermissions(context)) {
+                                onReminderModeChange(ReminderMode.ALARM)
+                            }
                         },
                     )
                 },
@@ -233,7 +233,7 @@ internal fun SettingsHomeScreen(
             SettingsRow(
                 icon = Icons.Outlined.Settings,
                 title = "权限",
-                description = "通知、闹钟、后台运行和无障碍辅助",
+                description = "通知、闹钟和后台运行",
                 onClick = onOpenPermissions,
             )
             SettingsDivider()
@@ -427,12 +427,6 @@ internal fun PermissionSettingsScreen(
     val notificationManager = remember(context) {
         context.getSystemService(NotificationManager::class.java)
     }
-    val alarmManager = remember(context) {
-        context.getSystemService(AlarmManager::class.java)
-    }
-    val powerManager = remember(context) {
-        context.getSystemService(PowerManager::class.java)
-    }
     val lifecycleOwner = LocalLifecycleOwner.current
     var permissionRefreshToken by remember { mutableStateOf(0) }
     DisposableEffect(lifecycleOwner) {
@@ -443,24 +437,20 @@ internal fun PermissionSettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val notificationsEnabled = remember(permissionRefreshToken) {
-        notificationManager.areNotificationsEnabled()
+        areNotificationsAvailable(context)
     }
     val exactAlarmsEnabled = remember(permissionRefreshToken) {
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+        com.todocloud.app.notification.ReminderScheduler.canScheduleExactAlarms(context)
     }
-    val overlayEnabled = remember(permissionRefreshToken) { Settings.canDrawOverlays(context) }
     val fullScreenIntentEnabled = remember(permissionRefreshToken) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
             notificationManager.canUseFullScreenIntent()
     }
-    val backgroundRunAllowed = remember(permissionRefreshToken) {
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-            powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    val alarmBackgroundDisplayEnabled = remember(permissionRefreshToken) {
+        Settings.canDrawOverlays(context)
     }
     val chineseOem = remember { isChineseOem() }
-    val accessibilityEnabled = remember(permissionRefreshToken) {
-        isAccessibilityServiceEnabled(context)
-    }
+    val needsOemAlarmDisplayGuide = remember { requiresOemAlarmDisplayGuide() }
     var showReminderPermissionGuide by rememberSaveable { mutableStateOf(false) }
     var showBackgroundLockGuide by rememberSaveable { mutableStateOf(false) }
 
@@ -477,18 +467,18 @@ internal fun PermissionSettingsScreen(
             style = MaterialTheme.typography.titleMedium,
         )
         Text(
-            "权限由手机系统管理。国产手机还需要允许自启动、后台活动，并在最近任务中锁定 TodoCloud。",
+            "只需开启你使用的提醒功能所需设置。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
-        PermissionStateRow("通知权限", notificationsEnabled, "通知栏提醒需要")
+        PermissionStateRow("通知权限", notificationsEnabled, "关闭后无法显示通知栏提醒")
         if (!notificationsEnabled) {
             OutlinedButton(
                 onClick = { openNotificationSettings(context) },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("打开通知设置") }
         }
-        PermissionStateRow("精确闹钟", exactAlarmsEnabled, "让闹钟尽量准时触发")
+        PermissionStateRow("精确闹钟", exactAlarmsEnabled, "准时触发提醒；未开可能延迟或漏提醒")
         if (!exactAlarmsEnabled) {
             OutlinedButton(
                 onClick = { openExactAlarmSettings(context) },
@@ -496,14 +486,8 @@ internal fun PermissionSettingsScreen(
             ) { Text("开启精确闹钟权限") }
         }
         if (reminderMode == ReminderMode.ALARM) {
-            PermissionStateRow("悬浮窗", overlayEnabled, "后台或锁屏时显示停止界面")
-            if (!overlayEnabled) {
-                OutlinedButton(
-                    onClick = { requestAlarmPermissions(context) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("开启闹钟显示权限") }
-            }
-            PermissionStateRow("全屏闹钟", fullScreenIntentEnabled, "锁屏时显示停止闹钟界面")
+            AlarmBackgroundDisplayPermission(context, alarmBackgroundDisplayEnabled)
+            PermissionStateRow("全屏闹钟", fullScreenIntentEnabled, "锁屏时显示闹钟页；未开可能只显示通知")
             if (!fullScreenIntentEnabled) {
                 OutlinedButton(
                     onClick = {
@@ -519,66 +503,25 @@ internal fun PermissionSettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("开启全屏闹钟提醒") }
             }
+            if (needsOemAlarmDisplayGuide) {
+                Text(
+                    oemAlarmDisplayGuidance(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = { openOemAlarmDisplaySettings(context) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("打开后台弹出界面设置") }
+            }
         }
 
         Text("后台运行", style = MaterialTheme.typography.titleMedium)
-        PermissionStateRow("电池优化", backgroundRunAllowed, "允许 TodoCloud 在后台工作")
-        if (!backgroundRunAllowed) {
-            OutlinedButton(
-                onClick = { requestBackgroundRunPermission(context) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("允许后台运行") }
-        }
+        BackgroundBatterySettings(context)
         if (chineseOem) {
-            Text(
-                oemBackgroundGuidance(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            OutlinedButton(
-                onClick = { openAppDetailsSettings(context) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("打开自启动和后台设置") }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text("建议锁定 TodoCloud 后台", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "部分国产系统会清理未锁定的后台应用。请在最近任务中向下滑 TodoCloud，点击锁形图标锁定，否则可能收不到通知或闹钟。",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Image(
-                        painter = painterResource(R.drawable.background_lock_guide),
-                        contentDescription = "在最近任务中锁定 TodoCloud 的操作示意图",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(220.dp)
-                            .clip(RoundedCornerShape(14.dp)),
-                        contentScale = ContentScale.Fit,
-                    )
-                    TextButton(
-                        onClick = { showBackgroundLockGuide = true },
-                        modifier = Modifier.align(Alignment.End),
-                    ) { Text("查看大图和说明") }
-                }
-            }
-            PermissionStateRow(
-                "无障碍后台辅助",
-                accessibilityEnabled,
-                "仅用于部分国产系统的提醒恢复，不读取屏幕内容",
-            )
-            OutlinedButton(
-                onClick = { openAccessibilitySettings(context) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (accessibilityEnabled) "管理无障碍辅助" else "尝试开启无障碍辅助") }
+            TextButton(
+                onClick = { showBackgroundLockGuide = true },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text("仍收不到提醒？查看自启动和后台锁定") }
         }
         OutlinedButton(
             onClick = { showReminderPermissionGuide = true },
@@ -599,11 +542,11 @@ internal fun PermissionSettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text("请按下面的项目检查设置，国产手机尤其需要确认电池、自启动和后台活动。")
-                    Text(if (notificationsEnabled) "✓ 通知权限已开启" else "未开启通知权限")
-                    Text(if (backgroundRunAllowed) "✓ 电池优化已放行" else "未设置为不限制电池使用")
-                    Text(if (exactAlarmsEnabled) "✓ 精确闹钟权限已开启" else "未开启精确闹钟权限")
+                    Text(if (notificationsEnabled) "通知已开启：用于通知栏提醒" else "通知未开启：无法显示通知栏提醒")
+                    BackgroundBatterySettings(context)
+                    Text(if (exactAlarmsEnabled) "精确闹钟已开启：用于准时提醒" else "精确闹钟未开启：可能延迟或漏提醒")
                     if (chineseOem) {
-                        Text("自启动和后台活动无法由应用代替开启，请在系统设置中手动确认。")
+                        Text("若被清理后漏提醒，请允许自启动和后台活动。")
                         Text(oemBackgroundGuidance(), style = MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -625,7 +568,9 @@ internal fun PermissionSettingsScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text("打开最近任务界面，找到 TodoCloud 后向下滑动，点击锁形图标。锁定后不要点击清除全部。")
+                    Text("若被清理后漏提醒，请允许自启动和后台活动。")
+                    Text(oemBackgroundGuidance())
+                    Text("若仍被清理，请在最近任务中打开 TodoCloud 卡片菜单并锁定；部分系统需下拉卡片。")
                     Image(
                         painter = painterResource(R.drawable.background_lock_guide),
                         contentDescription = "锁定 TodoCloud 后台的操作示意图",
@@ -669,6 +614,23 @@ internal fun PermissionStateRow(
                 color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.labelLarge,
             )
+        }
+    }
+}
+
+@Composable
+private fun AlarmBackgroundDisplayPermission(context: Context, enabled: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        PermissionStateRow(
+            "后台显示闹钟页面",
+            enabled,
+            "使用其他应用时弹出闹钟页；未开可能只响铃不弹页",
+        )
+        OutlinedButton(
+            onClick = { openAlarmBackgroundDisplaySettings(context) },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        ) {
+            Text(if (enabled) "管理后台显示权限" else "开启后台显示权限（悬浮窗）")
         }
     }
 }
@@ -725,12 +687,6 @@ internal fun SettingsScreen(
     val notificationManager = remember(context) {
         context.getSystemService(NotificationManager::class.java)
     }
-    val alarmManager = remember(context) {
-        context.getSystemService(AlarmManager::class.java)
-    }
-    val powerManager = remember(context) {
-        context.getSystemService(PowerManager::class.java)
-    }
     val lifecycleOwner = LocalLifecycleOwner.current
     var permissionRefreshToken by remember { mutableStateOf(0) }
     DisposableEffect(lifecycleOwner) {
@@ -743,26 +699,21 @@ internal fun SettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val notificationsEnabled = remember(permissionRefreshToken) {
-        notificationManager.areNotificationsEnabled()
+        areNotificationsAvailable(context)
     }
     val exactAlarmsEnabled = remember(permissionRefreshToken) {
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+        com.todocloud.app.notification.ReminderScheduler.canScheduleExactAlarms(context)
     }
-    val overlayEnabled = remember(permissionRefreshToken) { Settings.canDrawOverlays(context) }
     val fullScreenIntentEnabled = remember(permissionRefreshToken) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
             notificationManager.canUseFullScreenIntent()
     }
-    val backgroundRunAllowed = remember(permissionRefreshToken) {
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-            powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    val alarmBackgroundDisplayEnabled = remember(permissionRefreshToken) {
+        Settings.canDrawOverlays(context)
     }
     val chineseOem = remember { isChineseOem() }
-    val accessibilityEnabled = remember(permissionRefreshToken) {
-        isAccessibilityServiceEnabled(context)
-    }
+    val needsOemAlarmDisplayGuide = remember { requiresOemAlarmDisplayGuide() }
     val needsReminderPermissionGuide = !notificationsEnabled ||
-        !backgroundRunAllowed ||
         !exactAlarmsEnabled ||
         chineseOem
     var showDefaultReminderPicker by rememberSaveable { mutableStateOf(false) }
@@ -813,12 +764,13 @@ internal fun SettingsScreen(
             )
             ReminderModeCard(
                 title = "闹钟提醒",
-                description = "到点响铃并显示停止界面，不发送任务通知",
+                description = "到点响铃；允许后台显示后自动打开停止界面",
                 icon = { Icon(Icons.Outlined.Alarm, contentDescription = null) },
                 selected = reminderMode == ReminderMode.ALARM,
                 onClick = {
-                    onReminderModeChange(ReminderMode.ALARM)
-                    requestAlarmPermissions(context)
+                    if (requestAlarmPermissions(context)) {
+                        onReminderModeChange(ReminderMode.ALARM)
+                    }
                 },
             )
             OutlinedButton(
@@ -859,23 +811,17 @@ internal fun SettingsScreen(
                         if (!notificationsEnabled) {
                             Text("• 通知权限：未开启", color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
-                        if (!backgroundRunAllowed) {
-                            Text("• 电池使用：可能受到优化限制", color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        }
                         if (!exactAlarmsEnabled) {
                             Text("• 精确闹钟：未开启", color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
                         if (chineseOem) {
-                            Text("• 自启动/后台活动：请手动确认", color = MaterialTheme.colorScheme.onSecondaryContainer)
-                            if (!accessibilityEnabled) {
-                                Text("• 无障碍后台辅助：未开启", color = MaterialTheme.colorScheme.onSecondaryContainer)
-                            }
+                            Text("• 后台耗电管理：需手动确认", color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
                     }
                 }
             }
             Text(
-                if (notificationsEnabled) "系统通知已开启" else "系统通知已关闭，请在系统设置中允许 TodoCloud 通知",
+                if (notificationsEnabled) "通知已开启：用于通知栏提醒" else "通知未开启：无法显示通知栏提醒",
                 color = if (notificationsEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
             )
             if (!notificationsEnabled) {
@@ -887,7 +833,7 @@ internal fun SettingsScreen(
                 }
             }
             Text(
-                if (exactAlarmsEnabled) "精确闹钟权限已开启" else "精确闹钟权限未开启，提醒可能延迟",
+                if (exactAlarmsEnabled) "精确闹钟已开启：用于准时提醒" else "精确闹钟未开启：可能延迟或漏提醒",
                 color = if (exactAlarmsEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
             )
             if (!exactAlarmsEnabled) {
@@ -898,17 +844,11 @@ internal fun SettingsScreen(
                     Text("开启精确提醒权限")
                 }
             }
-            if (reminderMode == ReminderMode.ALARM && !overlayEnabled) {
-                Text("悬浮窗权限未开启，闹钟可能无法在后台或锁屏时显示。", color = MaterialTheme.colorScheme.error)
-                OutlinedButton(
-                    onClick = { requestAlarmPermissions(context) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("开启闹钟显示权限")
-                }
+            if (reminderMode == ReminderMode.ALARM) {
+                AlarmBackgroundDisplayPermission(context, alarmBackgroundDisplayEnabled)
             }
             if (reminderMode == ReminderMode.ALARM && !fullScreenIntentEnabled) {
-                Text("全屏提醒权限未开启，锁屏时可能无法显示停止闹钟界面。", color = MaterialTheme.colorScheme.error)
+                Text("全屏闹钟未开启：锁屏时可能只显示通知，不弹出闹钟页。", color = MaterialTheme.colorScheme.error)
                 OutlinedButton(
                     onClick = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -925,92 +865,30 @@ internal fun SettingsScreen(
                     Text("开启全屏闹钟提醒")
                 }
             }
+            if (reminderMode == ReminderMode.ALARM && needsOemAlarmDisplayGuide) {
+                Text(
+                    oemAlarmDisplayGuidance(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = { openOemAlarmDisplaySettings(context) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("打开后台弹出界面设置")
+                }
+            }
             OutlinedButton(
                 onClick = { showReminderPermissionGuide = true },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("查看完整权限指引")
             }
-            Text(
-                if (backgroundRunAllowed) "后台活动不受电量优化限制" else "后台活动可能被系统限制",
-                color = if (backgroundRunAllowed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-            )
-            if (!backgroundRunAllowed) {
-                OutlinedButton(
-                    onClick = { requestBackgroundRunPermission(context) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("允许后台运行")
-                }
-            }
+            BackgroundBatterySettings(context)
             if (chineseOem) {
-                Text(
-                    oemBackgroundGuidance(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                OutlinedButton(
-                    onClick = { openAppDetailsSettings(context) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("打开自启动和后台设置")
-                }
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    ),
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            "建议锁定 TodoCloud 后台",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        )
-                        Text(
-                            "部分国产系统会清理未锁定的后台应用。请在最近任务中向下滑 TodoCloud，点击锁形图标锁定，否则可能收不到通知或闹钟。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        )
-                        Image(
-                            painter = painterResource(R.drawable.background_lock_guide),
-                            contentDescription = "在最近任务中锁定 TodoCloud 的操作示意图",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(220.dp)
-                                .clip(RoundedCornerShape(14.dp)),
-                            contentScale = ContentScale.Fit,
-                        )
-                        TextButton(
-                            onClick = { showBackgroundLockGuide = true },
-                            modifier = Modifier.align(Alignment.End),
-                        ) {
-                            Text("查看大图和说明")
-                        }
-                    }
-                }
-                Text("实验性后台辅助", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    if (accessibilityEnabled) {
-                        "无障碍后台辅助已开启；它不读取屏幕内容，只用于在服务重连时恢复提醒。"
-                    } else {
-                        "如果前台正常、后台仍没有提醒，可以尝试开启无障碍后台辅助进行验证。"
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                OutlinedButton(
-                    onClick = { openAccessibilitySettings(context) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (accessibilityEnabled) "管理无障碍后台辅助" else "尝试开启无障碍辅助")
-                }
+                TextButton(
+                    onClick = { showBackgroundLockGuide = true },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) { Text("仍收不到提醒？查看自启动和后台锁定") }
             }
         }
 
@@ -1102,7 +980,7 @@ internal fun SettingsScreen(
                 ) {
                     Text("请按下面的项目检查设置，国产手机尤其需要确认电池、自启动和后台活动。")
                     Text(
-                        if (notificationsEnabled) "✓ 通知权限已开启" else "未开启通知权限",
+                        if (notificationsEnabled) "通知已开启：用于通知栏提醒" else "通知未开启：无法显示通知栏提醒",
                         color = if (notificationsEnabled) {
                             MaterialTheme.colorScheme.primary
                         } else {
@@ -1117,24 +995,9 @@ internal fun SettingsScreen(
                             Text("开启通知权限")
                         }
                     }
+                    BackgroundBatterySettings(context)
                     Text(
-                        if (backgroundRunAllowed) "✓ 电池优化已放行" else "未设置为不限制电池使用",
-                        color = if (backgroundRunAllowed) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        },
-                    )
-                    if (!backgroundRunAllowed) {
-                        OutlinedButton(
-                            onClick = { requestBackgroundRunPermission(context) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("允许不受电量优化限制")
-                        }
-                    }
-                    Text(
-                        if (exactAlarmsEnabled) "✓ 精确闹钟权限已开启" else "未开启精确闹钟权限",
+                        if (exactAlarmsEnabled) "精确闹钟已开启：用于准时提醒" else "精确闹钟未开启：可能延迟或漏提醒",
                         color = if (exactAlarmsEnabled) {
                             MaterialTheme.colorScheme.primary
                         } else {
@@ -1150,7 +1013,7 @@ internal fun SettingsScreen(
                         }
                     }
                     if (chineseOem) {
-                        Text("自启动和后台活动无法由应用代替开启，请在系统设置中手动确认。")
+                        Text("若被清理后漏提醒，请允许自启动和后台活动。")
                         Text(
                             oemBackgroundGuidance(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1161,24 +1024,6 @@ internal fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text("打开应用后台设置")
-                        }
-                        Text(
-                            if (accessibilityEnabled) {
-                                "✓ 无障碍后台辅助已开启"
-                            } else {
-                                "无障碍后台辅助未开启（实验性）"
-                            },
-                            color = if (accessibilityEnabled) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                        OutlinedButton(
-                            onClick = { openAccessibilitySettings(context) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(if (accessibilityEnabled) "管理无障碍辅助" else "尝试开启无障碍辅助")
                         }
                     }
                 }
@@ -1202,7 +1047,9 @@ internal fun SettingsScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text("打开最近任务界面，找到 TodoCloud 后向下滑动，点击锁形图标。锁定后不要点击清除全部。")
+                    Text("若被清理后漏提醒，请允许自启动和后台活动。")
+                    Text(oemBackgroundGuidance())
+                    Text("若仍被清理，请在最近任务中打开 TodoCloud 卡片菜单并锁定；部分系统需下拉卡片。")
                     Image(
                         painter = painterResource(R.drawable.background_lock_guide),
                         contentDescription = "锁定 TodoCloud 后台的操作示意图",

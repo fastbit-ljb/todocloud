@@ -3,6 +3,7 @@ package com.todocloud.app.notification
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.ComponentActivity
@@ -54,7 +55,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
-import com.todocloud.app.MainActivity
+import java.lang.ref.WeakReference
 import com.todocloud.app.ui.theme.TodoCloudTheme
 
 class AlarmActivity : ComponentActivity() {
@@ -76,7 +77,6 @@ class AlarmActivity : ComponentActivity() {
                 override fun handleOnBackPressed() = Unit
             },
         )
-        val taskId = intent.getIntExtra(ReminderReceiver.EXTRA_TASK_ID, 0)
         val title = intent.getStringExtra(ReminderReceiver.EXTRA_TITLE) ?: "任务提醒"
         val description = intent.getStringExtra(ReminderReceiver.EXTRA_DESCRIPTION)
         val steps = parseSteps(intent.getStringExtra(ReminderReceiver.EXTRA_STEPS))
@@ -86,7 +86,7 @@ class AlarmActivity : ComponentActivity() {
                     title = title,
                     description = description,
                     steps = steps,
-                    onStop = { stopAlarm(taskId) },
+                    onStop = ::stopAlarm,
                     onMuteChanged = { muted ->
                         startService(
                             Intent(
@@ -100,13 +100,43 @@ class AlarmActivity : ComponentActivity() {
         }
     }
 
-    private fun stopAlarm(taskId: Int) {
+    override fun onResume() {
+        super.onResume()
+        Log.i(AlarmService.LOG_TAG, "alarm_page_resumed task=${intent.getIntExtra(ReminderReceiver.EXTRA_TASK_ID, 0)}")
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            focusedAlarmActivity = WeakReference(this)
+        } else {
+            clearFocusedAlarmWindow()
+        }
+        Log.i(AlarmService.LOG_TAG, "alarm_page_focus=$hasFocus")
+    }
+
+    override fun onPause() {
+        clearFocusedAlarmWindow()
+        super.onPause()
+    }
+
+    private fun clearFocusedAlarmWindow() {
+        if (focusedAlarmActivity?.get() === this) focusedAlarmActivity = null
+    }
+
+    private fun stopAlarm() {
         stopService(Intent(this, AlarmService::class.java))
-        startActivity(MainActivity.intent(this, taskId))
-        finish()
+        // AlarmActivity lives in its own temporary task. Removing that task
+        // reveals whichever app the user was using before the alarm appeared.
+        finishAndRemoveTask()
     }
 
     companion object {
+        private var focusedAlarmActivity: WeakReference<AlarmActivity>? = null
+
+        internal fun hasFocusedAlarmWindow(): Boolean =
+            focusedAlarmActivity?.get()?.hasWindowFocus() == true
+
         fun intent(
             context: Context,
             taskId: Int,

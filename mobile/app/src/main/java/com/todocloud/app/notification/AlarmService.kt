@@ -3,6 +3,7 @@ package com.todocloud.app.notification
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.ActivityOptions
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -15,11 +16,14 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.provider.Settings
+import android.util.Log
 
 class AlarmService : Service() {
     private var player: MediaPlayer? = null
     private var vibrator: Vibrator? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var activeTaskId: Int? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -48,22 +52,44 @@ class AlarmService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        val deliveryAction = alarmDeliveryAction(
+            activeTaskId = activeTaskId,
+            incomingTaskId = taskId,
+            alarmWindowFocused = AlarmActivity.hasFocusedAlarmWindow(),
+        )
+        Log.i(LOG_TAG, "alarm_delivery task=$taskId active=$activeTaskId action=$deliveryAction")
+        when (deliveryAction) {
+            AlarmDeliveryAction.KEEP_CURRENT_ALARM -> return START_NOT_STICKY
+            AlarmDeliveryAction.SHOW_EXISTING_ALARM -> {
+                // Swiping the main task away can leave this ringing service
+                // and its separate alarm task alive. A repeated delivery must
+                // restore the page without restarting sound or changing mute.
+                openAlarmWindow(taskId, title, description, steps)
+                return START_NOT_STICKY
+            }
+            AlarmDeliveryAction.START_RINGING -> Unit
+        }
 
         stopRinging()
         ReminderScheduler.createAlarmServiceChannel(this)
-        startForegroundSafely(taskId, title)
+        startForegroundSafely(taskId, title, description, steps)
         acquireWakeLock()
         startSound()
         startVibration()
+        activeTaskId = taskId
         openAlarmWindow(taskId, title, description, steps)
         return START_NOT_STICKY
     }
 
-    private fun startForegroundSafely(taskId: Int, title: String) {
-        val fullScreenIntent = PendingIntent.getActivity(
+    private fun startForegroundSafely(taskId: Int, title: String, description: String?, steps: String?) {
+        val fullScreenIntent = alarmActivityPendingIntent(
+            taskId,
+            AlarmActivity.intent(this, taskId, title, description, steps),
+        )
+        val stopIntent = PendingIntent.getService(
             this,
             taskId,
-            AlarmActivity.intent(this, taskId, title),
+            Intent(this, AlarmService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = Notification.Builder(this, ReminderScheduler.ALARM_SERVICE_CHANNEL_ID)
@@ -72,8 +98,15 @@ class AlarmService : Service() {
             .setContentText(title)
             .setCategory(Notification.CATEGORY_ALARM)
             .setOngoing(true)
-            .setVisibility(Notification.VISIBILITY_SECRET)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setContentIntent(fullScreenIntent)
             .setFullScreenIntent(fullScreenIntent, true)
+            .addAction(Notification.Action.Builder(null, "停止", stopIntent).build())
+            .apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+                }
+            }
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -87,14 +120,43 @@ class AlarmService : Service() {
     }
 
     private fun openAlarmWindow(taskId: Int, title: String, description: String?, steps: String?) {
+        Log.i(LOG_TAG, "alarm_page_request task=$taskId overlay=${Settings.canDrawOverlays(this)}")
         runCatching {
-            startActivity(
-                AlarmActivity.intent(this, taskId, title, description, steps).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                },
-            )
+            // A self-sent PendingIntent does not create a background-launch
+            // exemption. Use the explicit activity route supported by overlay
+            // access / the OEM background-popup permission. SystemUI retains
+            // the full-screen notification route for lock-screen alarms.
+            startActivity(AlarmActivity.intent(this, taskId, title, description, steps))
+        }.onFailure {
+            Log.w(LOG_TAG, "alarm_page_request_exception task=$taskId", it)
         }
     }
+
+    private fun alarmActivityPendingIntent(taskId: Int, intent: Intent): PendingIntent {
+        val creatorOptions = if (Build.VERSION.SDK_INT >= 35) {
+            ActivityOptions.makeBasic().apply {
+                pendingIntentCreatorBackgroundActivityStartMode =
+                    backgroundActivityStartMode()
+            }.toBundle()
+        } else {
+            null
+        }
+        return PendingIntent.getActivity(
+            this,
+            taskId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            creatorOptions,
+        )
+    }
+
+    private fun backgroundActivityStartMode(): Int =
+        if (Build.VERSION.SDK_INT >= 36) {
+            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+        } else {
+            @Suppress("DEPRECATION")
+            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+        }
 
     private fun acquireWakeLock() {
         wakeLock = getSystemService(PowerManager::class.java)
@@ -143,6 +205,7 @@ class AlarmService : Service() {
     }
 
     private fun stopRinging() {
+        activeTaskId = null
         runCatching { player?.stop() }
         runCatching { player?.release() }
         player = null
@@ -163,5 +226,6 @@ class AlarmService : Service() {
         const val ACTION_STOP = "com.todocloud.app.notification.STOP_ALARM"
         const val ACTION_MUTE = "com.todocloud.app.notification.MUTE_ALARM"
         const val ACTION_UNMUTE = "com.todocloud.app.notification.UNMUTE_ALARM"
+        internal const val LOG_TAG = "TodoCloudAlarm"
     }
 }

@@ -1,12 +1,14 @@
 package com.todocloud.app.notification
 
 import android.app.AlarmManager
+import android.app.AppOpsManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Process
 import com.todocloud.app.MainActivity
 import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TaskStep
@@ -14,9 +16,24 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.OffsetDateTime
 
+/** Computes a one-shot reminder from the task's due time and selected offset. */
+internal fun reminderTriggerAtMillis(
+    dueMillis: Long,
+    offsetMinutes: Int,
+    nowMillis: Long,
+    mode: ReminderScheduler.ReminderMode,
+): Long? {
+    if (dueMillis <= nowMillis) return null
+    val requestedTrigger = dueMillis - offsetMinutes * 60_000L
+    if (mode == ReminderScheduler.ReminderMode.NOTIFICATION && requestedTrigger <= nowMillis) return null
+    return if (requestedTrigger <= nowMillis) nowMillis + 1_000L else requestedTrigger
+}
+
 object ReminderScheduler {
     const val CHANNEL_ID = "task_reminders"
-    const val ALARM_SERVICE_CHANNEL_ID = "alarm_service"
+    // A new channel migrates the old lock-screen-hidden policy. Android keeps
+    // channel settings across app updates, so reusing "alarm_service" is unsafe.
+    const val ALARM_SERVICE_CHANNEL_ID = "alarm_service_v2"
     private const val CHANNEL_NAME = "任务提醒"
     private const val ALARM_SERVICE_CHANNEL_NAME = "闹钟运行中"
     private const val PREFERENCES_NAME = "reminder_settings"
@@ -24,6 +41,8 @@ object ReminderScheduler {
     private const val STORED_ALARM_IDS_KEY = "stored_alarm_ids"
     private const val STORED_ALARM_PREFIX = "stored_alarm_"
     private const val DISMISSED_ALARM_PREFIX = "dismissed_alarm_"
+    private const val OPSTR_SCHEDULE_EXACT_ALARM_COMPAT = "android:schedule_exact_alarm"
+    private const val LEGACY_PERMISSION_TEST_TASK_ID = -1
 
     enum class ReminderMode {
         NOTIFICATION,
@@ -51,16 +70,15 @@ object ReminderScheduler {
             NotificationChannel(
                 ALARM_SERVICE_CHANNEL_ID,
                 ALARM_SERVICE_CHANNEL_NAME,
-                // Full-screen intents are only honored reliably on a high-
-                // importance channel. The channel remains silent, badge-free,
-                // and hidden on the lock screen so it is not a task reminder.
+                // Full-screen intents require a high-importance channel. The
+                // channel itself is silent because AlarmService plays the alarm.
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
                 description = "闹钟响铃期间的系统运行保障，不发送任务通知"
                 setSound(null, null)
                 enableVibration(false)
                 setShowBadge(false)
-                lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             },
         )
     }
@@ -74,6 +92,7 @@ object ReminderScheduler {
     }
 
     fun saveReminderMode(context: Context, mode: ReminderMode) {
+        if (mode == ReminderMode.ALARM) createAlarmServiceChannel(context)
         context
             .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -81,7 +100,25 @@ object ReminderScheduler {
             .apply()
     }
 
+    fun canScheduleExactAlarms(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        if (!alarmManager.canScheduleExactAlarms()) return false
+
+        // Some OEM and custom ROMs report true above while the underlying
+        // AppOp is still denied. setAlarmClock then throws and an inexact
+        // fallback loses the foreground-service exemption.
+        val appOps = context.getSystemService(AppOpsManager::class.java)
+        val mode = appOps.unsafeCheckOpNoThrow(
+            OPSTR_SCHEDULE_EXACT_ALARM_COMPAT,
+            Process.myUid(),
+            context.packageName,
+        )
+        return mode == AppOpsManager.MODE_ALLOWED || mode == AppOpsManager.MODE_DEFAULT
+    }
+
     fun schedule(context: Context, task: TaskItem) {
+        if (task.id <= 0) return cancel(context, task.id)
         cancelAlarmOnly(context, task.id)
         context.getSystemService(NotificationManager::class.java).cancel(task.id)
         val dueAt = task.dueAt ?: return forgetStoredTask(context, task.id)
@@ -90,7 +127,6 @@ object ReminderScheduler {
 
         val dueMillis = runCatching { OffsetDateTime.parse(dueAt).toInstant().toEpochMilli() }.getOrNull()
             ?: return forgetStoredTask(context, task.id)
-        val requestedTrigger = dueMillis - offset * 60_000L
         val now = System.currentTimeMillis()
         val mode = loadReminderMode(context)
         if (mode != ReminderMode.ALARM) {
@@ -103,47 +139,23 @@ object ReminderScheduler {
             clearDismissedAlarm(context, task.id)
         }
 
-        // Keep the formal 1.0.0 notification behavior unchanged.
-        if (mode == ReminderMode.NOTIFICATION && requestedTrigger <= now) {
-            return forgetStoredTask(context, task.id)
-        }
-        if (dueMillis <= now) return forgetStoredTask(context, task.id)
-
-        val triggerAt = if (requestedTrigger <= now) now + 1_000L else requestedTrigger
+        val triggerAt = reminderTriggerAtMillis(dueMillis, offset, now, mode)
+            ?: return forgetStoredTask(context, task.id)
         val pendingIntent = pendingIntent(context, task, mode)
-        val alarmManager = context.getSystemService(AlarmManager::class.java)
-        try {
-            // Keep the complete reminder payload locally. AlarmManager can
-            // wake the app after it has been removed from Recents, and this
-            // store lets us rebuild the entry after reboot/time changes too.
-            rememberTask(context, task, mode)
-            if (mode == ReminderMode.ALARM) {
-                val showIntent = PendingIntent.getActivity(
-                    context,
-                    task.id,
-                    MainActivity.intent(context, task.id),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                )
-                alarmManager.setAlarmClock(
-                    AlarmManager.AlarmClockInfo(triggerAt, showIntent),
-                    pendingIntent,
-                )
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager.canScheduleExactAlarms()) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-            } else {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-            }
-        } catch (_: SecurityException) {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-        }
+        rememberTask(context, task, mode)
+        scheduleAlarm(context, task.id, mode, triggerAt, pendingIntent)
     }
 
     fun cancel(context: Context, taskId: Int) {
         cancelAlarmOnly(context, taskId)
+        context.getSystemService(NotificationManager::class.java).cancel(taskId)
         forgetStoredTask(context, taskId)
     }
 
     fun restoreScheduledTasks(context: Context) {
+        // Upgrade from permission-audit APKs without leaving their local-only
+        // repeating reminder or notification behind. Real user tasks are untouched.
+        cancel(context, LEGACY_PERMISSION_TEST_TASK_ID)
         val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
         val ids = prefs.getStringSet(STORED_ALARM_IDS_KEY, emptySet()).orEmpty().toList()
         ids.forEach { rawId ->
@@ -245,6 +257,42 @@ object ReminderScheduler {
                     .toString(),
             )
             .apply()
+    }
+
+    private fun scheduleAlarm(
+        context: Context,
+        taskId: Int,
+        mode: ReminderMode,
+        triggerAt: Long,
+        pendingIntent: PendingIntent,
+    ) {
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        try {
+            if (mode == ReminderMode.ALARM) {
+                val showIntent = PendingIntent.getActivity(
+                    context,
+                    taskId,
+                    MainActivity.intent(context, taskId),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+                alarmManager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(triggerAt, showIntent),
+                    pendingIntent,
+                )
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager.canScheduleExactAlarms()) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            } else {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            }
+        } catch (_: SecurityException) {
+            // Alarm mode must remain exact: exact alarms are exempt from the
+            // background foreground-service start restriction. Falling back
+            // to an inexact alarm can display briefly and then crash when the
+            // system rejects AlarmService.startForeground().
+            if (mode != ReminderMode.ALARM) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            }
+        }
     }
 
     private fun isAlarmDismissed(context: Context, task: TaskItem): Boolean {
