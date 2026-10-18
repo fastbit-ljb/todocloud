@@ -3,6 +3,7 @@ package com.todocloud.app.notification
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.ComponentActivity
@@ -100,12 +101,12 @@ class AlarmActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        alarmWindowVisible = true
+        Log.i(AlarmService.LOG_TAG, "alarm_page_resumed task=${intent.getIntExtra(ReminderReceiver.EXTRA_TASK_ID, 0)}")
     }
 
-    override fun onPause() {
-        alarmWindowVisible = false
-        super.onPause()
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        Log.i(AlarmService.LOG_TAG, "alarm_page_focus=$hasFocus")
     }
 
     private fun stopAlarm() {
@@ -116,11 +117,6 @@ class AlarmActivity : ComponentActivity() {
     }
 
     companion object {
-        @Volatile
-        private var alarmWindowVisible = false
-
-        internal fun isAlarmWindowVisible(): Boolean = alarmWindowVisible
-
         fun intent(
             context: Context,
             taskId: Int,

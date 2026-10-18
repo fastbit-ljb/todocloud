@@ -12,20 +12,18 @@ import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.provider.Settings
+import android.util.Log
 
 class AlarmService : Service() {
     private var player: MediaPlayer? = null
     private var vibrator: Vibrator? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var activeTaskId: Int? = null
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val pendingWindowOpens = mutableListOf<Runnable>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -58,19 +56,25 @@ class AlarmService : Service() {
 
         stopRinging()
         ReminderScheduler.createAlarmServiceChannel(this)
-        startForegroundSafely(taskId, title)
+        startForegroundSafely(taskId, title, description, steps)
         acquireWakeLock()
         startSound()
         startVibration()
         activeTaskId = taskId
-        scheduleAlarmWindow(taskId, title, description, steps)
+        openAlarmWindow(taskId, title, description, steps)
         return START_NOT_STICKY
     }
 
-    private fun startForegroundSafely(taskId: Int, title: String) {
+    private fun startForegroundSafely(taskId: Int, title: String, description: String?, steps: String?) {
         val fullScreenIntent = alarmActivityPendingIntent(
             taskId,
-            AlarmActivity.intent(this, taskId, title),
+            AlarmActivity.intent(this, taskId, title, description, steps),
+        )
+        val stopIntent = PendingIntent.getService(
+            this,
+            taskId,
+            Intent(this, AlarmService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = Notification.Builder(this, ReminderScheduler.ALARM_SERVICE_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
@@ -79,7 +83,14 @@ class AlarmService : Service() {
             .setCategory(Notification.CATEGORY_ALARM)
             .setOngoing(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setContentIntent(fullScreenIntent)
             .setFullScreenIntent(fullScreenIntent, true)
+            .addAction(Notification.Action.Builder(null, "停止", stopIntent).build())
+            .apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+                }
+            }
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -93,50 +104,16 @@ class AlarmService : Service() {
     }
 
     private fun openAlarmWindow(taskId: Int, title: String, description: String?, steps: String?) {
+        Log.i(LOG_TAG, "alarm_page_request task=$taskId overlay=${Settings.canDrawOverlays(this)}")
         runCatching {
-            val alarmIntent = AlarmActivity.intent(this, taskId, title, description, steps)
-            if (Build.VERSION.SDK_INT >= 34) {
-                alarmActivityPendingIntent(taskId, alarmIntent).send(
-                    this,
-                    0,
-                    null,
-                    null,
-                    null,
-                    null,
-                    ActivityOptions.makeBasic().apply {
-                        pendingIntentBackgroundActivityStartMode =
-                            backgroundActivityStartMode()
-                    }.toBundle(),
-                )
-            } else {
-                startActivity(alarmIntent)
-            }
+            // A self-sent PendingIntent does not create a background-launch
+            // exemption. Use the explicit activity route supported by overlay
+            // access / the OEM background-popup permission. SystemUI retains
+            // the full-screen notification route for lock-screen alarms.
+            startActivity(AlarmActivity.intent(this, taskId, title, description, steps))
+        }.onFailure {
+            Log.w(LOG_TAG, "alarm_page_request_exception task=$taskId", it)
         }
-    }
-
-    private fun scheduleAlarmWindow(
-        taskId: Int,
-        title: String,
-        description: String?,
-        steps: String?,
-    ) {
-        cancelPendingWindowOpens()
-        ALARM_WINDOW_OPEN_DELAYS_MILLIS.forEach { delayMillis ->
-            lateinit var action: Runnable
-            action = Runnable {
-                pendingWindowOpens.remove(action)
-                if (activeTaskId == taskId && !AlarmActivity.isAlarmWindowVisible()) {
-                    openAlarmWindow(taskId, title, description, steps)
-                }
-            }
-            pendingWindowOpens.add(action)
-            mainHandler.postDelayed(action, delayMillis)
-        }
-    }
-
-    private fun cancelPendingWindowOpens() {
-        pendingWindowOpens.forEach(mainHandler::removeCallbacks)
-        pendingWindowOpens.clear()
     }
 
     private fun alarmActivityPendingIntent(taskId: Int, intent: Intent): PendingIntent {
@@ -213,7 +190,6 @@ class AlarmService : Service() {
 
     private fun stopRinging() {
         activeTaskId = null
-        cancelPendingWindowOpens()
         runCatching { player?.stop() }
         runCatching { player?.release() }
         player = null
@@ -234,6 +210,6 @@ class AlarmService : Service() {
         const val ACTION_STOP = "com.todocloud.app.notification.STOP_ALARM"
         const val ACTION_MUTE = "com.todocloud.app.notification.MUTE_ALARM"
         const val ACTION_UNMUTE = "com.todocloud.app.notification.UNMUTE_ALARM"
-        private val ALARM_WINDOW_OPEN_DELAYS_MILLIS = longArrayOf(400L, 1_400L, 3_000L)
+        internal const val LOG_TAG = "TodoCloudAlarm"
     }
 }

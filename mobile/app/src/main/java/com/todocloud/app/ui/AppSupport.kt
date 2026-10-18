@@ -110,8 +110,8 @@ internal fun saveDefaultReminderOffset(context: Context, offsetMinutes: Int?) {
  * Opens the first missing system permission needed by alarm mode.
  *
  * @return true when the standard Android permissions are already available.
- * OEM background-popup access cannot be queried reliably, so supported OEMs
- * are sent to their per-app permission screen for the user to confirm it.
+ * Overlay access is optional for ringing; request it separately so Android
+ * can also display the alarm page while another app is in the foreground.
  */
 internal fun requestAlarmPermissions(context: Context): Boolean {
     val notificationManager = context.getSystemService(NotificationManager::class.java)
@@ -132,10 +132,30 @@ internal fun requestAlarmPermissions(context: Context): Boolean {
         }
     }
 
-    if (requiresOemAlarmDisplayGuide()) {
-        openOemAlarmDisplaySettings(context)
+    if (!Settings.canDrawOverlays(context)) {
+        // Optional for ringing. This is the standard Android exemption that
+        // also permits the alarm page to appear over another foreground app.
+        openAlarmBackgroundDisplaySettings(context)
     }
     return true
+}
+
+internal fun openAlarmBackgroundDisplaySettings(context: Context) {
+    val permissionIntent = Intent(
+        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+        Uri.parse("package:${context.packageName}"),
+    )
+    if (startSettingsActivity(context, permissionIntent)) {
+        // Android 11+ may display the app list. Its per-app activity can be
+        // protected by INTERNAL_SYSTEM_WINDOW, which third-party apps cannot use.
+        android.widget.Toast.makeText(
+            context,
+            "若显示应用列表，请选择 TodoCloud，再允许显示在其他应用上层。",
+            android.widget.Toast.LENGTH_LONG,
+        ).show()
+    } else {
+        openAppDetailsSettings(context)
+    }
 }
 
 internal fun areNotificationsAvailable(context: Context): Boolean {
@@ -295,7 +315,7 @@ internal fun oemAlarmDisplayGuidance(): String {
             "应用权限设置中的后台弹出、后台启动界面或类似选项"
     }
     return "为了让闹钟在你使用其他应用时自动显示停止界面，请允许：$instruction。" +
-        "不同系统名称可能略有差异；如果没有这个选项，只需保留标准的通知和全屏通知权限。"
+        "不同系统名称可能略有差异；如果没有这个选项，请使用「后台显示闹钟页面」中的系统悬浮窗授权。"
 }
 
 internal fun oemBackgroundGuidance(): String {

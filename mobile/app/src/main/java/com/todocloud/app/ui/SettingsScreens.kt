@@ -177,7 +177,7 @@ internal fun SettingsHomeScreen(
             SettingsRow(
                 icon = Icons.Outlined.Alarm,
                 title = "闹钟提醒",
-                description = "到点响铃并显示停止界面，不发送任务通知",
+                description = "到点响铃；允许后台显示后自动打开停止界面",
                 onClick = {
                     if (requestAlarmPermissions(context)) {
                         onReminderModeChange(ReminderMode.ALARM)
@@ -450,6 +450,9 @@ internal fun PermissionSettingsScreen(
         Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
             notificationManager.canUseFullScreenIntent()
     }
+    val alarmBackgroundDisplayEnabled = remember(permissionRefreshToken) {
+        Settings.canDrawOverlays(context)
+    }
     val backgroundRunAllowed = remember(permissionRefreshToken) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
             powerManager.isIgnoringBatteryOptimizations(context.packageName)
@@ -491,6 +494,7 @@ internal fun PermissionSettingsScreen(
             ) { Text("开启精确闹钟权限") }
         }
         if (reminderMode == ReminderMode.ALARM) {
+            AlarmBackgroundDisplayPermission(context, alarmBackgroundDisplayEnabled)
             PermissionStateRow("全屏闹钟", fullScreenIntentEnabled, "锁屏时显示停止闹钟界面")
             if (!fullScreenIntentEnabled) {
                 OutlinedButton(
@@ -663,6 +667,28 @@ internal fun PermissionStateRow(
 }
 
 @Composable
+private fun AlarmBackgroundDisplayPermission(context: Context, enabled: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        PermissionStateRow(
+            "后台显示闹钟页面",
+            enabled,
+            "使用其他应用时自动显示",
+        )
+        Text(
+            "仅在闹钟响铃时用于打开停止页面。未开启仍可响铃，可点击闹钟通知打开页面或停止。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = { openAlarmBackgroundDisplaySettings(context) },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        ) {
+            Text(if (enabled) "管理后台显示权限" else "开启后台显示权限（悬浮窗）")
+        }
+    }
+}
+
+@Composable
 internal fun SponsorSettingsScreen(paddingValues: PaddingValues) {
     Column(
         modifier = Modifier
@@ -738,6 +764,9 @@ internal fun SettingsScreen(
         Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
             notificationManager.canUseFullScreenIntent()
     }
+    val alarmBackgroundDisplayEnabled = remember(permissionRefreshToken) {
+        Settings.canDrawOverlays(context)
+    }
     val backgroundRunAllowed = remember(permissionRefreshToken) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
             powerManager.isIgnoringBatteryOptimizations(context.packageName)
@@ -796,7 +825,7 @@ internal fun SettingsScreen(
             )
             ReminderModeCard(
                 title = "闹钟提醒",
-                description = "到点响铃并显示停止界面，不发送任务通知",
+                description = "到点响铃；允许后台显示后自动打开停止界面",
                 icon = { Icon(Icons.Outlined.Alarm, contentDescription = null) },
                 selected = reminderMode == ReminderMode.ALARM,
                 onClick = {
@@ -878,6 +907,9 @@ internal fun SettingsScreen(
                 ) {
                     Text("开启精确提醒权限")
                 }
+            }
+            if (reminderMode == ReminderMode.ALARM) {
+                AlarmBackgroundDisplayPermission(context, alarmBackgroundDisplayEnabled)
             }
             if (reminderMode == ReminderMode.ALARM && !fullScreenIntentEnabled) {
                 Text("全屏提醒权限未开启，锁屏时可能无法显示停止闹钟界面。", color = MaterialTheme.colorScheme.error)
