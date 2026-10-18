@@ -560,6 +560,422 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchsimple.Daily"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchsimple_daily"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchsimple_daily"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchsimple.DueSoon"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchsimple_due_soon"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchsimple_due_soon"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchsimple.Overdue"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchsimple_overdue"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchsimple_overdue"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchsimple.Progress"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchsimple_progress"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchsimple_progress"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchsimple.Complete"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchsimple_complete"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchsimple_complete"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchsimple.NoTasks"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchsimple_no_tasks"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchsimple_no_tasks"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchsimple.HalfFrozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchsimple_half_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchsimple_half_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchsimple.Frozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchsimple_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchsimple_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchdetail.Daily"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchdetail_daily"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchdetail_daily"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchdetail.DueSoon"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchdetail_due_soon"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchdetail_due_soon"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchdetail.Overdue"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchdetail_overdue"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchdetail_overdue"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchdetail.Progress"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchdetail_progress"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchdetail_progress"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchdetail.Complete"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchdetail_complete"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchdetail_complete"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchdetail.NoTasks"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchdetail_no_tasks"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchdetail_no_tasks"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchdetail.HalfFrozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchdetail_half_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchdetail_half_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverwitchdetail.Frozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverwitchdetail_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverwitchdetail_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentsimple.Daily"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentsimple_daily"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentsimple_daily"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentsimple.DueSoon"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentsimple_due_soon"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentsimple_due_soon"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentsimple.Overdue"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentsimple_overdue"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentsimple_overdue"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentsimple.Progress"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentsimple_progress"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentsimple_progress"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentsimple.Complete"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentsimple_complete"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentsimple_complete"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentsimple.NoTasks"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentsimple_no_tasks"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentsimple_no_tasks"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentsimple.HalfFrozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentsimple_half_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentsimple_half_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentsimple.Frozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentsimple_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentsimple_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentdetail.Daily"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentdetail_daily"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentdetail_daily"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentdetail.DueSoon"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentdetail_due_soon"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentdetail_due_soon"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentdetail.Overdue"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentdetail_overdue"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentdetail_overdue"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentdetail.Progress"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentdetail_progress"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentdetail_progress"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentdetail.Complete"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentdetail_complete"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentdetail_complete"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentdetail.NoTasks"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentdetail_no_tasks"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentdetail_no_tasks"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentdetail.HalfFrozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentdetail_half_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentdetail_half_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".launcher.silverstudentdetail.Frozen"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_silverstudentdetail_frozen"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_silverstudentdetail_frozen"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name=".notification.AlarmActivity"
             android:excludeFromRecents="true"
