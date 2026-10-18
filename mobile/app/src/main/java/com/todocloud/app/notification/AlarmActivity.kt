@@ -98,6 +98,16 @@ class AlarmActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        alarmWindowVisible = true
+    }
+
+    override fun onPause() {
+        alarmWindowVisible = false
+        super.onPause()
+    }
+
     private fun stopAlarm() {
         stopService(Intent(this, AlarmService::class.java))
         // AlarmActivity lives in its own temporary task. Removing that task
@@ -106,6 +116,11 @@ class AlarmActivity : ComponentActivity() {
     }
 
     companion object {
+        @Volatile
+        private var alarmWindowVisible = false
+
+        internal fun isAlarmWindowVisible(): Boolean = alarmWindowVisible
+
         fun intent(
             context: Context,
             taskId: Int,
