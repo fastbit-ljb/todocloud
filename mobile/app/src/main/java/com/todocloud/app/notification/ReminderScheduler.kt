@@ -12,7 +12,9 @@ import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TaskStep
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
 import java.time.OffsetDateTime
+import java.time.ZoneOffset
 
 /**
  * Temporary permission-audit interval. Eligible task reminders start ten seconds
@@ -33,6 +35,8 @@ object ReminderScheduler {
     private const val REMINDER_MODE_KEY = "reminder_mode"
     private const val STORED_ALARM_IDS_KEY = "stored_alarm_ids"
     private const val STORED_ALARM_PREFIX = "stored_alarm_"
+    private const val PERMISSION_TEST_DURATION_MILLIS = 10 * 60 * 1000L
+    const val PERMISSION_TEST_TASK_ID = -1
 
     enum class ReminderMode {
         NOTIFICATION,
@@ -88,6 +92,40 @@ object ReminderScheduler {
             .edit()
             .putString(REMINDER_MODE_KEY, mode.name)
             .apply()
+        ensurePermissionTestRunning(context)
+    }
+
+    /** Run a local-only reminder audit for ten minutes, without creating a cloud task. */
+    fun ensurePermissionTestRunning(context: Context) {
+        val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+        val stored = runCatching {
+            JSONObject(prefs.getString(STORED_ALARM_PREFIX + PERMISSION_TEST_TASK_ID, null).orEmpty())
+        }.getOrNull()
+        val now = System.currentTimeMillis()
+        val existingDueAt = stored?.optString("dueAt")
+        val existingDueMillis = existingDueAt?.let {
+            runCatching { OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull()
+        }
+        val dueAt = if (existingDueMillis != null && existingDueMillis > now) {
+            existingDueAt
+        } else {
+            OffsetDateTime.ofInstant(
+                Instant.ofEpochMilli(now + PERMISSION_TEST_DURATION_MILLIS),
+                ZoneOffset.UTC,
+            ).toString()
+        }
+        schedule(
+            context,
+            TaskItem(
+                id = PERMISSION_TEST_TASK_ID,
+                title = "权限测试提醒（每 10 秒）",
+                description = "本机测试，不会创建云端任务；10 分钟后自动停止。",
+                dueAt = dueAt,
+                reminderOffsetMinutes = 0,
+                completed = false,
+                completedAt = null,
+            ),
+        )
     }
 
     fun schedule(context: Context, task: TaskItem) {
@@ -119,7 +157,7 @@ object ReminderScheduler {
     /** Returns false when a canceled or expired reminder must not be shown. */
     fun scheduleNextPermissionTestReminder(context: Context, deliveredIntent: Intent): Boolean {
         val taskId = deliveredIntent.getIntExtra(ReminderReceiver.EXTRA_TASK_ID, 0)
-        if (taskId <= 0) return false
+        if (taskId == 0) return false
         val raw = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
             .getString(STORED_ALARM_PREFIX + taskId, null) ?: return false
         val stored = runCatching { JSONObject(raw) }.getOrNull() ?: return false

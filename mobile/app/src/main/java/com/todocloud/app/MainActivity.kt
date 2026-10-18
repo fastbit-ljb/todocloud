@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
         // loaded. System AlarmManager entries survive a task swipe, but this
         // also repairs schedules after a reboot, time change, or process stop.
         ReminderScheduler.restoreScheduledTasks(this)
+        ReminderScheduler.ensurePermissionTestRunning(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {

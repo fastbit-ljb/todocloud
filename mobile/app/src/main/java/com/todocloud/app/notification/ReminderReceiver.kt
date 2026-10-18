@@ -14,7 +14,9 @@ class ReminderReceiver : BroadcastReceiver() {
         val description = intent.getStringExtra(EXTRA_DESCRIPTION)
         val steps = intent.getStringExtra(EXTRA_STEPS)
         val alarmMode = intent.getBooleanExtra(EXTRA_ALARM_MODE, false)
-        MascotStateManager.showReminderState(context)
+        if (taskId != ReminderScheduler.PERMISSION_TEST_TASK_ID) {
+            MascotStateManager.showReminderState(context)
+        }
         if (alarmMode) {
             val serviceIntent = Intent(context, AlarmService::class.java).apply {
                 putExtra(EXTRA_TASK_ID, taskId)
@@ -67,6 +69,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 .setAutoCancel(true)
                 .setCategory(android.app.Notification.CATEGORY_REMINDER)
                 .build()
+            if (taskId == ReminderScheduler.PERMISSION_TEST_TASK_ID) manager.cancel(taskId)
             manager.notify(taskId, notification)
         }
     }
