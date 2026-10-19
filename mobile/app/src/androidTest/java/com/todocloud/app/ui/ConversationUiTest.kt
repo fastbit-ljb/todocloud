@@ -1,6 +1,5 @@
 package com.todocloud.app.ui
 
-import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,7 +9,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -91,10 +89,9 @@ class ConversationUiTest {
         }
     }
 
-    @Test fun darkLargeTextKeepsHistoryAndReferencesReachable() {
+    @Test fun darkPortraitLargeTextKeepsHistoryAndReferencesReachable() {
         ActivityScenario.launch(ConversationTestActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                 activity.setContent {
                     val density = LocalDensity.current
                     CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
@@ -111,10 +108,10 @@ class ConversationUiTest {
                 }
             }
             compose.onNodeWithContentDescription("历史会话").assertIsDisplayed()
-            compose.onNodeWithContentDescription("引用会话").assertIsDisplayed()
+            compose.onNodeWithText("引用会话").assertIsDisplayed()
             compose.onNodeWithText("可以从二十分钟开始").assertIsDisplayed()
             compose.onNodeWithContentDescription("生成计划").assertIsDisplayed()
-            screenshot("conversation-dark-landscape-large-text")
+            screenshot("conversation-dark-portrait-large-text")
             compose.onNodeWithContentDescription("历史会话").performClick()
             compose.onNodeWithText(old.title).assertIsDisplayed().performClick()
         }
@@ -143,7 +140,7 @@ class ConversationUiTest {
 
     private fun screenshot(name: String) {
         compose.waitForIdle()
-        // Wait for the system's physical display-rotation transition to finish too.
+        // Let the system window transition finish before visual verification.
         android.os.SystemClock.sleep(1_200)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val bitmap = instrumentation.uiAutomation.takeScreenshot() ?: return

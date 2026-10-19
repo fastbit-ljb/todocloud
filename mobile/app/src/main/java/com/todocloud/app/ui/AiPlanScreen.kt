@@ -22,7 +22,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.PaddingValues
@@ -46,7 +45,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
@@ -54,7 +52,6 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Inbox
-import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -66,7 +63,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.AssistChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -510,32 +506,7 @@ internal fun AiPlanLanding(
     onInboxClick: () -> Unit,
     onSubmit: () -> Unit,
 ) {
-    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        if (maxHeight < 380.dp) {
-            Column(Modifier.fillMaxSize().imePadding()) {
-                if (conversation.isNotEmpty()) {
-                    PlanConversation(conversation, Modifier.weight(1f), onOpenReference, historyPlan)
-                } else {
-                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-                        Text("聊聊目标，或 @ 引用旧会话", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                CompactPlanAttachments(images, references, onRemoveImage, onRemoveReference)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onReference, enabled = !loading && references.size < 3) { Icon(Icons.Outlined.AlternateEmail, "引用会话") }
-                    IconButton(onClick = onAddImages, enabled = !loading && images.size < MAX_PLAN_IMAGES) { Icon(Icons.Outlined.Image, "添加图片") }
-                    if (conversation.isNotEmpty()) {
-                        IconButton(onClick = onPlanFromConversation, enabled = !loading) { Icon(Icons.Outlined.AutoAwesome, "直接帮我排成计划") }
-                    }
-                    AiPlanPromptField(
-                        modifier = Modifier.weight(1f).padding(bottom = 8.dp), value = message, onValueChange = onMessageChange,
-                        ideaCount = ideas.size, selectedIdeaCount = selectedIdeaIds.size, loading = loading, canSubmit = canGenerate,
-                        onInboxClick = onInboxClick, onSubmit = onSubmit,
-                    )
-                }
-            }
-            return@BoxWithConstraints
-        }
+    Box(modifier = modifier.fillMaxWidth()) {
         if (conversation.isEmpty()) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(top = 34.dp, start = 6.dp, end = 6.dp),
@@ -594,18 +565,6 @@ internal fun AiPlanLanding(
                 onSubmit = onSubmit,
             )
         }
-    }
-}
-
-@Composable
-private fun CompactPlanAttachments(images: List<Uri>, references: List<ConversationReference>, onRemoveImage: (Uri) -> Unit, onRemoveReference: (String) -> Unit) {
-    if (images.isEmpty() && references.isEmpty()) return
-    LazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        items(references, key = { it.id }) { ref ->
-            AssistChip(onClick = { onRemoveReference(ref.id) }, modifier = Modifier.heightIn(min = 48.dp),
-                label = { Text("@${ref.title.take(14)}", maxLines = 1) }, trailingIcon = { Icon(Icons.Outlined.Close, "移除引用：${ref.title}") })
-        }
-        itemsIndexed(images, key = { _, uri -> uri.toString() }) { index, uri -> PlanImageThumbnail(uri, index, onRemove = { onRemoveImage(uri) }) }
     }
 }
 
