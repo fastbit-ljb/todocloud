@@ -45,17 +45,24 @@ import com.todocloud.app.data.TaskItem
 import java.time.LocalDate
 import java.time.YearMonth
 
-/** Flame shown on a past calendar day that had tasks due. */
-internal enum class PastDayFlame { ALL_DONE, UNFINISHED }
+/** Flame shown on a calendar day that had tasks due. */
+internal enum class CalendarDayFlame { ALL_DONE, UNFINISHED }
 
 /**
- * Days before [today] with tasks due get a flame: red when every task was
- * completed, ice blue while any is still open. Today, future days and days
- * without tasks get none. Colours: [pastDayFlameColor].
+ * Past days with tasks due get a flame: red when every task was completed,
+ * ice blue while any is still open. Today gets a red flame only after all of
+ * its tasks are complete, so adding a new open task removes it immediately.
+ * Future days and days without tasks get none. Colours: [calendarDayFlameColor].
  */
-internal fun pastDayFlame(date: LocalDate, today: LocalDate, dayTasks: List<TaskItem>): PastDayFlame? {
-    if (!date.isBefore(today) || dayTasks.isEmpty()) return null
-    return if (dayTasks.all { it.completed }) PastDayFlame.ALL_DONE else PastDayFlame.UNFINISHED
+internal fun calendarDayFlame(
+    date: LocalDate,
+    today: LocalDate,
+    dayTasks: List<TaskItem>,
+): CalendarDayFlame? {
+    if (date.isAfter(today) || dayTasks.isEmpty()) return null
+    val allDone = dayTasks.all { it.completed }
+    if (date == today && !allDone) return null
+    return if (allDone) CalendarDayFlame.ALL_DONE else CalendarDayFlame.UNFINISHED
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -116,9 +123,9 @@ internal fun CalendarScreen(
                 TextButton(onClick = { moveMonth(1) }) { Text("›") }
             }
             Text(
-                "颜色越深表示当天未完成任务越多，格子下方数字是未完成任务数；今天有未完成任务时使用红色。" +
-                    "过去的日子：红色火焰表示当天任务全部完成，完成得越多红色越深；" +
-                    "冰蓝色火焰表示还有没完成的，没完成的越多蓝色越深。",
+                "今天：全部完成显示红色火焰，有未完成显示红色数字。" +
+                    "过去：全部完成是红色火焰，有未完成是冰蓝色火焰；" +
+                    "颜色越深表示对应任务越多。",
                 modifier = Modifier.padding(top = 4.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -150,7 +157,7 @@ internal fun CalendarScreen(
                                 val taskCount = pendingTaskCountsByDate[date] ?: 0
                                 val today = LocalDate.now()
                                 val isToday = date == today
-                                val flame = pastDayFlame(date, today, tasksByDate[date].orEmpty())
+                                val flame = calendarDayFlame(date, today, tasksByDate[date].orEmpty())
                                 val taskColorFraction = (0.22f + (taskCount - 1).coerceAtLeast(0) * 0.12f)
                                     .coerceAtMost(0.62f)
                                 val dayColor = if (taskCount == 0) {
@@ -185,19 +192,19 @@ internal fun CalendarScreen(
                                         )
                                         if (flame != null) {
                                             // Completed count on a fully-done day, open count otherwise.
-                                            val flameCount = if (flame == PastDayFlame.ALL_DONE) {
+                                            val flameCount = if (flame == CalendarDayFlame.ALL_DONE) {
                                                 tasksByDate[date].orEmpty().size
                                             } else {
                                                 taskCount
                                             }
                                             Icon(
                                                 FlameIcon,
-                                                contentDescription = if (flame == PastDayFlame.ALL_DONE) {
+                                                contentDescription = if (flame == CalendarDayFlame.ALL_DONE) {
                                                     "当天 $flameCount 件任务全部完成"
                                                 } else {
                                                     "当天还有 $taskCount 件未完成"
                                                 },
-                                                tint = pastDayFlameColor(flame, flameCount),
+                                                tint = calendarDayFlameColor(flame, flameCount),
                                                 modifier = Modifier.size(16.dp),
                                             )
                                         } else if (taskCount > 0) {

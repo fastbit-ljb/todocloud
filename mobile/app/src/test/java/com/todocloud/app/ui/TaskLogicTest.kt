@@ -72,20 +72,32 @@ class TaskLogicTest {
     }
 
     @Test
-    fun pastDayFlame_redWhenAllDoneBlueWhenUnfinished() {
+    fun calendarDayFlame_keepsPastDayMeaning() {
         val today = LocalDate.of(2026, 10, 14)
         val yesterday = today.minusDays(1)
         val done = task(1, completed = true, completedAt = "2026-10-13T09:00:00Z")
         val open = task(2)
 
-        assertEquals(PastDayFlame.ALL_DONE, pastDayFlame(yesterday, today, listOf(done)))
-        assertEquals(PastDayFlame.UNFINISHED, pastDayFlame(yesterday, today, listOf(done, open)))
-        assertEquals(PastDayFlame.UNFINISHED, pastDayFlame(today.minusDays(30), today, listOf(open)))
-        // No flame on a past day without tasks, on today or on a future day.
-        assertNull(pastDayFlame(yesterday, today, emptyList()))
-        assertNull(pastDayFlame(today, today, listOf(done)))
-        assertNull(pastDayFlame(today, today, listOf(open)))
-        assertNull(pastDayFlame(today.plusDays(1), today, listOf(open)))
+        assertEquals(CalendarDayFlame.ALL_DONE, calendarDayFlame(yesterday, today, listOf(done)))
+        assertEquals(CalendarDayFlame.UNFINISHED, calendarDayFlame(yesterday, today, listOf(done, open)))
+        assertEquals(CalendarDayFlame.UNFINISHED, calendarDayFlame(today.minusDays(30), today, listOf(open)))
+        assertNull(calendarDayFlame(yesterday, today, emptyList()))
+        assertNull(calendarDayFlame(today.plusDays(1), today, listOf(done)))
+    }
+
+    @Test
+    fun calendarDayFlame_todayAppearsOnlyWhileAllTasksAreComplete() {
+        val today = LocalDate.of(2026, 10, 14)
+        val done = task(1, completed = true, completedAt = "2026-10-14T09:00:00Z")
+        val newlyAdded = task(2)
+
+        assertEquals(CalendarDayFlame.ALL_DONE, calendarDayFlame(today, today, listOf(done)))
+        assertNull(calendarDayFlame(today, today, listOf(done, newlyAdded)))
+        assertEquals(
+            CalendarDayFlame.ALL_DONE,
+            calendarDayFlame(today, today, listOf(done, newlyAdded.copy(completed = true))),
+        )
+        assertNull(calendarDayFlame(today, today, emptyList()))
     }
 
     @Test
@@ -130,9 +142,9 @@ class TaskLogicTest {
     }
 
     @Test
-    fun pastDayFlameColor_deepensWithTheTaskCount() {
-        fun redLuminance(count: Int) = pastDayFlameColor(PastDayFlame.ALL_DONE, count).luminance()
-        fun blueLuminance(count: Int) = pastDayFlameColor(PastDayFlame.UNFINISHED, count).luminance()
+    fun calendarDayFlameColor_deepensWithTheTaskCount() {
+        fun redLuminance(count: Int) = calendarDayFlameColor(CalendarDayFlame.ALL_DONE, count).luminance()
+        fun blueLuminance(count: Int) = calendarDayFlameColor(CalendarDayFlame.UNFINISHED, count).luminance()
 
         assertEquals(0f, flameDepth(1))
         assertEquals(1f, flameDepth(5))
@@ -141,13 +153,16 @@ class TaskLogicTest {
         for (count in 1 until 5) {
             assertTrue(redLuminance(count + 1) < redLuminance(count), "red deepens at $count")
             assertTrue(blueLuminance(count + 1) < blueLuminance(count), "blue deepens at $count")
-            val red = pastDayFlameColor(PastDayFlame.ALL_DONE, count)
-            val blue = pastDayFlameColor(PastDayFlame.UNFINISHED, count)
+            val red = calendarDayFlameColor(CalendarDayFlame.ALL_DONE, count)
+            val blue = calendarDayFlameColor(CalendarDayFlame.UNFINISHED, count)
             assertTrue(red.red > red.blue, "still red at $count")
             assertTrue(blue.blue > blue.red, "still blue at $count")
         }
         // Capped: five and more look the same.
-        assertEquals(pastDayFlameColor(PastDayFlame.ALL_DONE, 5), pastDayFlameColor(PastDayFlame.ALL_DONE, 9))
+        assertEquals(
+            calendarDayFlameColor(CalendarDayFlame.ALL_DONE, 5),
+            calendarDayFlameColor(CalendarDayFlame.ALL_DONE, 9),
+        )
         // The streak counter is grey with no streak and red from the first day on.
         assertEquals(FlameUnlitGrey, flameStreakColor(0))
         assertEquals(FlameRed, flameStreakColor(1))
