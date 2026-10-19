@@ -21,6 +21,7 @@ import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,6 +37,7 @@ class AlarmInteractionTest {
     private val context: Context get() = instrumentation.targetContext
     private val prefs get() = context.getSharedPreferences("reminder_settings", Context.MODE_PRIVATE)
 
+    @Before
     @After
     fun removeOnlyTestAlarms() {
         ReminderScheduler.cancel(context, TEST_TASK_ID)
@@ -135,6 +137,7 @@ class AlarmInteractionTest {
 
     private fun assertSnoozedBySystemBack(backAction: () -> Unit) {
         assumeTrue(ReminderScheduler.canScheduleExactAlarms(context))
+        assertFalse("A previous run must not satisfy the snooze check", prefs.contains("stored_snooze_$TEST_TASK_ID"))
         context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         ActivityScenario.launch<AlarmActivity>(
             AlarmActivity.intent(context, TEST_TASK_ID, "系统返回稍后提醒测试"),
@@ -146,8 +149,9 @@ class AlarmInteractionTest {
             val afterBack = System.currentTimeMillis()
             val triggerAt = JSONObject(prefs.getString("stored_snooze_$TEST_TASK_ID", "{}")!!)
                 .getLong("triggerAt")
-            assertTrue(triggerAt >= beforeBack + 300_000L)
-            assertTrue(triggerAt <= afterBack + 300_000L)
+            val timing = "triggerAt=$triggerAt, beforeBack=$beforeBack, afterBack=$afterBack"
+            assertTrue(timing, triggerAt >= beforeBack + 300_000L)
+            assertTrue(timing, triggerAt <= afterBack + 300_000L)
             compose.waitUntil(5_000) { !AlarmActivity.hasFocusedAlarmWindow() }
         }
     }
