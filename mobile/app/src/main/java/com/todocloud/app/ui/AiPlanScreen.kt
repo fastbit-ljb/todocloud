@@ -120,14 +120,15 @@ internal fun AiPlanScreen(
     onGenerate: (message: String, ideaIds: Set<Int>, forcePlan: Boolean, images: List<Uri>, references: List<ConversationReference>) -> Unit,
     onRevise: (Int, String, List<Uri>, List<ConversationReference>) -> Unit,
     onAccept: (planId: Int, items: List<PlanItem>?) -> Unit,
-    onDeleteConversation: ((String) -> Unit)? = null,
+    onDeleteConversations: ((Set<String>) -> Unit)? = null,
     cloudHistory: Boolean = true,
     deletedConversationIds: Set<String> = emptySet(),
 ) {
     var message by rememberSaveable(conversationKey) { mutableStateOf("") }
     var images by remember(conversationKey) { mutableStateOf<List<Uri>>(emptyList()) }
     var references by remember(conversationKey) { mutableStateOf(emptyList<ConversationReference>()) }
-    var picker by remember(conversationKey) { mutableStateOf<String?>(null) }
+    // Keep batch selection open if deleting the active session starts a new draft.
+    var picker by remember { mutableStateOf<String?>(null) }
     var typedMention by remember(conversationKey) { mutableStateOf(false) }
     var showPlan by remember(conversationKey) { mutableStateOf(true) }
     var previousMessageCount by remember(conversationKey) { mutableIntStateOf(conversation.size) }
@@ -199,7 +200,7 @@ internal fun AiPlanScreen(
                     typedMention = false
                 },
                 onDismiss = { picker = null; typedMention = false },
-                onDelete = onDeleteConversation,
+                onDelete = onDeleteConversations,
                 cloudHistory = cloudHistory,
                 error = error,
             )

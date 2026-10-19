@@ -33,6 +33,32 @@ internal fun applyConversationDeletion(
     resetActive = activeId != null && activeId in deletedIds,
 )
 
+internal data class ConversationBatchDeletionResult(
+    val deletedIds: Set<String>,
+    val failures: Map<String, String>,
+)
+
+internal suspend fun deleteConversationBatch(
+    ids: Set<String>,
+    delete: suspend (String) -> Unit,
+    onDeleted: (String) -> Unit,
+): ConversationBatchDeletionResult {
+    val deleted = linkedSetOf<String>()
+    val failures = linkedMapOf<String, String>()
+    for (id in ids) {
+        try {
+            delete(id)
+            deleted += id
+            onDeleted(id)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (exception: Exception) {
+            failures[id] = exception.message ?: "连接失败"
+        }
+    }
+    return ConversationBatchDeletionResult(deleted, failures)
+}
+
 /** Owns the selected conversation; a reply can never land in another session. */
 internal class PlanConversationState(private val repository: TodoCloudRepository, private val token: String) {
     var conversations by mutableStateOf(emptyList<PlanConversationSummary>())
@@ -86,9 +112,18 @@ internal class PlanConversationState(private val repository: TodoCloudRepository
 
     suspend fun refreshHistory() = request { refreshList() }
 
-    suspend fun delete(id: String) = request {
-        repository.deletePlanConversation(token, id)
-        forgetDeleted(setOf(id))
+    suspend fun delete(ids: Set<String>): Set<String> {
+        var deleted = emptySet<String>()
+        request {
+            val result = deleteConversationBatch(ids, { repository.deletePlanConversation(token, it) }) { forgetDeleted(setOf(it)) }
+            deleted = result.deletedIds
+            if (result.failures.isNotEmpty()) {
+                error = "${result.failures.size} 个会话删除失败，请重试。" +
+                    (if (deleted.isNotEmpty()) "已删除 ${deleted.size} 个。" else "") +
+                    "\n${result.failures.values.first()}"
+            }
+        }
+        return deleted
     }
 
     fun newConversation() {

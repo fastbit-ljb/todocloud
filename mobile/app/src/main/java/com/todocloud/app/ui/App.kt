@@ -810,10 +810,10 @@ fun TodoCloudApp(
                 onRefreshHistory = { scope.launch { planState.refreshHistory() } },
                 cloudHistory = !currentSession.isLocal,
                 deletedConversationIds = planState.deletedIds,
-                onDeleteConversation = { id -> scope.launch {
+                onDeleteConversations = { ids -> scope.launch {
                     planError = null
-                    planState.delete(id)
-                    if (id in planState.deletedIds) android.widget.Toast.makeText(context, "会话已删除", android.widget.Toast.LENGTH_SHORT).show()
+                    val deleted = planState.delete(ids)
+                    if (deleted.isNotEmpty() && planState.error == null) android.widget.Toast.makeText(context, "已删除 ${deleted.size} 个会话", android.widget.Toast.LENGTH_SHORT).show()
                 } },
                 error = planError ?: planState.error,
                 conversation = planState.active?.messages.orEmpty(),
