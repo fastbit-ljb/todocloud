@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
@@ -102,6 +103,10 @@ async def save_conversation(conversation_id: UUID, payload: ConversationWrite, u
     row.messages = [message.model_dump(mode="json") for message in payload.messages]
     row.plan_id = payload.plan_id
     row.revision += 1
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(409, "会话已在其他设备更新，请重新打开后继续") from exc
     await db.refresh(row)
     return await response(row, db)

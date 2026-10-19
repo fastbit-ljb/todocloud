@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,26 +59,29 @@ internal fun ConversationPicker(
     conversations: List<PlanConversationSummary>,
     referenceMode: Boolean,
     initialQuery: String,
+    loading: Boolean,
     excludedIds: Set<String>,
     onPick: (PlanConversationSummary) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf(initialQuery) }
+    val compact = LocalConfiguration.current.screenHeightDp < 480
     val results = remember(conversations, query, excludedIds) { matchingConversations(conversations, query, excludedIds) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
             Text(if (referenceMode) "引用历史会话" else "历史会话", style = MaterialTheme.typography.titleLarge)
-            Text(if (referenceMode) "AI 会结合选中会话的文字和计划回答" else "选择一段讨论，接着聊", Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedTextField(query, { query = it.take(120) }, Modifier.fillMaxWidth().padding(vertical = 16.dp), label = { Text("搜索会话") }, singleLine = true)
+            if (!compact) Text(if (referenceMode) "引用文字与计划；长会话节选，不含原图" else "选择一段讨论，接着聊", Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(query, { query = it.take(120) }, Modifier.fillMaxWidth().padding(vertical = if (compact) 8.dp else 16.dp), label = { Text("搜索会话") }, singleLine = true)
             LazyColumn(contentPadding = PaddingValues(bottom = 32.dp), modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
                 if (results.isEmpty()) item {
                     Text(if (conversations.isEmpty()) "还没有历史会话" else "没有找到匹配的会话", Modifier.padding(vertical = 24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 items(results, key = { it.id }) { conversation ->
-                    Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onPick(conversation) }.padding(vertical = 14.dp)) {
-                        Text(conversation.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(conversation.preview, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Column(Modifier.fillMaxWidth().clickable(enabled = !loading && (!referenceMode || !conversation.syncPending), role = Role.Button) { onPick(conversation) }.padding(vertical = 14.dp)) {
+                        Text(conversation.title, style = MaterialTheme.typography.titleSmall, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
+                        if (!compact) Text(conversation.preview, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text("${conversation.updatedAt.take(10)} · ${conversation.messageCount} 条消息", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (conversation.syncPending) Text(if (referenceMode) "等待同步，暂不能引用" else "本机副本 · 等待同步", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

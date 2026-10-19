@@ -503,7 +503,9 @@ fun TodoCloudApp(
         scope.launch {
             planError = null
             planState.send(message, ideaIds, forcePlan, images, references) { plan ->
-                plans = listOf(plan) + plans.filterNot { it.id == plan.id }
+                if (session?.email == currentSession.email && session?.isLocal == currentSession.isLocal) {
+                    plans = listOf(plan) + plans.filterNot { it.id == plan.id }
+                }
             }
         }
     }
@@ -580,7 +582,8 @@ fun TodoCloudApp(
     val planningTasks = tasks.filterNot { it.completed }
     val planningTaskIds = planningTasks.mapTo(mutableSetOf()) { it.id }
     val planningIdeaIds = ideas.mapTo(mutableSetOf()) { it.id }
-    val visiblePlan = planState.active?.plan?.let { saved -> plans.firstOrNull { it.id == saved.id } ?: saved }?.takeIf { plan ->
+    val selectedPlan = planState.active?.plan?.let { saved -> plans.firstOrNull { it.id == saved.id } ?: saved }
+    val visiblePlan = selectedPlan?.takeIf { plan ->
         fun sourceIsActive(sourceType: String, sourceId: Int): Boolean {
             return when (sourceType) {
                 "task" -> sourceId in planningTaskIds
@@ -795,6 +798,7 @@ fun TodoCloudApp(
                 ideas = ideas,
                 tasks = planningTasks,
                 plan = visiblePlan,
+                historyPlan = selectedPlan,
                 loading = planLoading || planState.loading,
                 conversationKey = planState.key,
                 conversationTitle = planState.active?.title ?: "新会话",
@@ -817,7 +821,9 @@ fun TodoCloudApp(
                     scope.launch {
                         planError = null
                         planState.revise(planId, message, images, references) { revised ->
-                            plans = listOf(revised) + plans.filterNot { it.id == revised.id }
+                            if (session?.email == currentSession.email && session?.isLocal == currentSession.isLocal) {
+                                plans = listOf(revised) + plans.filterNot { it.id == revised.id }
+                            }
                         }
                     }
                 },

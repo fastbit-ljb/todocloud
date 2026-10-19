@@ -10,6 +10,8 @@ import com.todocloud.app.data.PlanChatResult
 import com.todocloud.app.data.PlanConversation
 import com.todocloud.app.data.PlanConversationSummary
 import com.todocloud.app.data.PlanMessage
+import com.todocloud.app.data.LOCAL_SESSION_TOKEN
+import com.todocloud.app.data.conversationReferenceContext
 import com.todocloud.app.data.TodoCloudRepository
 import com.todocloud.app.data.conversationTitle
 import java.time.Instant
@@ -59,7 +61,7 @@ internal class PlanConversationState(private val repository: TodoCloudRepository
 
     private suspend fun persist(value: PlanConversation) {
         // Keep the completed reply visible even if its subsequent cloud save fails.
-        active = value.copy(syncPending = true)
+        active = value.copy(syncPending = token != LOCAL_SESSION_TOKEN)
         val saved = repository.savePlanConversation(token, value)
         active = saved
         conversations = (listOf(saved.summary()) + conversations.filterNot { it.id == saved.id }).sortedByDescending { it.updatedAt }
@@ -70,7 +72,10 @@ internal class PlanConversationState(private val repository: TodoCloudRepository
     suspend fun send(message: String, ideaIds: Set<Int>, forcePlan: Boolean, images: List<Uri>, references: List<ConversationReference>, onPlan: (AiPlan) -> Unit) = request {
         val current = active ?: PlanConversation(draftKey, conversationTitle(message), emptyList(), updatedAt = Instant.now().toString())
         check(current.messages.size < 998) { "会话较长，请新建会话后用 @ 引用这段讨论" }
-        val result = repository.chatPlan(token, message, ideaIds, current.messages.takeLast(12), forcePlan, images, references.map { it.id })
+        val history = if (current.plan != null) {
+            current.messages.takeLast(11) + PlanMessage("assistant", conversationReferenceContext(listOf(current.copy(messages = emptyList()))).take(4000))
+        } else current.messages.takeLast(12)
+        val result = repository.chatPlan(token, message, ideaIds, history, forcePlan, images, references.map { it.id })
         val plan = (result as? PlanChatResult.Created)?.plan ?: current.plan
         if (result is PlanChatResult.Created) onPlan(result.plan)
         val shown = if (images.isEmpty()) message else "$message\n（附图 ${images.size} 张）"

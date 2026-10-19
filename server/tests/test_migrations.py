@@ -114,6 +114,31 @@ class MigrationTests(unittest.IsolatedAsyncioTestCase):
         # Column ORDER differs (ALTERs append), but types/defaults must match production.
         self.assertEqual(sorted(upgraded["columns"]), sorted(production["columns"]))
 
+    async def test_existing_plans_become_private_conversation_history(self) -> None:
+        await upgrade_to(self.engine, "0002_task_recurrence")
+        conn = await pg.connect()
+        try:
+            user_id = await conn.fetchval("INSERT INTO users (email, password_hash, timezone) VALUES ('history@example.com', 'x', 'UTC') RETURNING id")
+            plan_id = await conn.fetchval(
+                "INSERT INTO ai_plans (user_id, status, title, proposal, messages) "
+                "VALUES ($1, 'draft', 'old plan', '{\"summary\":\"keep\",\"items\":[]}', "
+                "'[{\"role\":\"user\",\"content\":\"英语学习\"}]') RETURNING id", user_id,
+            )
+        finally:
+            await conn.close()
+        await upgrade_to_head(self.engine)
+        await upgrade_to_head(self.engine)
+        conn = await pg.connect()
+        try:
+            rows = await conn.fetch("SELECT user_id, title, messages, plan_id FROM ai_conversations")
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["user_id"], user_id)
+            self.assertEqual(rows[0]["plan_id"], plan_id)
+            self.assertEqual(rows[0]["title"], "英语学习")
+            self.assertIn("英语学习", rows[0]["messages"])
+        finally:
+            await conn.close()
+
     async def test_models_match_migrated_schema(self) -> None:
         await upgrade_to_head(self.engine)
 

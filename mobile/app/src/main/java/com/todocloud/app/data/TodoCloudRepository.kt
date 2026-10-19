@@ -10,6 +10,7 @@ import com.todocloud.app.BuildConfig
 import com.todocloud.app.data.AiTaskStep
 import com.todocloud.app.data.TaskStep
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -493,18 +494,23 @@ class TodoCloudRepository(context: Context) {
         }
     }
 
-    private fun conversationAccount(token: String): String = if (token == LOCAL_SESSION_TOKEN) token
-        else savedSession()?.email?.trim()?.lowercase() ?: throw ApiException("请重新登录", 401)
+    private fun conversationAccount(token: String): String {
+        if (token == LOCAL_SESSION_TOKEN) return token
+        val current = savedSession() ?: throw ApiException("请重新登录", 401)
+        if (!sameTokenAccount(token, current.token)) throw ApiException("账号已切换，请重新打开会话", 401)
+        return current.email.trim().lowercase()
+    }
 
     suspend fun listPlanConversations(token: String): List<PlanConversationSummary> {
         val account = conversationAccount(token)
-        var cached = conversationStore.list(account).map(::parseConversation)
+        var cached = withContext(Dispatchers.IO) { conversationStore.list(account).map(::parseConversation) }
         if (token == LOCAL_SESSION_TOKEN && cached.isEmpty()) {
-            cached = local.allPlansForHistory().map { plan ->
+            val migratedAt = Instant.now()
+            cached = local.allPlansForHistory().mapIndexed { index, plan ->
                 PlanConversation(
                     id = java.util.UUID.nameUUIDFromBytes("local-plan-${plan.id}".toByteArray()).toString(),
                     title = conversationTitle(plan.messages.firstOrNull { it.role == "user" }?.content.orEmpty()),
-                    messages = plan.messages, plan = plan, updatedAt = Instant.now().minusMillis(plan.id.toLong()).toString(),
+                    messages = plan.messages, plan = plan, updatedAt = migratedAt.minusMillis(index.toLong()).toString(),
                 ).also { conversationStore.put(account, conversationJson(it)) }
             }
         }
@@ -514,6 +520,7 @@ class TodoCloudRepository(context: Context) {
         } catch (error: ApiException) {
             if (error.statusCode == 401 || error.statusCode == 404 || cached.isEmpty()) throw error
             return cached.sortedByDescending { it.updatedAt }.map { it.summary() }
+        } catch (cancelled: CancellationException) { throw cancelled
         } catch (error: Exception) {
             if (cached.isEmpty()) throw error
             return cached.sortedByDescending { it.updatedAt }.map { it.summary() }
@@ -532,6 +539,7 @@ class TodoCloudRepository(context: Context) {
         } catch (error: ApiException) {
             if (error.statusCode == 401 || error.statusCode == 404 || cached == null) throw error
             return cached
+        } catch (cancelled: CancellationException) { throw cancelled
         } catch (error: Exception) {
             return cached ?: throw error
         }
@@ -555,8 +563,24 @@ class TodoCloudRepository(context: Context) {
                     .put(body.toString().toRequestBody(jsonMediaType)).build()
             } as JSONObject
         } catch (error: ApiException) {
-            if (error.statusCode == 401 || error.statusCode == 409 || error.statusCode == 422) throw error
+            if (error.statusCode == 409) {
+                val latestJson = authorizedRequest(token) {
+                    Request.Builder().url("$baseUrl/conversations/${conversation.id}").authorized(it).get().build()
+                } as JSONObject
+                val latest = parseConversation(latestJson)
+                if (latest.messages == conversation.messages && latest.plan?.id == conversation.plan?.id) {
+                    conversationStore.put(account, latestJson)
+                    return latest
+                }
+                // A concurrent turn must never be overwritten. Preserve this completed
+                // reply as a separate conversation, leaving the cloud original intact.
+                val fork = pending.copy(id = java.util.UUID.randomUUID().toString(), title = conversation.title.take(100) + "（本机副本）", revision = 0)
+                conversationStore.put(account, latestJson)
+                return savePlanConversation(token, fork)
+            }
+            if (error.statusCode == 401 || error.statusCode == 422) throw error
             return pending
+        } catch (cancelled: CancellationException) { throw cancelled
         } catch (_: Exception) {
             return pending
         }
@@ -954,7 +978,11 @@ class TodoCloudRepository(context: Context) {
         // The Composable may hold its original access token for hours. Always
         // start with the newest token, then rotate it after a 401. The mutex
         // lets concurrent requests reuse a token refreshed by another call.
-        var attemptedToken = sessionStore.get(KEY_TOKEN) ?: token
+        fun checkedToken(value: String?): String {
+            if (value == null || !sameTokenAccount(token, value)) throw ApiException("账号已退出或切换，请重新打开", 401)
+            return value
+        }
+        var attemptedToken = checkedToken(sessionStore.get(KEY_TOKEN))
         repeat(MAX_AUTH_ATTEMPTS) { attempt ->
             try {
                 return request(requestFactory(attemptedToken))
@@ -964,7 +992,7 @@ class TodoCloudRepository(context: Context) {
                 attemptedToken = refreshMutex.withLock {
                     val latestToken = sessionStore.get(KEY_TOKEN)
                     if (!latestToken.isNullOrBlank() && latestToken != failedToken) {
-                        latestToken
+                        checkedToken(latestToken)
                     } else {
                         val refreshToken = sessionStore.get(KEY_REFRESH_TOKEN) ?: throw error
                         refreshSession(refreshToken).token
