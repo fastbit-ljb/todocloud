@@ -113,6 +113,7 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         done = await self.client.patch(f"/tasks/{task['id']}", headers=auth, json={"completed": True})
         self.assertTrue(done.json()["completed"])
         self.assertIsNotNone(done.json()["completed_at"])
+        self.assertIsNone(done.json()["completed_recurrence"])
         reopened = await self.client.patch(
             f"/tasks/{task['id']}", headers=auth, json={"completed": False}
         )
@@ -160,16 +161,20 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created.status_code, 201, created.text)
         task = created.json()
         self.assertEqual(task["recurrence"], "weekly")
+        self.assertIsNone(task["completed_recurrence"])
 
         done = await self.client.patch(f"/tasks/{task['id']}", headers=auth, json={"completed": True})
         self.assertEqual(done.status_code, 200, done.text)
         self.assertIsNone(done.json()["recurrence"])  # the rule moved on
+        self.assertEqual(done.json()["completed_recurrence"], "weekly")
 
         tasks = (await self.client.get("/tasks", headers=auth)).json()
         self.assertEqual(len(tasks), 2)
         nxt = next(t for t in tasks if t["id"] != task["id"])
         self.assertEqual(nxt["title"], "周会")
         self.assertEqual(nxt["recurrence"], "weekly")
+        self.assertIsNone(nxt["completed_recurrence"])
+        self.assertEqual(next(t for t in tasks if t["id"] == task["id"])["completed_recurrence"], "weekly")
         self.assertFalse(nxt["completed"])
         self.assertTrue(nxt["due_at"].startswith("2099-01-14T07:00:00"))
         self.assertTrue(nxt["start_at"].startswith("2099-01-14T06:00:00"))
@@ -177,12 +182,33 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
 
         # Un-checking and re-checking the old one does not spawn another copy.
         await self.client.patch(f"/tasks/{task['id']}", headers=auth, json={"completed": False})
-        await self.client.patch(f"/tasks/{task['id']}", headers=auth, json={"completed": True})
+        checked_again = await self.client.patch(f"/tasks/{task['id']}", headers=auth, json={"completed": True})
+        self.assertEqual(checked_again.json()["completed_recurrence"], "weekly")
         self.assertEqual(len((await self.client.get("/tasks", headers=auth)).json()), 2)
 
         # Clearing the rule makes it a one-off task again.
         cleared = await self.client.patch(f"/tasks/{nxt['id']}", headers=auth, json={"recurrence": None})
         self.assertIsNone(cleared.json()["recurrence"])
+
+    async def test_completed_recurrence_history_is_not_reset_by_the_next_round(self) -> None:
+        auth = self._auth(await self._register())
+        created = await self.client.post("/tasks", headers=auth, json={
+            "title": "保留日历里的每一轮", "due_at": "2099-01-07T08:00:00Z", "recurrence": "weekly",
+        })
+        self.assertEqual(created.status_code, 201, created.text)
+        first_id = created.json()["id"]
+        first_done = await self.client.patch(f"/tasks/{first_id}", headers=auth, json={"completed": True})
+        original = first_done.json()
+        after_first = (await self.client.get("/tasks", headers=auth)).json()
+        second = next(t for t in after_first if not t["completed"])
+        self.assertEqual(next(t for t in after_first if t["id"] == first_id), original)
+
+        await self.client.patch(f"/tasks/{second['id']}", headers=auth, json={"completed": True})
+        after_second = (await self.client.get("/tasks", headers=auth)).json()
+        self.assertEqual(len(after_second), 3)
+        self.assertEqual(next(t for t in after_second if t["id"] == first_id), original)
+        self.assertEqual(sum(t["completed"] for t in after_second), 2)
+        self.assertEqual([t["completed_recurrence"] for t in after_second if t["completed"]], ["weekly", "weekly"])
 
     async def test_task_list_order(self) -> None:
         auth = self._auth(await self._register())

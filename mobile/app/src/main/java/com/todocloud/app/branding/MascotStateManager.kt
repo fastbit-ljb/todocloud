@@ -7,10 +7,13 @@ import android.content.pm.PackageManager
 import android.os.Build
 import com.todocloud.app.data.TaskItem
 import java.time.Duration
+import java.time.DayOfWeek
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 
 enum class MascotState(
     internal val launcherAlias: String,
@@ -195,17 +198,35 @@ object MascotStateManager {
         }
         if (hasDueSoonTask) return MascotState.DUE_SOON
 
-        // COMPLETE describes today's result, not the contents of the whole
-        // synced history. Completed tasks remain in the snapshot for days, so
-        // treating "all loaded tasks are complete" as today's completion made
-        // a day with no tasks look finished instead of resting.
-        val todayTasks = tasks.filter { task ->
-            parseInstant(task.dueAt, zoneId)
-                ?.atZone(zoneId)
-                ?.toLocalDate() == today
+        // A repeat's next occurrence is created immediately after completion.
+        // Future days/weeks/months must not undo the result of the current one.
+        // Explicit starts, step progress and reminder/overdue states still count.
+        val currentPendingTasks = pendingTasks.filterNot { task ->
+            val period = recurrencePeriod(today, task.recurrence) ?: return@filterNot false
+            val dueDate = parseInstant(task.dueAt, zoneId)?.atZone(zoneId)?.toLocalDate()
+                ?: return@filterNot false
+            if (dueDate.isBefore(period.second) || task.steps.any { it.completed }) return@filterNot false
+            if (!task.startAt.isNullOrBlank()) {
+                val start = parseInstant(task.startAt, zoneId) ?: return@filterNot false
+                if (!start.isAfter(now)) return@filterNot false
+            }
+            true
         }
-        if (pendingTasks.isEmpty()) {
-            return if (todayTasks.isNotEmpty() && todayTasks.all { it.completed }) {
+        if (currentPendingTasks.isEmpty()) {
+            val hasCurrentCompletion = tasks.any { task ->
+                if (!task.completed) return@any false
+                val finishedDate = parseInstant(task.completedAt, zoneId)?.atZone(zoneId)?.toLocalDate()
+                val dueDate = parseInstant(task.dueAt, zoneId)?.atZone(zoneId)?.toLocalDate()
+                val period = recurrencePeriod(today, task.completedRecurrence ?: task.recurrence)
+                if (period != null && finishedDate != null) {
+                    !finishedDate.isBefore(period.first) && finishedDate.isBefore(period.second)
+                } else {
+                    // Old snapshots lack the completed repeat rule. Never guess a
+                    // week/month from unrelated historical one-off completions.
+                    finishedDate == today || dueDate == today
+                }
+            }
+            return if (hasCurrentCompletion) {
                 MascotState.COMPLETE
             } else {
                 MascotState.NO_TASKS
@@ -213,7 +234,7 @@ object MascotStateManager {
         }
 
         val hasPartialProgress = tasks.any { it.completed } ||
-            pendingTasks.any { task -> task.steps.any { it.completed } }
+            currentPendingTasks.any { task -> task.steps.any { it.completed } }
         if (hasPartialProgress) {
             return MascotState.IN_PROGRESS
         }
@@ -222,6 +243,14 @@ object MascotStateManager {
         if (inactiveHours >= FROZEN_HOURS) return MascotState.FROZEN
         if (inactiveHours >= HALF_FROZEN_HOURS) return MascotState.HALF_FROZEN
         return MascotState.DAILY
+    }
+
+    /** Local calendar periods, with an exclusive end; weeks begin on Monday. */
+    private fun recurrencePeriod(today: LocalDate, rule: String?): Pair<LocalDate, LocalDate>? = when (rule) {
+        "daily", "weekdays" -> today to today.plusDays(1)
+        "weekly" -> today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).let { it to it.plusWeeks(1) }
+        "monthly" -> today.withDayOfMonth(1).let { it to it.plusMonths(1) }
+        else -> null
     }
 
     private fun queueLauncherState(context: Context, state: MascotState) {

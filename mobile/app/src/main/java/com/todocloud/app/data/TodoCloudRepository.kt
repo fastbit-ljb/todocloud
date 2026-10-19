@@ -1080,6 +1080,7 @@ class TodoCloudRepository(context: Context) {
         startAt = json.optNullableString("start_at"),
         durationMinutes = json.optNullableInt("duration_minutes"),
         recurrence = json.optNullableString("recurrence"),
+        completedRecurrence = json.optNullableString("completed_recurrence"),
     )
 
     private fun ideaPayload(

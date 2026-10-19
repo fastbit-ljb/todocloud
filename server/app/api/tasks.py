@@ -61,6 +61,7 @@ class TaskResponse(BaseModel):
     updated_at: datetime
     steps: list[TaskStep] = Field(default_factory=list)
     recurrence: str | None = None
+    completed_recurrence: str | None = None
 
 
 def _check_recurrence(task: Task) -> None:
@@ -167,6 +168,7 @@ async def update_task(
         # The rule moves to the next occurrence, so un-checking and re-checking
         # this one later does not spawn a second copy.
         db.add(_next_occurrence_of(task, user.timezone, task.completed_at))
+        task.completed_recurrence = task.recurrence
         task.recurrence = None
     await db.commit()
     await db.refresh(task)
