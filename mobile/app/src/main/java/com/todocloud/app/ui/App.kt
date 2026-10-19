@@ -108,8 +108,6 @@ fun TodoCloudApp(
     var aiResult by remember { mutableStateOf<AiParseResult?>(null) }
     var planLoading by remember { mutableStateOf(false) }
     var planError by remember { mutableStateOf<String?>(null) }
-    // Question/answer turns shown before a plan exists; not stored on the server.
-    var planConversation by remember { mutableStateOf(emptyList<com.todocloud.app.data.PlanMessage>()) }
     var defaultReminderOffsetMinutes by remember(context) {
         mutableStateOf(loadDefaultReminderOffset(context))
     }
@@ -400,6 +398,10 @@ fun TodoCloudApp(
     }
 
     val currentSession = session ?: return
+    val planState = remember(currentSession.email, currentSession.isLocal) {
+        PlanConversationState(repository, currentSession.token)
+    }
+    LaunchedEffect(planState) { planState.load() }
 
     fun toggleTask(task: TaskItem, prepareForReorder: () -> Unit) {
         runRequest {
@@ -497,40 +499,13 @@ fun TodoCloudApp(
         }
     }
 
-    fun generatePlan(message: String, ideaIds: Set<Int>, forcePlan: Boolean, images: List<android.net.Uri>) {
+    fun generatePlan(message: String, ideaIds: Set<Int>, forcePlan: Boolean, images: List<android.net.Uri>, references: List<com.todocloud.app.data.ConversationReference> = emptyList()) {
         scope.launch {
-            planLoading = true
             planError = null
-            try {
-                val result = repository.chatPlan(
-                    currentSession.token,
-                    message,
-                    ideaIds,
-                    planConversation,
-                    forcePlan,
-                    images,
-                )
-                val shownMessage = if (images.isEmpty()) message else "$message\n（附图 ${images.size} 张）"
-                when (result) {
-                    is com.todocloud.app.data.PlanChatResult.Answer -> {
-                        planConversation = (
-                            planConversation +
-                                com.todocloud.app.data.PlanMessage("user", shownMessage) +
-                                com.todocloud.app.data.PlanMessage("assistant", result.reply)
-                            ).takeLast(12)
-                    }
-                    is com.todocloud.app.data.PlanChatResult.Created -> {
-                        planConversation = emptyList()
-                        plans = listOf(result.plan) + plans.filterNot { it.id == result.plan.id }
-                    }
+            planState.send(message, ideaIds, forcePlan, images, references) { plan ->
+                if (session?.email == currentSession.email && session?.isLocal == currentSession.isLocal) {
+                    plans = listOf(plan) + plans.filterNot { it.id == plan.id }
                 }
-            } catch (exception: ApiException) {
-                if (exception.statusCode == 401) handleApiError(exception)
-                else planError = exception.message
-            } catch (_: Exception) {
-                planError = "网络连接失败，请稍后重试"
-            } finally {
-                planLoading = false
             }
         }
     }
@@ -539,6 +514,7 @@ fun TodoCloudApp(
     fun planShortcut(message: String) {
         selectedTab = 2
         showAddMenu = false
+        planState.newConversation()
         generatePlan(message, ideas.mapTo(linkedSetOf()) { it.id }, forcePlan = true, images = emptyList())
     }
 
@@ -551,6 +527,7 @@ fun TodoCloudApp(
         )
         scheduleTasks(undone.restoredTasks)
         plans = listOf(undone.plan) + plans.filterNot { it.id == undone.plan.id }
+        planState.updatePlan(undone.plan)
         ideas = repository.listIdeas(currentSession.token)
     }
 
@@ -561,6 +538,7 @@ fun TodoCloudApp(
             val accepted = try {
                 repository.acceptPlan(currentSession.token, planId, items).also { accepted ->
                     plans = listOf(accepted.plan) + plans.filterNot { it.id == accepted.plan.id }
+                    planState.updatePlan(accepted.plan)
                     ideas = removeIdeasConvertedToTasks(
                         token = currentSession.token,
                         currentIdeas = ideas,
@@ -604,7 +582,8 @@ fun TodoCloudApp(
     val planningTasks = tasks.filterNot { it.completed }
     val planningTaskIds = planningTasks.mapTo(mutableSetOf()) { it.id }
     val planningIdeaIds = ideas.mapTo(mutableSetOf()) { it.id }
-    val visiblePlan = plans.firstOrNull()?.takeIf { plan ->
+    val selectedPlan = planState.active?.plan?.let { saved -> plans.firstOrNull { it.id == saved.id } ?: saved }
+    val visiblePlan = selectedPlan?.takeIf { plan ->
         fun sourceIsActive(sourceType: String, sourceId: Int): Boolean {
             return when (sourceType) {
                 "task" -> sourceId in planningTaskIds
@@ -819,30 +798,32 @@ fun TodoCloudApp(
                 ideas = ideas,
                 tasks = planningTasks,
                 plan = visiblePlan,
-                loading = planLoading,
-                error = planError,
-                conversation = planConversation,
+                historyPlan = selectedPlan,
+                loading = planLoading || planState.loading,
+                conversationKey = planState.key,
+                conversationTitle = planState.active?.title ?: "新会话",
+                conversations = planState.conversations,
+                syncPending = planState.active?.syncPending == true,
+                onRetrySync = { scope.launch { planState.retrySync() } },
+                onNewConversation = { planState.newConversation(); planError = null },
+                onOpenConversation = { id -> scope.launch { planState.open(id); planError = null } },
+                onRefreshHistory = { scope.launch { planState.refreshHistory() } },
+                error = planError ?: planState.error,
+                conversation = planState.active?.messages.orEmpty(),
                 onOpenInbox = {
                     selectedTab = 0
                     taskSection = "inbox"
                 },
-                onGenerate = { message, selectedIdeaIds, forcePlan, images ->
-                    generatePlan(message, selectedIdeaIds, forcePlan, images)
+                onGenerate = { message, selectedIdeaIds, forcePlan, images, references ->
+                    generatePlan(message, selectedIdeaIds, forcePlan, images, references)
                 },
-                onRevise = { planId, message, images ->
+                onRevise = { planId, message, images, references ->
                     scope.launch {
-                        planLoading = true
                         planError = null
-                        try {
-                            val revised = repository.revisePlan(currentSession.token, planId, message, images)
-                            plans = listOf(revised) + plans.filterNot { it.id == revised.id }
-                        } catch (exception: ApiException) {
-                            if (exception.statusCode == 401) handleApiError(exception)
-                            else planError = exception.message
-                        } catch (_: Exception) {
-                            planError = "网络连接失败，请稍后重试"
-                        } finally {
-                            planLoading = false
+                        planState.revise(planId, message, images, references) { revised ->
+                            if (session?.email == currentSession.email && session?.isLocal == currentSession.isLocal) {
+                                plans = listOf(revised) + plans.filterNot { it.id == revised.id }
+                            }
                         }
                     }
                 },

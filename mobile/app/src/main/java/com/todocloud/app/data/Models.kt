@@ -74,7 +74,32 @@ data class PlanItem(
 data class PlanMessage(
     val role: String,
     val content: String,
+    val references: List<ConversationReference> = emptyList(),
 )
+
+data class ConversationReference(val id: String, val title: String)
+
+data class PlanConversationSummary(
+    val id: String,
+    val title: String,
+    val updatedAt: String,
+    val preview: String,
+    val messageCount: Int,
+    val revision: Int,
+    val syncPending: Boolean = false,
+)
+
+data class PlanConversation(
+    val id: String,
+    val title: String,
+    val messages: List<PlanMessage>,
+    val plan: AiPlan? = null,
+    val updatedAt: String,
+    val revision: Int = 0,
+    val syncPending: Boolean = false,
+) {
+    fun summary() = PlanConversationSummary(id, title, updatedAt, messages.lastOrNull()?.content.orEmpty().take(120), messages.size, revision, syncPending)
+}
 
 data class AiPlan(
     val id: Int,
