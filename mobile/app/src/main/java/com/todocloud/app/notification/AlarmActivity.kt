@@ -80,7 +80,7 @@ class AlarmActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(
             this,
             object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() = Unit
+                override fun handleOnBackPressed() = snoozeAlarm()
             },
         )
         showAlarmContent()
@@ -509,7 +509,7 @@ private fun AlarmActions(
             }
         }
         Text(
-            "稍后提醒不会修改任务时间",
+            "返回或侧滑，5 分钟后再提醒",
             modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
