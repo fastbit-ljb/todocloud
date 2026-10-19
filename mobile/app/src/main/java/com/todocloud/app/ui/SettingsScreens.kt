@@ -4,12 +4,15 @@ import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import android.app.Activity
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.provider.OpenableColumns
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
@@ -26,6 +29,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.WbSunny
@@ -44,7 +49,10 @@ import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Pets
+import androidx.compose.material.icons.outlined.AudioFile
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -52,6 +60,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -63,10 +73,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -78,6 +91,7 @@ import com.todocloud.app.branding.MascotState
 import com.todocloud.app.data.Session
 import com.todocloud.app.data.isLocal
 import com.todocloud.app.notification.ReminderScheduler.ReminderMode
+import com.todocloud.app.notification.ReminderScheduler
 
 @Composable
 internal fun SettingsHomeScreen(
@@ -101,6 +115,48 @@ internal fun SettingsHomeScreen(
     onEditAiKey: () -> Unit = {},
 ) {
     var showDefaultReminderPicker by rememberSaveable { mutableStateOf(false) }
+    var showAlarmSoundPicker by rememberSaveable { mutableStateOf(false) }
+    var alarmSoundTitle by remember(context) {
+        mutableStateOf(ReminderScheduler.alarmSoundTitle(context))
+    }
+    val ringtonePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        val data = result.data ?: return@rememberLauncherForActivityResult
+        val pickedUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+        }
+        ReminderScheduler.saveAlarmSoundUri(context, pickedUri)
+        alarmSoundTitle = ReminderScheduler.alarmSoundTitle(context)
+    }
+    val audioFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }.onSuccess {
+            val displayName = runCatching {
+                context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }
+            }.getOrNull() ?: "自选音频"
+            ReminderScheduler.saveAlarmSoundUri(context, uri, displayName)
+            alarmSoundTitle = ReminderScheduler.alarmSoundTitle(context)
+        }.onFailure {
+            android.widget.Toast.makeText(context, "无法保存这个音频的读取权限，请换一个文件", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) alarmSoundTitle = ReminderScheduler.alarmSoundTitle(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Column(
         modifier = Modifier
@@ -159,41 +215,38 @@ internal fun SettingsHomeScreen(
             }
         }
 
-        SettingsGroup(title = "提醒", caption = "选择任务到点后的提醒方式") {
+        SettingsGroup(title = "提醒方式", caption = "选择任务到点后如何提醒") {
+            Column(Modifier.selectableGroup()) {
+                ReminderModeOption(
+                    icon = Icons.Outlined.Notifications,
+                    title = "通知栏提醒",
+                    description = "发送通知，点击后查看任务",
+                    selected = reminderMode == ReminderMode.NOTIFICATION,
+                    onClick = { onReminderModeChange(ReminderMode.NOTIFICATION) },
+                )
+                SettingsDivider()
+                ReminderModeOption(
+                    icon = Icons.Outlined.Alarm,
+                    title = "闹钟提醒",
+                    description = "持续响铃，可延后 5 分钟",
+                    selected = reminderMode == ReminderMode.ALARM,
+                    onClick = {
+                        if (requestAlarmPermissions(context)) {
+                            onReminderModeChange(ReminderMode.ALARM)
+                        }
+                    },
+                )
+            }
+        }
+        SettingsGroup(title = "闹钟铃声", caption = "仅在闹钟提醒模式下生效") {
             SettingsRow(
-                icon = Icons.Outlined.Notifications,
-                title = "通知栏提醒",
-                description = "沿用原来的通知栏提醒，可点击通知进入应用",
-                onClick = { onReminderModeChange(ReminderMode.NOTIFICATION) },
-                trailing = {
-                    RadioButton(
-                        selected = reminderMode == ReminderMode.NOTIFICATION,
-                        onClick = { onReminderModeChange(ReminderMode.NOTIFICATION) },
-                    )
-                },
+                icon = Icons.AutoMirrored.Outlined.VolumeUp,
+                title = alarmSoundTitle,
+                description = "选择系统铃声或本地音频",
+                onClick = { showAlarmSoundPicker = true },
             )
-            SettingsDivider()
-            SettingsRow(
-                icon = Icons.Outlined.Alarm,
-                title = "闹钟提醒",
-                description = "到点响铃；允许后台显示后自动打开停止界面",
-                onClick = {
-                    if (requestAlarmPermissions(context)) {
-                        onReminderModeChange(ReminderMode.ALARM)
-                    }
-                },
-                trailing = {
-                    RadioButton(
-                        selected = reminderMode == ReminderMode.ALARM,
-                        onClick = {
-                            if (requestAlarmPermissions(context)) {
-                                onReminderModeChange(ReminderMode.ALARM)
-                            }
-                        },
-                    )
-                },
-            )
-            SettingsDivider()
+        }
+        SettingsGroup(title = "日常提醒") {
             SettingsRow(
                 icon = androidx.compose.material.icons.Icons.Outlined.AccessTime,
                 title = "AI 识别任务默认提醒",
@@ -267,6 +320,38 @@ internal fun SettingsHomeScreen(
         )
     }
 
+    if (showAlarmSoundPicker) {
+        AlarmSoundPickerSheet(
+            currentTitle = alarmSoundTitle,
+            onDismiss = { showAlarmSoundPicker = false },
+            onSystemSound = {
+                showAlarmSoundPicker = false
+                val pickerIntent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "选择闹钟铃声")
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, ReminderScheduler.selectedAlarmSoundUri(context))
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
+                }
+                runCatching { ringtonePicker.launch(pickerIntent) }.onFailure {
+                    android.widget.Toast.makeText(context, "无法打开系统铃声，请选择本地音频", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            onAudioFile = {
+                showAlarmSoundPicker = false
+                runCatching { audioFilePicker.launch(arrayOf("audio/*")) }.onFailure {
+                    android.widget.Toast.makeText(context, "无法打开音频文件选择器", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDefaultSound = {
+                ReminderScheduler.saveAlarmSoundUri(context, null)
+                alarmSoundTitle = ReminderScheduler.alarmSoundTitle(context)
+                showAlarmSoundPicker = false
+            },
+        )
+    }
+
     if (showDefaultReminderPicker) {
         ReminderPickerDialog(
             currentOffsetMinutes = defaultReminderOffsetMinutes,
@@ -276,6 +361,75 @@ internal fun SettingsHomeScreen(
                 showDefaultReminderPicker = false
             },
         )
+    }
+}
+
+@Composable
+private fun ReminderModeOption(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        androidx.compose.material3.Surface(
+            shape = MaterialTheme.shapes.small,
+            color = if (selected) colors.primaryContainer else colors.surfaceContainerHighest,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.padding(10.dp).size(22.dp),
+                tint = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant,
+            )
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        }
+        RadioButton(selected = selected, onClick = null)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AlarmSoundPickerSheet(
+    currentTitle: String,
+    onDismiss: () -> Unit,
+    onSystemSound: () -> Unit,
+    onAudioFile: () -> Unit,
+    onDefaultSound: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp),
+        ) {
+            Text("闹钟铃声", Modifier.padding(horizontal = 24.dp), style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "当前：$currentTitle",
+                Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SettingsRow(Icons.Outlined.Alarm, "系统铃声", "从手机的铃声库选择", onSystemSound)
+            SettingsRow(Icons.Outlined.AudioFile, "本地音频", "选择一个音频文件作为铃声", onAudioFile)
+            SettingsRow(Icons.Outlined.Restore, "恢复系统默认", "跟随手机的默认闹钟铃声", onDefaultSound)
+            Text(
+                "所选音频失效时，会使用系统默认铃声。",
+                Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

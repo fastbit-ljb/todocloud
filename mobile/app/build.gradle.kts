@@ -31,6 +31,7 @@ android {
         applicationId = "com.todocloud.app"
         minSdk = 26
         targetSdk = 37
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Keep this above the earlier alarm test builds so Android Studio can
         // update the installed app without asking to uninstall it.
         versionCode = 33
@@ -75,4 +76,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Real org.json for JVM unit tests (Android's copy is a stub off-device).
     testImplementation("org.json:json:20240303")
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 }
