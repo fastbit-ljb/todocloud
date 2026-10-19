@@ -805,6 +805,11 @@ fun TodoCloudApp(
                 paddingValues = paddingValues,
                 ideas = ideas,
                 tasks = planningTasks,
+                greetingScene = if (tasksLoaded || offlineSyncedAt != null || error != null) {
+                    planGreetingScene(tasks = tasks, tasksKnown = tasksLoaded)
+                } else {
+                    null
+                },
                 plan = visiblePlan,
                 historyPlan = selectedPlan,
                 loading = planLoading || planState.loading,

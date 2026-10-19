@@ -123,6 +123,7 @@ internal fun AiPlanScreen(
     onDeleteConversations: ((Set<String>) -> Unit)? = null,
     cloudHistory: Boolean = true,
     deletedConversationIds: Set<String> = emptySet(),
+    greetingScene: PlanGreetingScene? = PlanGreetingScene.GENERAL,
 ) {
     var message by rememberSaveable(conversationKey) { mutableStateOf("") }
     var images by remember(conversationKey) { mutableStateOf<List<Uri>>(emptyList()) }
@@ -132,6 +133,15 @@ internal fun AiPlanScreen(
     var typedMention by remember(conversationKey) { mutableStateOf(false) }
     var showPlan by remember(conversationKey) { mutableStateOf(true) }
     var previousMessageCount by remember(conversationKey) { mutableIntStateOf(conversation.size) }
+    var openingGreeting by rememberSaveable(conversationKey) { mutableStateOf<String?>(null) }
+    var openingQuestion by rememberSaveable(conversationKey) { mutableStateOf<String?>(null) }
+    LaunchedEffect(conversationKey, greetingScene, conversation.isEmpty()) {
+        if (conversation.isEmpty() && greetingScene != null && openingGreeting == null) {
+            val opening = choosePlanOpening(greetingScene)
+            openingGreeting = opening.greeting
+            openingQuestion = opening.question
+        }
+    }
     LaunchedEffect(deletedConversationIds) {
         references = references.filterNot { it.id in deletedConversationIds }
     }
@@ -258,6 +268,9 @@ internal fun AiPlanScreen(
                     if (ideas.isEmpty()) onOpenInbox() else showIdeaPicker = true
                 },
                 onSubmit = submitPlan,
+                opening = openingGreeting?.let { greeting ->
+                    openingQuestion?.let { question -> PlanOpening(greeting, question) }
+                },
             )
             if (showIdeaPicker) {
                 InboxIdeaPickerDialog(
@@ -517,13 +530,14 @@ internal fun AiPlanLanding(
     deletedConversationIds: Set<String>,
     onInboxClick: () -> Unit,
     onSubmit: () -> Unit,
+    opening: PlanOpening?,
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
         if (conversation.isEmpty()) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(top = 34.dp, start = 6.dp, end = 6.dp),
             ) {
-                TypewriterPlanPrompt()
+                if (opening != null) TypewriterPlanPrompt(opening)
             }
         }
 
@@ -713,40 +727,21 @@ internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = 
 }
 
 @Composable
-internal fun TypewriterPlanPrompt() {
-    val greetings = remember {
-        listOf(
-            "你好！",
-            "嗨！",
-            "欢迎回来！",
-            "见到你真好！",
-        )
-    }
-    val questions = remember {
-        listOf(
-            "你有什么计划吗？",
-            "今天想完成什么？",
-            "有什么想法想变成计划？",
-            "哪些事情需要我帮你安排？",
-            "接下来想做些什么？",
-        )
-    }
-    val greeting = remember { greetings.random() }
-    val question = remember { questions.random() }
-    var displayedGreeting by remember { mutableStateOf("") }
-    var displayedQuestion by remember { mutableStateOf("") }
-    var activeLine by remember { mutableIntStateOf(0) }
-    var cursorVisible by remember { mutableStateOf(true) }
+internal fun TypewriterPlanPrompt(opening: PlanOpening) {
+    var displayedGreeting by remember(opening) { mutableStateOf("") }
+    var displayedQuestion by remember(opening) { mutableStateOf("") }
+    var activeLine by remember(opening) { mutableIntStateOf(0) }
+    var cursorVisible by remember(opening) { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(opening) {
         delay(120L)
-        greeting.forEach { character ->
+        opening.greeting.forEach { character ->
             delay(if (character == '！') 140L else 88L)
             displayedGreeting += character
         }
         delay(260L)
         activeLine = 1
-        question.forEach { character ->
+        opening.question.forEach { character ->
             delay(if (character == '，' || character == '？') 150L else 82L)
             displayedQuestion += character
         }
