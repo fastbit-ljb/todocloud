@@ -151,6 +151,11 @@ internal class LocalStore private constructor(context: Context) {
 
     suspend fun allPlansForHistory(): List<AiPlan> = read { plans.reversed().map(::decodePlan) }
 
+    suspend fun clearPlanMessages(planId: Int) = write {
+        findPlan(planId).put("messages", JSONArray())
+        Unit
+    }
+
     suspend fun createPlan(proposal: JSONObject, messages: List<PlanMessage>): AiPlan = write {
         val plan = JSONObject()
             .put("id", nextId++)

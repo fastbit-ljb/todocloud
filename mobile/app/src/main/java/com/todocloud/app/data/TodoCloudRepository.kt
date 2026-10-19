@@ -504,19 +504,22 @@ class TodoCloudRepository(context: Context) {
     suspend fun listPlanConversations(token: String): List<PlanConversationSummary> {
         val account = conversationAccount(token)
         var cached = withContext(Dispatchers.IO) { conversationStore.list(account).map(::parseConversation) }
-        if (token == LOCAL_SESSION_TOKEN && cached.isEmpty()) {
+        if (token == LOCAL_SESSION_TOKEN && !conversationStore.historyMigrated(account)) {
             val migratedAt = Instant.now()
-            cached = local.allPlansForHistory().mapIndexed { index, plan ->
+            val excluded = cached.map { it.id }.toSet() + conversationStore.deletedIds(account)
+            val migrated = local.allPlansForHistory().mapIndexed { index, plan ->
                 PlanConversation(
                     id = java.util.UUID.nameUUIDFromBytes("local-plan-${plan.id}".toByteArray()).toString(),
                     title = conversationTitle(plan.messages.firstOrNull { it.role == "user" }?.content.orEmpty()),
                     messages = plan.messages, plan = plan, updatedAt = migratedAt.minusMillis(index.toLong()).toString(),
-                ).also { conversationStore.put(account, conversationJson(it)) }
-            }
+                )
+            }.filterNot { it.id in excluded }.onEach { conversationStore.put(account, conversationJson(it)) }
+            cached = cached + migrated
+            conversationStore.markHistoryMigrated(account)
         }
         if (token == LOCAL_SESSION_TOKEN) return cached.sortedByDescending { it.updatedAt }.map { it.summary() }
         val cloud = try {
-            authorizedRequest(token) { Request.Builder().url("$baseUrl/conversations").authorized(it).get().build() } as JSONArray
+            authorizedRequest(token) { Request.Builder().url("$baseUrl/conversations?include_deleted=true").authorized(it).get().build() } as JSONArray
         } catch (error: ApiException) {
             if (error.statusCode == 401 || error.statusCode == 404 || cached.isEmpty()) throw error
             return cached.sortedByDescending { it.updatedAt }.map { it.summary() }
@@ -525,18 +528,27 @@ class TodoCloudRepository(context: Context) {
             if (cached.isEmpty()) throw error
             return cached.sortedByDescending { it.updatedAt }.map { it.summary() }
         }
-        val remote = (0 until cloud.length()).map { parseConversationSummary(cloud.getJSONObject(it)) }
-        val pending = cached.filter { it.syncPending }.map { it.summary() }
+        val rows = (0 until cloud.length()).map { cloud.getJSONObject(it) }
+        val deleted = rows.filter { !it.isNull("deleted_at") }.mapTo(mutableSetOf()) { it.getString("id") }
+        if (deleted.isNotEmpty()) conversationStore.remove(account, deleted)
+        val allDeleted = conversationStore.deletedIds(account)
+        val remote = rows.filter { it.getString("id") !in allDeleted }.map(::parseConversationSummary)
+        val pending = cached.filter { it.syncPending && it.id !in allDeleted }.map { it.summary() }
         return (pending + remote.filterNot { item -> pending.any { it.id == item.id } }).sortedByDescending { it.updatedAt }
     }
 
     suspend fun getPlanConversation(token: String, id: String): PlanConversation {
         val account = conversationAccount(token)
+        if (id in conversationStore.deletedIds(account)) throw DeletedConversationException(id)
         val cached = conversationStore.get(account, id)?.let(::parseConversation)
         if (token == LOCAL_SESSION_TOKEN || cached?.syncPending == true) return cached ?: throw ApiException("会话不存在", 404)
         val response = try {
             authorizedRequest(token) { Request.Builder().url("$baseUrl/conversations/$id").authorized(it).get().build() } as JSONObject
         } catch (error: ApiException) {
+            if (error.statusCode == 410) {
+                conversationStore.remove(account, setOf(id))
+                throw DeletedConversationException(id)
+            }
             if (error.statusCode == 401 || error.statusCode == 404 || cached == null) throw error
             return cached
         } catch (cancelled: CancellationException) { throw cancelled
@@ -563,11 +575,13 @@ class TodoCloudRepository(context: Context) {
                     .put(body.toString().toRequestBody(jsonMediaType)).build()
             } as JSONObject
         } catch (error: ApiException) {
+            if (error.statusCode == 410) {
+                conversationStore.remove(account, setOf(conversation.id))
+                throw DeletedConversationException(conversation.id)
+            }
             if (error.statusCode == 409) {
-                val latestJson = authorizedRequest(token) {
-                    Request.Builder().url("$baseUrl/conversations/${conversation.id}").authorized(it).get().build()
-                } as JSONObject
-                val latest = parseConversation(latestJson)
+                val latest = getPlanConversationAfterConflict(token, account, conversation.id)
+                val latestJson = conversationJson(latest)
                 if (latest.messages == conversation.messages && latest.plan?.id == conversation.plan?.id) {
                     conversationStore.put(account, latestJson)
                     return latest
@@ -586,6 +600,36 @@ class TodoCloudRepository(context: Context) {
         }
         conversationStore.put(account, response)
         return parseConversation(response)
+    }
+
+    private suspend fun getPlanConversationAfterConflict(token: String, account: String, id: String): PlanConversation {
+        val value = try {
+            authorizedRequest(token) { Request.Builder().url("$baseUrl/conversations/$id").authorized(it).get().build() } as JSONObject
+        } catch (error: ApiException) {
+            if (error.statusCode != 410) throw error
+            conversationStore.remove(account, setOf(id))
+            throw DeletedConversationException(id)
+        }
+        return parseConversation(value)
+    }
+
+    suspend fun deletedPlanConversationIds(token: String): Set<String> = conversationStore.deletedIds(conversationAccount(token))
+
+    suspend fun deletePlanConversation(token: String, id: String) {
+        val account = conversationAccount(token)
+        val cached = conversationStore.get(account, id)?.let(::parseConversation)
+        if (token != LOCAL_SESSION_TOKEN) {
+            // Failed cloud deletion must remain visible and retryable, not become
+            // a hidden destructive action queued across account changes.
+            val planQuery = cached?.plan?.id?.let { "?plan_id=$it" }.orEmpty()
+            authorizedRequest(token) { Request.Builder().url("$baseUrl/conversations/$id$planQuery").authorized(it).delete().build() }
+        } else {
+            val planId = cached?.plan?.id
+            val shared = planId != null && conversationStore.list(account)
+                .asSequence().filter { it.optString("id") != id }.map(::parseConversation).any { it.plan?.id == planId }
+            if (planId != null && !shared) local.clearPlanMessages(planId)
+        }
+        conversationStore.remove(account, setOf(id))
     }
 
     private suspend fun referenceContext(token: String, ids: List<String>): String = conversationReferenceContext(

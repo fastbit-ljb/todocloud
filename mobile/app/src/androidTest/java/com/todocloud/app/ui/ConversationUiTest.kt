@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -53,6 +54,7 @@ class ConversationUiTest {
             } }
             compose.onNode(hasSetTextAction()).performTextInput("@")
             compose.onNodeWithText("引用历史会话").assertIsDisplayed()
+            compose.onNodeWithContentDescription("删除会话：${old.title}").assertDoesNotExist()
             compose.onNodeWithText(old.title).performClick()
             compose.onNodeWithText("@${old.title}").assertIsDisplayed()
             compose.onNode(hasSetTextAction()).performTextInput("继续规划")
@@ -89,6 +91,80 @@ class ConversationUiTest {
         }
     }
 
+    @Test fun historyDeletionRequiresConfirmationAndReportsExactConversation() {
+        var deleted = ""
+        var opened = ""
+        val conversations = mutableStateOf(listOf(old))
+        ActivityScenario.launch(ConversationTestActivity::class.java).use { scenario ->
+            scenario.onActivity { activity -> activity.setContent {
+                TodoCloudTheme { Surface {
+                    AiPlanScreen(
+                        paddingValues = PaddingValues(), ideas = emptyList(), tasks = emptyList(), plan = null,
+                        loading = false, error = null, conversation = emptyList(), conversationKey = "new",
+                        conversationTitle = "新会话", conversations = conversations.value, syncPending = false,
+                        onRetrySync = {}, onNewConversation = {}, onOpenConversation = { opened = it }, onRefreshHistory = {}, onOpenInbox = {},
+                        onGenerate = { _, _, _, _, _ -> }, onRevise = { _, _, _, _ -> }, onAccept = { _, _ -> },
+                        onDeleteConversation = { id -> deleted = id; conversations.value = emptyList() },
+                    )
+                } }
+            } }
+            compose.onNodeWithContentDescription("历史会话").performClick()
+            compose.onNodeWithContentDescription("删除会话：${old.title}").performClick()
+            compose.onNodeWithText("会从所有设备删除会话消息，无法恢复。已采用的计划和任务会保留。").assertIsDisplayed()
+            screenshot("conversation-delete-confirmation")
+            compose.onNodeWithText("取消").performClick()
+            compose.runOnIdle { assertEquals("", deleted); assertEquals("", opened) }
+
+            compose.onNodeWithContentDescription("删除会话：${old.title}").performClick()
+            compose.onNodeWithText("删除").performClick()
+            compose.runOnIdle { assertEquals(old.id, deleted) }
+            compose.onNodeWithText("还没有历史会话").assertIsDisplayed()
+        }
+    }
+
+    @Test fun failedHistoryDeletionStaysVisibleAndCanBeRetried() {
+        val error = mutableStateOf<String?>(null)
+        var attempts = 0
+        ActivityScenario.launch(ConversationTestActivity::class.java).use { scenario ->
+            scenario.onActivity { activity -> activity.setContent {
+                TodoCloudTheme { Surface {
+                    AiPlanScreen(
+                        paddingValues = PaddingValues(), ideas = emptyList(), tasks = emptyList(), plan = null,
+                        loading = false, error = error.value, conversation = emptyList(), conversationKey = "new",
+                        conversationTitle = "新会话", conversations = listOf(old), syncPending = false,
+                        onRetrySync = {}, onNewConversation = {}, onOpenConversation = {}, onRefreshHistory = {}, onOpenInbox = {},
+                        onGenerate = { _, _, _, _, _ -> }, onRevise = { _, _, _, _ -> }, onAccept = { _, _ -> },
+                        onDeleteConversation = { attempts += 1; error.value = "删除失败，请重试" },
+                    )
+                } }
+            } }
+            compose.onNodeWithContentDescription("历史会话").performClick()
+            compose.onNodeWithContentDescription("删除会话：${old.title}").performClick()
+            compose.onNodeWithText("删除").performClick()
+            compose.onNodeWithText("删除失败，请重试").assertIsDisplayed()
+            compose.onNodeWithContentDescription("删除会话：${old.title}").assertIsDisplayed()
+            compose.onNodeWithText("删除").performClick()
+            compose.runOnIdle { assertEquals(2, attempts) }
+        }
+    }
+
+    @Test fun deletedReferenceInOldMessageIsVisibleButCannotBeOpened() {
+        var opened = ""
+        ActivityScenario.launch(ConversationTestActivity::class.java).use { scenario ->
+            scenario.onActivity { activity -> activity.setContent {
+                TodoCloudTheme { Surface {
+                    PlanConversation(
+                        messages = listOf(PlanMessage("user", "继续安排", listOf(ConversationReference(old.id, old.title)))),
+                        onOpenReference = { opened = it },
+                        deletedConversationIds = setOf(old.id),
+                    )
+                } }
+            } }
+            compose.onNodeWithText("@${old.title}（已删除）").assertIsDisplayed().assertIsNotEnabled()
+            compose.runOnIdle { assertEquals("", opened) }
+        }
+    }
+
     @Test fun darkPortraitLargeTextKeepsHistoryAndReferencesReachable() {
         ActivityScenario.launch(ConversationTestActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
@@ -102,6 +178,7 @@ class ConversationUiTest {
                                 conversationTitle = "当前讨论", conversations = listOf(old), syncPending = false,
                                 onRetrySync = {}, onNewConversation = {}, onOpenConversation = {}, onRefreshHistory = {}, onOpenInbox = {},
                                 onGenerate = { _, _, _, _, _ -> }, onRevise = { _, _, _, _ -> }, onAccept = { _, _ -> },
+                                onDeleteConversation = {},
                             )
                         } }
                     }
@@ -113,7 +190,10 @@ class ConversationUiTest {
             compose.onNodeWithContentDescription("生成计划").assertIsDisplayed()
             screenshot("conversation-dark-portrait-large-text")
             compose.onNodeWithContentDescription("历史会话").performClick()
-            compose.onNodeWithText(old.title).assertIsDisplayed().performClick()
+            compose.onNodeWithContentDescription("删除会话：${old.title}").performClick()
+            compose.onNodeWithText("删除此会话？").assertIsDisplayed()
+            screenshot("conversation-delete-dark-large-text")
+            compose.onNodeWithText("取消").performClick()
         }
     }
 

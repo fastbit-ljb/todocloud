@@ -29,13 +29,20 @@ internal class SecureSessionStore(
     }.getOrNull()
 
     fun put(name: String, value: String) {
+        putEncrypted(name, value, synchronous = false)
+    }
+
+    fun putSynchronously(name: String, value: String) {
+        putEncrypted(name, value, synchronous = true)
+    }
+
+    private fun putEncrypted(name: String, value: String, synchronous: Boolean) {
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
             init(Cipher.ENCRYPT_MODE, key())
         }
         val payload = cipher.iv + cipher.doFinal(value.toByteArray(StandardCharsets.UTF_8))
-        preferences.edit()
-            .putString(name, Base64.encodeToString(payload, Base64.NO_WRAP))
-            .apply()
+        val editor = preferences.edit().putString(name, Base64.encodeToString(payload, Base64.NO_WRAP))
+        if (synchronous) check(editor.commit()) { "无法保存本机删除状态" } else editor.apply()
     }
 
     fun clear() {

@@ -16,7 +16,10 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,6 +29,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,28 +66,65 @@ internal fun ConversationPicker(
     excludedIds: Set<String>,
     onPick: (PlanConversationSummary) -> Unit,
     onDismiss: () -> Unit,
+    onDelete: ((String) -> Unit)? = null,
+    cloudHistory: Boolean = true,
+    error: String? = null,
 ) {
     var query by remember { mutableStateOf(initialQuery) }
+    var pendingDelete by remember { mutableStateOf<PlanConversationSummary?>(null) }
+    LaunchedEffect(conversations, loading) {
+        if (!loading && pendingDelete?.let { selected -> conversations.none { it.id == selected.id } } == true) pendingDelete = null
+    }
     val results = remember(conversations, query, excludedIds) { matchingConversations(conversations, query, excludedIds) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
             Text(if (referenceMode) "引用历史会话" else "历史会话", style = MaterialTheme.typography.titleLarge)
             Text(if (referenceMode) "引用文字与计划；长会话节选，不含原图" else "选择一段讨论，接着聊", Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (error != null && pendingDelete == null) {
+                Text(error, Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.error)
+            }
             OutlinedTextField(query, { query = it.take(120) }, Modifier.fillMaxWidth().padding(vertical = 16.dp), label = { Text("搜索会话") }, singleLine = true)
             LazyColumn(contentPadding = PaddingValues(bottom = 32.dp), modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
                 if (results.isEmpty()) item {
                     Text(if (conversations.isEmpty()) "还没有历史会话" else "没有找到匹配的会话", Modifier.padding(vertical = 24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 items(results, key = { it.id }) { conversation ->
-                    Column(Modifier.fillMaxWidth().clickable(enabled = !loading && (!referenceMode || !conversation.syncPending), role = Role.Button) { onPick(conversation) }.padding(vertical = 14.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      Column(Modifier.weight(1f).clickable(enabled = !loading && (!referenceMode || !conversation.syncPending), role = Role.Button) { onPick(conversation) }.padding(vertical = 14.dp)) {
                         Text(conversation.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(conversation.preview, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text("${conversation.updatedAt.take(10)} · ${conversation.messageCount} 条消息", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (conversation.syncPending) Text(if (referenceMode) "等待同步，暂不能引用" else "本机副本 · 等待同步", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      }
+                      if (!referenceMode && onDelete != null) {
+                          IconButton(onClick = { pendingDelete = conversation }, enabled = !loading) {
+                              Icon(Icons.Outlined.DeleteOutline, "删除会话：${conversation.title}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                          }
+                      }
                     }
                 }
             }
         }
+    }
+    pendingDelete?.let { selected ->
+        AlertDialog(
+            onDismissRequest = { if (!loading) pendingDelete = null },
+            title = { Text("删除此会话？") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(selected.title, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                    Text(if (cloudHistory) "会从所有设备删除会话消息，无法恢复。已采用的计划和任务会保留。" else "会从本机删除会话消息，无法恢复。已采用的计划和任务会保留。")
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { onDelete?.invoke(selected.id) }, enabled = !loading,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text(if (loading) "删除中…" else "删除") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }, enabled = !loading) { Text("取消") } },
+        )
     }
 }
 
