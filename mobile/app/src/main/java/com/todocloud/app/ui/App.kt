@@ -26,6 +26,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
@@ -42,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -611,9 +615,12 @@ fun TodoCloudApp(
         TabItem("AI计划") { Icon(Icons.Outlined.AutoAwesome, contentDescription = "AI计划") },
         TabItem("设置") { Icon(Icons.Outlined.Settings, contentDescription = "设置") },
     )
+    val aiKeyboardVisible = selectedTab == 2 && WindowInsets.ime.getBottom(LocalDensity.current) > 0
     Scaffold(
+        modifier = if (selectedTab == 2) Modifier.imePadding() else Modifier,
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
+            if (selectedTab != 2) {
             TopAppBar(
                 title = {
                     androidx.compose.foundation.layout.Column {
@@ -675,9 +682,10 @@ fun TodoCloudApp(
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
             )
+            }
         },
         bottomBar = {
-            if (selectedTab != 3 || settingsPage == "main") {
+            if ((selectedTab != 3 || settingsPage == "main") && !aiKeyboardVisible) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                     tabs.forEachIndexed { index, tab ->
                         NavigationBarItem(

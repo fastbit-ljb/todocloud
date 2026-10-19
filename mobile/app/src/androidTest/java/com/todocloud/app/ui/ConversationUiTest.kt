@@ -82,6 +82,40 @@ class ConversationUiTest {
         }
     }
 
+    @Test fun composerToolsAreCollapsedAndMultilineDraftKeepsReferences() {
+        var sentText = ""
+        var sentReferences = emptyList<ConversationReference>()
+        ActivityScenario.launch(ConversationTestActivity::class.java).use { scenario ->
+            scenario.onActivity { activity -> activity.setContent {
+                TodoCloudTheme { Surface {
+                    AiPlanScreen(
+                        paddingValues = PaddingValues(), ideas = emptyList(), tasks = emptyList(), plan = null,
+                        loading = false, error = null, conversation = emptyList(), conversationKey = "composer-redesign",
+                        conversationTitle = "新会话", conversations = listOf(old), syncPending = false,
+                        onRetrySync = {}, onNewConversation = {}, onOpenConversation = {}, onRefreshHistory = {}, onOpenInbox = {},
+                        onGenerate = { text, _, _, _, refs -> sentText = text; sentReferences = refs },
+                        onRevise = { _, _, _, _ -> }, onAccept = { _, _ -> },
+                    )
+                } }
+            } }
+            compose.onNodeWithText("添加图片").assertDoesNotExist()
+            compose.onNodeWithText("引用会话").assertDoesNotExist()
+            compose.onNodeWithContentDescription("生成计划").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("添加内容").performClick()
+            compose.onNodeWithText("添加图片").assertIsDisplayed()
+            compose.onNodeWithText("引用会话").performClick()
+            compose.onNodeWithText(old.title).performClick()
+            compose.onNodeWithText("@${old.title}").assertIsDisplayed()
+            compose.onNode(hasSetTextAction()).performTextInput("先整理资料\n再写第一段")
+            compose.onNodeWithContentDescription("生成计划").assertIsDisplayed().performClick()
+            compose.runOnIdle {
+                assertEquals("先整理资料\n再写第一段", sentText)
+                assertEquals(listOf(ConversationReference(old.id, old.title)), sentReferences)
+            }
+            screenshot("ai-plan-redesign-composer-multiline")
+        }
+    }
+
     @Test fun historyOpensOldSessionAndNewSessionClearsDraft() {
         var opened = ""
         val key = mutableStateOf("first")
@@ -345,7 +379,7 @@ class ConversationUiTest {
                 }
             }
             compose.onNodeWithContentDescription("历史会话").assertIsDisplayed()
-            compose.onNodeWithText("引用会话").assertIsDisplayed()
+            compose.onNodeWithContentDescription("添加内容").assertIsDisplayed()
             compose.onNodeWithText("可以从二十分钟开始").assertIsDisplayed()
             compose.onNodeWithContentDescription("生成计划").assertIsDisplayed()
             screenshot("conversation-dark-portrait-large-text")
