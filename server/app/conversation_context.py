@@ -33,7 +33,7 @@ async def resolve_references(db: AsyncSession, user_id: int, ids: list) -> str:
     records = []
     for value in dict.fromkeys(str(value) for value in ids):
         row = await db.scalar(select(AiConversation).where(AiConversation.id == value, AiConversation.user_id == user_id))
-        if row is None:
+        if row is None or row.deleted_at is not None:
             raise HTTPException(404, "引用的会话不存在，请重新选择")
         plan = await db.scalar(select(AiPlan).where(AiPlan.id == row.plan_id, AiPlan.user_id == user_id)) if row.plan_id else None
         records.append({"title": row.title, "messages": row.messages or [], "plan": plan.proposal if plan else None})

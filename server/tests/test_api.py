@@ -618,6 +618,105 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertEqual(response.status_code, 404, response.text)
 
+    async def test_deleting_conversation_syncs_tombstone_without_deleting_adopted_task(self) -> None:
+        from uuid import uuid4
+
+        auth = self._auth(await self._register())
+        other = self._auth(await self._register())
+        plan_response = await self.client.post("/plans/import", headers=auth, json={
+            "proposal": {"summary": "安排一次复习", "items": [{
+                "source_type": "prompt", "source_id": -1, "title": "复习英语",
+                "due_at": "2026-10-20T18:00:00+08:00", "note": "",
+            }]},
+            "messages": [{"role": "user", "content": "帮我安排复习"}],
+        })
+        self.assertEqual(plan_response.status_code, 201, plan_response.text)
+        plan = plan_response.json()
+        accepted = await self.client.post(f"/plans/{plan['id']}/accept", headers=auth)
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+
+        conversation_id = str(uuid4())
+        payload = {
+            "title": "复习安排", "messages": [{"role": "user", "content": "敏感会话内容"}],
+            "plan_id": plan["id"],
+        }
+        created = await self.client.put(f"/conversations/{conversation_id}", headers=auth, json=payload)
+        self.assertEqual(created.status_code, 200, created.text)
+        self.assertEqual((await self.client.delete(f"/conversations/{conversation_id}")).status_code, 401)
+        self.assertEqual((await self.client.delete(f"/conversations/{conversation_id}", headers=other)).status_code, 204)
+        self.assertEqual((await self.client.get(f"/conversations/{conversation_id}", headers=auth)).status_code, 200)
+        deleted = await self.client.delete(f"/conversations/{conversation_id}", headers=auth)
+        self.assertEqual(deleted.status_code, 204, deleted.text)
+        self.assertEqual((await self.client.delete(f"/conversations/{conversation_id}", headers=auth)).status_code, 204)
+
+        self.assertEqual((await self.client.get("/conversations", headers=auth)).json(), [])
+        tombstones = (await self.client.get("/conversations?include_deleted=true", headers=auth)).json()
+        self.assertEqual(len(tombstones), 1)
+        self.assertEqual(tombstones[0]["id"], conversation_id)
+        self.assertIsNotNone(tombstones[0]["deleted_at"])
+        self.assertEqual(tombstones[0]["title"], "")
+        self.assertEqual(tombstones[0]["preview"], "")
+        self.assertEqual(tombstones[0]["message_count"], 0)
+        self.assertEqual((await self.client.get(f"/conversations/{conversation_id}", headers=auth)).status_code, 410)
+        self.assertEqual((await self.client.get(f"/conversations/{conversation_id}", headers=other)).status_code, 404)
+        payload["revision"] = created.json()["revision"]
+        self.assertEqual((await self.client.put(f"/conversations/{conversation_id}", headers=auth, json=payload)).status_code, 410)
+        remaining_plan = await self.client.get(f"/plans/{plan['id']}", headers=auth)
+        self.assertEqual(remaining_plan.status_code, 200)
+        self.assertEqual(remaining_plan.json()["messages"], [])
+        tasks = (await self.client.get("/tasks", headers=auth)).json()
+        self.assertEqual([task["title"] for task in tasks], ["复习英语"])
+        conn = await pg.connect()
+        try:
+            stored = await conn.fetchrow(
+                "SELECT title, messages::text AS messages, plan_id, deleted_at "
+                "FROM ai_conversations WHERE id = $1", conversation_id,
+            )
+            self.assertEqual(stored["title"], "")
+            self.assertEqual(stored["messages"], "[]")
+            self.assertIsNone(stored["plan_id"])
+            self.assertIsNotNone(stored["deleted_at"])
+        finally:
+            await conn.close()
+
+        late_id = str(uuid4())
+        self.assertEqual((await self.client.delete(f"/conversations/{late_id}", headers=auth)).status_code, 204)
+        late_upload = await self.client.put(
+            f"/conversations/{late_id}", headers=auth,
+            json={"title": "迟到的设备", "messages": [{"role": "user", "content": "不应复活"}]},
+        )
+        self.assertEqual(late_upload.status_code, 410, late_upload.text)
+
+        # Deleted history can no longer be used as hidden model context.
+        referenced = await self.client.post(
+            "/plans/chat", headers=auth,
+            json={"message": "继续", "reference_ids": [conversation_id]},
+        )
+        self.assertEqual(referenced.status_code, 404, referenced.text)
+
+    async def test_conversation_delete_wins_first_upload_and_duplicate_delete_races(self) -> None:
+        import asyncio
+        from uuid import uuid4
+
+        auth = self._auth(await self._register())
+        conversation_id = str(uuid4())
+        payload = {"title": "并发会话", "messages": [{"role": "user", "content": "不应复活"}]}
+        uploaded, deleted = await asyncio.gather(
+            self.client.put(f"/conversations/{conversation_id}", headers=auth, json=payload),
+            self.client.delete(f"/conversations/{conversation_id}", headers=auth),
+        )
+        self.assertIn(uploaded.status_code, {200, 410}, uploaded.text)
+        self.assertEqual(deleted.status_code, 204, deleted.text)
+        self.assertEqual((await self.client.get(f"/conversations/{conversation_id}", headers=auth)).status_code, 410)
+
+        missing_id = str(uuid4())
+        first, second = await asyncio.gather(
+            self.client.delete(f"/conversations/{missing_id}", headers=auth),
+            self.client.delete(f"/conversations/{missing_id}", headers=auth),
+        )
+        self.assertEqual([first.status_code, second.status_code], [204, 204])
+        self.assertEqual((await self.client.get(f"/conversations/{missing_id}", headers=auth)).status_code, 410)
+
     async def test_app_version_is_public(self) -> None:
         from unittest import mock
 

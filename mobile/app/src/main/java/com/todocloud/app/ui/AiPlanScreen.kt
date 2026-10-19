@@ -120,6 +120,9 @@ internal fun AiPlanScreen(
     onGenerate: (message: String, ideaIds: Set<Int>, forcePlan: Boolean, images: List<Uri>, references: List<ConversationReference>) -> Unit,
     onRevise: (Int, String, List<Uri>, List<ConversationReference>) -> Unit,
     onAccept: (planId: Int, items: List<PlanItem>?) -> Unit,
+    onDeleteConversation: ((String) -> Unit)? = null,
+    cloudHistory: Boolean = true,
+    deletedConversationIds: Set<String> = emptySet(),
 ) {
     var message by rememberSaveable(conversationKey) { mutableStateOf("") }
     var images by remember(conversationKey) { mutableStateOf<List<Uri>>(emptyList()) }
@@ -128,6 +131,9 @@ internal fun AiPlanScreen(
     var typedMention by remember(conversationKey) { mutableStateOf(false) }
     var showPlan by remember(conversationKey) { mutableStateOf(true) }
     var previousMessageCount by remember(conversationKey) { mutableIntStateOf(conversation.size) }
+    LaunchedEffect(deletedConversationIds) {
+        references = references.filterNot { it.id in deletedConversationIds }
+    }
     val changeMessage: (String) -> Unit = { next ->
         if (mentionQuery(message) == null && mentionQuery(next) != null && references.size < 3) {
             typedMention = true
@@ -193,9 +199,12 @@ internal fun AiPlanScreen(
                     typedMention = false
                 },
                 onDismiss = { picker = null; typedMention = false },
+                onDelete = onDeleteConversation,
+                cloudHistory = cloudHistory,
+                error = error,
             )
         }
-        error?.let {
+        if (picker == null) error?.let {
             Text(it, modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error)
         }
 
@@ -243,6 +252,7 @@ internal fun AiPlanScreen(
                 onReference = { typedMention = false; picker = "reference" },
                 onRemoveReference = { id -> references = references.filterNot { it.id == id } },
                 onOpenReference = onOpenConversation,
+                deletedConversationIds = deletedConversationIds,
                 onInboxClick = {
                     if (ideas.isEmpty()) onOpenInbox() else showIdeaPicker = true
                 },
@@ -503,6 +513,7 @@ internal fun AiPlanLanding(
     onReference: () -> Unit,
     onRemoveReference: (String) -> Unit,
     onOpenReference: (String) -> Unit,
+    deletedConversationIds: Set<String>,
     onInboxClick: () -> Unit,
     onSubmit: () -> Unit,
 ) {
@@ -522,6 +533,7 @@ internal fun AiPlanLanding(
                 PlanConversation(
                     messages = conversation,
                     onOpenReference = onOpenReference,
+                    deletedConversationIds = deletedConversationIds,
                     historyPlan = historyPlan,
                     modifier = Modifier.weight(1f, fill = false).padding(top = 16.dp),
                 )
@@ -645,7 +657,7 @@ private fun decodeThumbnail(context: Context, uri: Uri): ImageBitmap? = runCatch
 }.getOrNull()
 
 @Composable
-internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = Modifier, onOpenReference: (String) -> Unit = {}, historyPlan: AiPlan? = null) {
+internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = Modifier, onOpenReference: (String) -> Unit = {}, historyPlan: AiPlan? = null, deletedConversationIds: Set<String> = emptySet()) {
     val listState = rememberLazyListState()
     LaunchedEffect(messages.size, messages.lastOrNull(), historyPlan?.id) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -671,7 +683,10 @@ internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = 
                 ) {
                     Column(Modifier.padding(12.dp)) {
                         chat.references.forEach { reference ->
-                            TextButton(onClick = { onOpenReference(reference.id) }) { Text("@${reference.title}") }
+                            val deleted = reference.id in deletedConversationIds
+                            TextButton(onClick = { onOpenReference(reference.id) }, enabled = !deleted) {
+                                Text("@${reference.title}${if (deleted) "（已删除）" else ""}")
+                            }
                         }
                         Text(chat.content)
                     }

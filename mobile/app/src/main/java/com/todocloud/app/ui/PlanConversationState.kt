@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.todocloud.app.data.AiPlan
 import com.todocloud.app.data.ConversationReference
+import com.todocloud.app.data.DeletedConversationException
 import com.todocloud.app.data.PlanChatResult
 import com.todocloud.app.data.PlanConversation
 import com.todocloud.app.data.PlanConversationSummary
@@ -17,6 +18,20 @@ import com.todocloud.app.data.conversationTitle
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+
+internal data class ConversationDeletionResult(
+    val remaining: List<PlanConversationSummary>,
+    val resetActive: Boolean,
+)
+
+internal fun applyConversationDeletion(
+    conversations: List<PlanConversationSummary>,
+    activeId: String?,
+    deletedIds: Set<String>,
+) = ConversationDeletionResult(
+    remaining = conversations.filterNot { it.id in deletedIds },
+    resetActive = activeId != null && activeId in deletedIds,
+)
 
 /** Owns the selected conversation; a reply can never land in another session. */
 internal class PlanConversationState(private val repository: TodoCloudRepository, private val token: String) {
@@ -30,6 +45,8 @@ internal class PlanConversationState(private val repository: TodoCloudRepository
         private set
     var error by mutableStateOf<String?>(null)
         private set
+    var deletedIds by mutableStateOf(emptySet<String>())
+        private set
 
     val key: String get() = active?.id ?: draftKey
 
@@ -39,16 +56,40 @@ internal class PlanConversationState(private val repository: TodoCloudRepository
         error = null
         try { block() }
         catch (cancelled: CancellationException) { throw cancelled }
+        catch (deleted: DeletedConversationException) {
+            forgetDeleted(setOf(deleted.conversationId))
+            error = deleted.message
+        }
         catch (exception: Exception) { error = exception.message ?: "连接失败，请稍后重试" }
         finally { loading = false }
     }
 
     suspend fun load() = request {
-        conversations = repository.listPlanConversations(token)
+        refreshList()
         conversations.firstOrNull()?.let { active = repository.getPlanConversation(token, it.id) }
     }
 
-    suspend fun refreshHistory() = request { conversations = repository.listPlanConversations(token) }
+    private suspend fun refreshList() {
+        conversations = repository.listPlanConversations(token)
+        forgetDeleted(repository.deletedPlanConversationIds(token))
+    }
+
+    private fun forgetDeleted(ids: Set<String>) {
+        deletedIds = deletedIds + ids
+        val result = applyConversationDeletion(conversations, active?.id, deletedIds)
+        conversations = result.remaining
+        if (result.resetActive) {
+            active = null
+            draftKey = UUID.randomUUID().toString()
+        }
+    }
+
+    suspend fun refreshHistory() = request { refreshList() }
+
+    suspend fun delete(id: String) = request {
+        repository.deletePlanConversation(token, id)
+        forgetDeleted(setOf(id))
+    }
 
     fun newConversation() {
         if (loading) return

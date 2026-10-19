@@ -67,7 +67,7 @@ class MigrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(row[0] == "ai_conversations" for row in added))
         self.assertEqual([row for row in after["indexes"] if row[0] != "ai_conversations"], before["indexes"])
         self.assertEqual([row for row in after["constraints"] if row[0] != "ai_conversations"], before["constraints"])
-        self.assertEqual(await self._version(), "0003_ai_conversations")
+        self.assertEqual(await self._version(), "0004_conversation_deletion")
         conn = await pg.connect()
         try:
             row = await conn.fetchrow("SELECT title, steps, recurrence FROM public.tasks")
@@ -130,12 +130,13 @@ class MigrationTests(unittest.IsolatedAsyncioTestCase):
         await upgrade_to_head(self.engine)
         conn = await pg.connect()
         try:
-            rows = await conn.fetch("SELECT user_id, title, messages, plan_id FROM ai_conversations")
+            rows = await conn.fetch("SELECT user_id, title, messages, plan_id, deleted_at FROM ai_conversations")
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["user_id"], user_id)
             self.assertEqual(rows[0]["plan_id"], plan_id)
             self.assertEqual(rows[0]["title"], "英语学习")
             self.assertIn("英语学习", rows[0]["messages"])
+            self.assertIsNone(rows[0]["deleted_at"])
         finally:
             await conn.close()
 

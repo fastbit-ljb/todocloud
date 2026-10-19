@@ -127,6 +127,8 @@ class AiConversation(Base):
     messages: Mapped[list] = mapped_column(JSON, default=list, server_default=text("'[]'"))
     plan_id: Mapped[int | None] = mapped_column(ForeignKey("ai_plans.id", ondelete="SET NULL"), nullable=True)
     revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # Retain only a deletion marker so stale devices cannot recreate removed history.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
