@@ -256,6 +256,7 @@ internal fun TaskHomeScreen(
     section: String,
     onSectionChange: (String) -> Unit,
     tasks: List<TaskItem>,
+    deletingTaskIds: Set<Int>,
     ideas: List<InboxIdea>,
     loading: Boolean,
     showLoadingAnimation: Boolean,
@@ -403,6 +404,7 @@ internal fun TaskHomeScreen(
                             placementSpec = tween(durationMillis = 560, easing = UiverseEase),
                         ),
                         task = task,
+                        deleting = task.id in deletingTaskIds,
                         entryIndex = index,
                         onToggle = {
                             onToggle(task, ::prepareViewportForReorder)

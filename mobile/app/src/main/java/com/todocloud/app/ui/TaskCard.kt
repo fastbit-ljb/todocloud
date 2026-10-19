@@ -75,6 +75,7 @@ import kotlinx.coroutines.delay
 internal fun TaskCard(
     modifier: Modifier = Modifier,
     task: TaskItem,
+    deleting: Boolean,
     entryIndex: Int = 0,
     onToggle: () -> Unit,
     onStepToggle: (Int) -> Unit,
@@ -83,9 +84,6 @@ internal fun TaskCard(
     onEdit: () -> Unit = {},
 ) {
     var expanded by rememberSaveable(task.id) { mutableStateOf(false) }
-    // Not saveable on purpose: after an undone delete the card comes back with
-    // the same key, and a restored `deleting = true` would delete it again.
-    var deleting by remember(task.id) { mutableStateOf(false) }
     var reminderPickerOpen by rememberSaveable(task.id) { mutableStateOf(false) }
     var titleTextWidth by remember(task.id) { mutableStateOf(0f) }
     var titleHasOverflow by remember(task.id) { mutableStateOf(false) }
@@ -107,8 +105,8 @@ internal fun TaskCard(
         if (deleting) {
             delay(TRASH_ANIMATION_BEAT_MILLIS)
             flyAway = true
-            delay(CARD_FLY_AWAY_DURATION_MILLIS.toLong())
-            onDelete()
+        } else {
+            flyAway = false
         }
     }
     LaunchedEffect(task.id) {
@@ -326,7 +324,7 @@ internal fun TaskCard(
                     }
                     AnimatedTrashButton(
                         deleting = deleting,
-                        onDeleteRequested = { deleting = true },
+                        onDeleteRequested = onDelete,
                     )
                 }
             }

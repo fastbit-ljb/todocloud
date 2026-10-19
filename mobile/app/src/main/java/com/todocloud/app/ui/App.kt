@@ -89,7 +89,8 @@ fun TodoCloudApp(
     var showComposer by rememberSaveable { mutableStateOf(false) }
     // Task open in the editor; null with showComposer = a new task.
     var editingTask by remember { mutableStateOf<TaskItem?>(null) }
-    // Deleted on screen but not yet on the server, while "撤销" is still offered.
+    // A delete requested by the user, including the short card animation and the
+    // following undo window. Kept at screen level so switching tabs cannot cancel it.
     var pendingDeleteIds by remember { mutableStateOf(emptySet<Int>()) }
     var refreshing by remember { mutableStateOf(false) }
     // Set while the lists come from the on-device copy because the server was unreachable.
@@ -460,13 +461,19 @@ fun TodoCloudApp(
         }
     }
 
-    // Hide the task now and offer "撤销"; the server delete only happens once the
-    // snackbar goes away without the action (timeout, swipe, or the next delete).
+    // Start the delete at screen level immediately. The card still gets its full
+    // animation, but switching tabs no longer disposes the coroutine before it can
+    // hide the task and offer undo. The server delete only happens once the snackbar
+    // goes away without the action (timeout, swipe, or the next delete).
     fun deleteWithUndo(task: TaskItem) {
-        tasks = tasks.filterNot { it.id == task.id }
+        if (task.id in pendingDeleteIds) return
         pendingDeleteIds = pendingDeleteIds + task.id
-        ReminderScheduler.cancel(context, task.id)
         scope.launch {
+            delay(TRASH_ANIMATION_BEAT_MILLIS + CARD_FLY_AWAY_DURATION_MILLIS)
+            // Logging out or switching accounts clears pending deletes.
+            if (task.id !in pendingDeleteIds) return@launch
+            tasks = tasks.filterNot { it.id == task.id }
+            ReminderScheduler.cancel(context, task.id)
             snackbarHostState.currentSnackbarData?.dismiss()
             val result = snackbarHostState.showSnackbar(
                 message = "已删除「${task.title.take(20)}」",
@@ -737,6 +744,7 @@ fun TodoCloudApp(
                         showAddMenu = false
                     },
                     tasks = tasks,
+                    deletingTaskIds = pendingDeleteIds,
                     ideas = ideas,
                     loading = loading,
                     showLoadingAnimation = taskHeaderLoading,
