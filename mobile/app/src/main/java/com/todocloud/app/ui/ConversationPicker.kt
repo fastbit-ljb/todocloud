@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
@@ -97,8 +98,14 @@ internal fun ConversationPicker(
     val toggleSelection: (String) -> Unit = { id ->
         selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        // In selection mode the list owns edge swipes. Passing its remaining
+        // fling to the draggable sheet can make its expanded anchor keep bouncing.
+        sheetGesturesEnabled = !selectionMode,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).testTag("conversation-history-panel")) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     if (selectionMode) "已选择 ${selectedIds.size} 个" else if (referenceMode) "引用历史会话" else "历史会话",
@@ -138,7 +145,7 @@ internal fun ConversationPicker(
                     }
                 }
             }
-            LazyColumn(contentPadding = PaddingValues(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+            LazyColumn(contentPadding = PaddingValues(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).testTag("conversation-history-list")) {
                 if (results.isEmpty()) item {
                     Text(if (conversations.isEmpty()) "还没有历史会话" else "没有找到匹配的会话", Modifier.padding(vertical = 24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

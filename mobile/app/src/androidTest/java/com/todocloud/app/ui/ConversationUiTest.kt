@@ -17,9 +17,12 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTextReplacement
@@ -232,6 +235,42 @@ class ConversationUiTest {
             compose.onNodeWithText("删除（2）").performClick()
             compose.onNodeWithText("删除").performClick()
             compose.runOnIdle { assertEquals(setOf(old.id, other.id), deleted) }
+        }
+    }
+
+    @Test fun selectedLongHistoryOverscrollSettlesWithoutMovingPanel() {
+        val longHistory = (1..22).map { index ->
+            old.copy(
+                id = "long-history-$index",
+                title = "讨论 $index：请结合收件匣和现有任务，生成一份现实可执行的计划",
+                preview = "这里有较长的历史讨论内容，用来覆盖多行标题、复选框和长列表边界滑动。",
+            )
+        }
+        ActivityScenario.launch(ConversationTestActivity::class.java).use { scenario ->
+            scenario.onActivity { activity -> activity.setContent {
+                TodoCloudTheme { Surface {
+                    ConversationPicker(
+                        conversations = longHistory, referenceMode = false, initialQuery = "", loading = false,
+                        excludedIds = emptySet(), onPick = {}, onDismiss = {}, onDelete = {},
+                    )
+                } }
+            } }
+            compose.onNodeWithText("选择").performClick()
+            compose.onNodeWithText("全选").performClick()
+            compose.onNodeWithText("已选择 22 个").assertIsDisplayed()
+            val list = compose.onNodeWithTag("conversation-history-list")
+            list.performScrollToIndex(longHistory.lastIndex)
+            val panel = compose.onNodeWithTag("conversation-history-panel")
+            val settledTop = panel.fetchSemanticsNode().boundsInWindow.top
+            repeat(3) { list.performTouchInput { swipeUp(durationMillis = 450) } }
+            compose.waitForIdle()
+            assertEquals("List overscroll must not drag the selection panel", settledTop, panel.fetchSemanticsNode().boundsInWindow.top, 1f)
+            compose.mainClock.advanceTimeBy(3_000)
+            compose.waitForIdle()
+            assertEquals("Panel must stay settled after the rebound", settledTop, panel.fetchSemanticsNode().boundsInWindow.top, 1f)
+            compose.onNodeWithText("已选择 22 个").assertIsDisplayed()
+            compose.onNodeWithText("取消多选").performClick()
+            compose.onNodeWithText("历史会话").assertIsDisplayed()
         }
     }
 
