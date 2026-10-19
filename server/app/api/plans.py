@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -11,6 +12,7 @@ from app.api.dependencies import get_current_user
 from app.api.tasks import Recurrence, TaskResponse
 from app.core.config import settings
 from app.core.rate_limit import enforce_rate_limit
+from app.conversation_context import resolve_references
 from app.db.models import AiPlan, Attachment, Idea, Task, User
 from app.db.session import get_db
 from app.plan_ai import plan_turn
@@ -84,6 +86,7 @@ class PlanReviseRequest(BaseModel):
     reference_at: str | None = None
     timezone_name: str = Field(default="Asia/Shanghai", max_length=64)
     force_plan: bool = False
+    reference_ids: list[UUID] = Field(default_factory=list, max_length=3)
 
 
 class PlanChatRequest(BaseModel):
@@ -94,6 +97,7 @@ class PlanChatRequest(BaseModel):
     # Earlier question/answer turns the client is still showing (not stored server-side).
     history: list[PlanMessage] = Field(default_factory=list, max_length=12)
     force_plan: bool = False
+    reference_ids: list[UUID] = Field(default_factory=list, max_length=3)
 
 
 class PlanChatResponse(BaseModel):
@@ -182,6 +186,7 @@ async def run_planner(
     messages: list[dict] | None = None,
     force_plan: bool = True,
     images: list[tuple[bytes, str]] | None = None,
+    reference_context: str = "",
 ) -> dict:
     """Returns {"intent", "reply", "proposal"}; proposal is None for an answer."""
     try:
@@ -190,7 +195,7 @@ async def run_planner(
             [serialize_task(item) for item in tasks],
             payload.reference_at,
             payload.timezone_name,
-            payload.message.strip(),
+            payload.message.strip() + reference_context,
             previous_proposal,
             messages,
             force_plan=force_plan,
@@ -214,6 +219,14 @@ async def list_plans(
         .limit(10)
     )
     return list(result.scalars().all())
+
+
+@router.get("/{plan_id}", response_model=PlanResponse)
+async def get_plan(plan_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    plan = await db.scalar(select(AiPlan).where(AiPlan.id == plan_id, AiPlan.user_id == user.id))
+    if plan is None:
+        raise HTTPException(404, "计划不存在")
+    return plan
 
 
 @router.post("/generate", response_model=PlanResponse, status_code=status.HTTP_201_CREATED)
@@ -340,6 +353,7 @@ async def _chat(
     message = payload.message.strip()
     if not message:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先告诉 AI 你想问什么或安排什么")
+    references = await resolve_references(db, user.id, payload.reference_ids)
     images = await store_plan_images(files or [], user, db)
     ideas, tasks = await planning_sources(user.id, db, payload.idea_ids)
     history = [item.model_dump() for item in payload.history]
@@ -351,6 +365,7 @@ async def _chat(
         messages=history + [{"role": "user", "content": user_text}],
         force_plan=payload.force_plan,
         images=images,
+        reference_context=references,
     )
     if turn["proposal"] is None:
         await db.commit()  # keeps any stored image attachments
@@ -476,6 +491,7 @@ async def _revise(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="计划不存在")
     if plan.status != "draft":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已采用的计划不能继续修改")
+    references = await resolve_references(db, user.id, payload.reference_ids)
     images = await store_plan_images(files or [], user, db)
     ideas, tasks = await planning_sources(user.id, db)
     history = list(plan.messages or [])
@@ -488,6 +504,7 @@ async def _revise(
         history,
         force_plan=payload.force_plan,
         images=images,
+        reference_context=references,
     )
     if turn["proposal"] is None:
         # A question about the plan: answer it and leave the plan untouched.
