@@ -34,8 +34,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Keep this above the earlier alarm test builds so Android Studio can
         // update the installed app without asking to uninstall it.
-        versionCode = 33
-        versionName = "1.3.11"
+        versionCode = 34
+        versionName = "1.3.12"
         buildConfigField("String", "API_BASE_URL", "\"https://dnsgo.xyz/todocloud-api/api/v1\"")
     }
 
