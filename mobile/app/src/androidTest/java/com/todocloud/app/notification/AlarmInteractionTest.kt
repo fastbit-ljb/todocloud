@@ -3,8 +3,10 @@ package com.todocloud.app.notification
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.provider.Settings
+import android.view.KeyEvent
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -97,6 +99,56 @@ class AlarmInteractionTest {
                 saveScreenshot("alarm-snooze-delivered")
                 compose.onNodeWithText("停止闹钟").performClick()
             }
+        }
+    }
+
+    @Test
+    fun systemBackKeySnoozesForFiveMinutes() {
+        assertSnoozedBySystemBack {
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        }
+    }
+
+    @Test
+    fun leftEdgeSystemBackGestureSnoozesForFiveMinutes() {
+        swipeSystemBack(fromLeft = true)
+    }
+
+    @Test
+    fun rightEdgeSystemBackGestureSnoozesForFiveMinutes() {
+        swipeSystemBack(fromLeft = false)
+    }
+
+    private fun swipeSystemBack(fromLeft: Boolean) {
+        assumeTrue(Settings.Secure.getInt(context.contentResolver, "navigation_mode", -1) == 2)
+        assertSnoozedBySystemBack {
+            val metrics = context.resources.displayMetrics
+            val startX = if (fromLeft) 5 else metrics.widthPixels - 5
+            val endX = if (fromLeft) metrics.widthPixels / 3 else metrics.widthPixels * 2 / 3
+            val y = metrics.heightPixels / 2
+            val command = "input swipe $startX $y $endX $y 400"
+            ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use {
+                it.readBytes()
+            }
+        }
+    }
+
+    private fun assertSnoozedBySystemBack(backAction: () -> Unit) {
+        assumeTrue(ReminderScheduler.canScheduleExactAlarms(context))
+        context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        ActivityScenario.launch<AlarmActivity>(
+            AlarmActivity.intent(context, TEST_TASK_ID, "系统返回稍后提醒测试"),
+        ).use {
+            ensureDisplayed("系统返回稍后提醒测试")
+            val beforeBack = System.currentTimeMillis()
+            backAction()
+            compose.waitUntil(5_000) { prefs.contains("stored_snooze_$TEST_TASK_ID") }
+            val afterBack = System.currentTimeMillis()
+            val triggerAt = JSONObject(prefs.getString("stored_snooze_$TEST_TASK_ID", "{}")!!)
+                .getLong("triggerAt")
+            assertTrue(triggerAt >= beforeBack + 300_000L)
+            assertTrue(triggerAt <= afterBack + 300_000L)
+            compose.waitUntil(5_000) { !AlarmActivity.hasFocusedAlarmWindow() }
         }
     }
 
