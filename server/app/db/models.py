@@ -118,6 +118,21 @@ class AiPlan(Base):
     user: Mapped[User] = relationship(back_populates="ai_plans")
 
 
+class AiConversation(Base):
+    __tablename__ = "ai_conversations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(120))
+    messages: Mapped[list] = mapped_column(JSON, default=list, server_default=text("'[]'"))
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey("ai_plans.id", ondelete="SET NULL"), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Attachment(Base):
     __tablename__ = "attachments"
 

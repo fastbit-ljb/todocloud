@@ -90,6 +90,8 @@ import com.todocloud.app.data.AiPlan
 import com.todocloud.app.data.InboxIdea
 import com.todocloud.app.data.PlanItem
 import com.todocloud.app.data.PlanMessage
+import com.todocloud.app.data.ConversationReference
+import com.todocloud.app.data.PlanConversationSummary
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.OutlinedButton
 import com.todocloud.app.data.TaskItem
@@ -105,13 +107,39 @@ internal fun AiPlanScreen(
     loading: Boolean,
     error: String?,
     conversation: List<PlanMessage>,
+    conversationKey: String,
+    conversationTitle: String,
+    conversations: List<PlanConversationSummary>,
+    syncPending: Boolean,
+    onRetrySync: () -> Unit,
+    onNewConversation: () -> Unit,
+    onOpenConversation: (String) -> Unit,
+    onRefreshHistory: () -> Unit,
     onOpenInbox: () -> Unit,
-    onGenerate: (message: String, ideaIds: Set<Int>, forcePlan: Boolean, images: List<Uri>) -> Unit,
-    onRevise: (Int, String, List<Uri>) -> Unit,
+    onGenerate: (message: String, ideaIds: Set<Int>, forcePlan: Boolean, images: List<Uri>, references: List<ConversationReference>) -> Unit,
+    onRevise: (Int, String, List<Uri>, List<ConversationReference>) -> Unit,
     onAccept: (planId: Int, items: List<PlanItem>?) -> Unit,
 ) {
-    var message by rememberSaveable(plan?.id) { mutableStateOf("") }
-    var images by remember(plan?.id) { mutableStateOf<List<Uri>>(emptyList()) }
+    var message by rememberSaveable(conversationKey) { mutableStateOf("") }
+    var images by remember(conversationKey) { mutableStateOf<List<Uri>>(emptyList()) }
+    var references by remember(conversationKey) { mutableStateOf(emptyList<ConversationReference>()) }
+    var picker by remember(conversationKey) { mutableStateOf<String?>(null) }
+    var typedMention by remember(conversationKey) { mutableStateOf(false) }
+    var showPlan by remember(conversationKey) { mutableStateOf(true) }
+    val changeMessage: (String) -> Unit = { next ->
+        if (mentionQuery(message) == null && mentionQuery(next) != null && references.size < 3) {
+            typedMention = true
+            picker = "reference"
+        }
+        message = next.take(4000)
+    }
+    LaunchedEffect(conversationKey, conversation.size) {
+        if (conversation.lastOrNull()?.role == "assistant") {
+            message = ""
+            images = emptyList()
+            references = emptyList()
+        }
+    }
     val pickImages = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(MAX_PLAN_IMAGES),
     ) { picked -> images = (images + picked).distinct().take(MAX_PLAN_IMAGES) }
@@ -130,13 +158,46 @@ internal fun AiPlanScreen(
             .consumeWindowInsets(paddingValues)
             .padding(horizontal = 16.dp),
     ) {
+        ConversationToolbar(conversationTitle, loading, onHistory = {
+            picker = "history"
+            onRefreshHistory()
+        }, onNew = onNewConversation)
+        if (syncPending) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("会话已保存在本机，等待同步", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = onRetrySync, enabled = !loading) { Text("重试") }
+            }
+        }
+        if (plan != null) {
+            TextButton(onClick = { showPlan = !showPlan }, enabled = !loading) {
+                Text(if (showPlan) "查看完整对话" else "查看计划")
+            }
+        }
+        if (picker != null) {
+            val referenceMode = picker == "reference"
+            ConversationPicker(
+                conversations = conversations,
+                referenceMode = referenceMode,
+                initialQuery = if (referenceMode && typedMention) mentionQuery(message).orEmpty() else "",
+                excludedIds = if (referenceMode) references.mapTo(mutableSetOf(conversationKey)) { it.id } else emptySet(),
+                onPick = { chosen ->
+                    if (referenceMode && references.size < 3) {
+                        references = references + ConversationReference(chosen.id, chosen.title)
+                        if (typedMention) message = removeMentionQuery(message)
+                    } else if (!referenceMode) onOpenConversation(chosen.id)
+                    picker = null
+                    typedMention = false
+                },
+                onDismiss = { picker = null; typedMention = false },
+            )
+        }
         error?.let {
             Text(it, modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error)
         }
 
-        if (plan == null) {
+        if (plan == null || !showPlan) {
             val canGenerate = !loading && (
-                message.isNotBlank() || images.isNotEmpty() || selectedIdeaIds.isNotEmpty() || tasks.isNotEmpty()
+                message.isNotBlank() || images.isNotEmpty() || selectedIdeaIds.isNotEmpty() || tasks.isNotEmpty() || references.isNotEmpty()
             )
             val submitPlan = {
                 val typed = message.trim()
@@ -149,19 +210,19 @@ internal fun AiPlanScreen(
                             "请结合我这次选中的收件匣想法和现有未完成任务，生成一份现实可执行的计划。"
                         tasks.isNotEmpty() ->
                             "请结合现有未完成任务，生成一份现实可执行的计划。"
+                        references.isNotEmpty() -> "请结合引用的历史会话，继续帮我规划。"
                         else -> ""
                     }
                 }
                 if (request.isNotBlank() && canGenerate) {
-                    onGenerate(request, selectedIdeaIds, typed.isEmpty() && images.isEmpty(), images)
-                    message = ""
-                    images = emptyList()
+                    if (plan != null) onRevise(plan.id, request, images, references)
+                    else onGenerate(request, selectedIdeaIds, typed.isEmpty() && images.isEmpty(), images, references)
                 }
             }
             AiPlanLanding(
                 modifier = Modifier.weight(1f),
                 message = message,
-                onMessageChange = { message = it.take(4000) },
+                onMessageChange = changeMessage,
                 ideas = ideas,
                 selectedIdeaIds = selectedIdeaIds,
                 loading = loading,
@@ -171,8 +232,12 @@ internal fun AiPlanScreen(
                 onAddImages = onAddImages,
                 onRemoveImage = { uri -> images = images - uri },
                 onPlanFromConversation = {
-                    onGenerate("请根据上面的对话，帮我生成一份现实可执行的计划。", selectedIdeaIds, true, emptyList())
+                    onGenerate("请根据上面的对话，帮我生成一份现实可执行的计划。", selectedIdeaIds, true, emptyList(), references)
                 },
+                references = references,
+                onReference = { typedMention = false; picker = "reference" },
+                onRemoveReference = { id -> references = references.filterNot { it.id == id } },
+                onOpenReference = onOpenConversation,
                 onInboxClick = {
                     if (ideas.isEmpty()) onOpenInbox() else showIdeaPicker = true
                 },
@@ -264,17 +329,16 @@ internal fun AiPlanScreen(
             modifier = Modifier.fillMaxWidth().imePadding().padding(bottom = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            ConversationReferenceBar(references, loading, onAdd = { typedMention = false; picker = "reference" }, onRemove = { id -> references = references.filterNot { it.id == id } })
             PlanImageBar(images = images, loading = loading, onAdd = onAddImages, onRemove = { uri -> images = images - uri })
             AiPlanRevisionField(
                 value = message,
-                onValueChange = { message = it.take(4000) },
+                onValueChange = changeMessage,
                 loading = loading,
                 onSubmit = {
                     val request = message.trim()
                     if (request.isNotEmpty()) {
-                        onRevise(plan.id, request, images)
-                        message = ""
-                        images = emptyList()
+                        onRevise(plan.id, request, images, references)
                     }
                 },
             )
@@ -429,6 +493,10 @@ internal fun AiPlanLanding(
     onAddImages: () -> Unit,
     onRemoveImage: (Uri) -> Unit,
     onPlanFromConversation: () -> Unit,
+    references: List<ConversationReference>,
+    onReference: () -> Unit,
+    onRemoveReference: (String) -> Unit,
+    onOpenReference: (String) -> Unit,
     onInboxClick: () -> Unit,
     onSubmit: () -> Unit,
 ) {
@@ -447,6 +515,7 @@ internal fun AiPlanLanding(
             if (conversation.isNotEmpty()) {
                 PlanConversation(
                     messages = conversation,
+                    onOpenReference = onOpenReference,
                     modifier = Modifier.weight(1f, fill = false).padding(top = 16.dp),
                 )
                 OutlinedButton(
@@ -475,6 +544,7 @@ internal fun AiPlanLanding(
                 }
             }
 
+            ConversationReferenceBar(references, loading, onAdd = onReference, onRemove = onRemoveReference)
             PlanImageBar(images = images, loading = loading, onAdd = onAddImages, onRemove = onRemoveImage)
             AiPlanPromptField(
                 modifier = Modifier.padding(bottom = 12.dp),
@@ -568,7 +638,7 @@ private fun decodeThumbnail(context: Context, uri: Uri): ImageBitmap? = runCatch
 }.getOrNull()
 
 @Composable
-internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = Modifier) {
+internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = Modifier, onOpenReference: (String) -> Unit = {}) {
     val listState = rememberLazyListState()
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -592,7 +662,12 @@ internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = 
                         .padding(bottom = 8.dp)
                         .semantics { contentDescription = (if (fromUser) "我：" else "AI：") + chat.content },
                 ) {
-                    Text(chat.content, modifier = Modifier.padding(12.dp))
+                    Column(Modifier.padding(12.dp)) {
+                        chat.references.forEach { reference ->
+                            TextButton(onClick = { onOpenReference(reference.id) }) { Text("@${reference.title}") }
+                        }
+                        Text(chat.content)
+                    }
                 }
             }
         }

@@ -7,6 +7,7 @@ from app.api.health import router as health_router
 from app.api.ideas import router as ideas_router
 from app.api.plans import router as plans_router
 from app.api.tasks import router as tasks_router
+from app.api.conversations import router as conversations_router
 
 
 api_router = APIRouter()
@@ -17,3 +18,4 @@ api_router.include_router(ai_router, tags=["ai"])
 api_router.include_router(tasks_router, tags=["tasks"])
 api_router.include_router(ideas_router, tags=["ideas"])
 api_router.include_router(plans_router, tags=["plans"])
+api_router.include_router(conversations_router, tags=["conversations"])

@@ -567,6 +567,57 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await conn.close()
 
+    async def test_conversation_history_is_persistent_private_and_versioned(self) -> None:
+        from uuid import uuid4
+        auth = self._auth(await self._register())
+        other = self._auth(await self._register())
+        conversation_id = str(uuid4())
+        payload = {"title": "英语学习", "messages": [{"role": "user", "content": "每天学 20 分钟"}]}
+        created = await self.client.put(f"/conversations/{conversation_id}", headers=auth, json=payload)
+        self.assertEqual(created.status_code, 200, created.text)
+        self.assertEqual(created.json()["revision"], 1)
+        self.assertEqual((await self.client.get("/conversations", headers=auth)).json()[0]["id"], conversation_id)
+        self.assertEqual((await self.client.get("/conversations", headers=other)).json(), [])
+        self.assertEqual((await self.client.get(f"/conversations/{conversation_id}", headers=other)).status_code, 404)
+        self.assertEqual((await self.client.put(f"/conversations/{conversation_id}", headers=other, json=payload)).status_code, 404)
+        self.assertEqual((await self.client.get("/conversations")).status_code, 401)
+        self.assertEqual((await self.client.put(f"/conversations/{conversation_id}", headers=auth, json=payload)).status_code, 409)
+        payload["revision"] = 1
+        payload["messages"].append({"role": "assistant", "content": "从单词开始"})
+        updated = await self.client.put(f"/conversations/{conversation_id}", headers=auth, json=payload)
+        self.assertEqual(updated.status_code, 200, updated.text)
+        read = await self.client.get(f"/conversations/{conversation_id}", headers=auth)
+        self.assertEqual(read.json()["messages"], updated.json()["messages"])
+        self.assertEqual(read.json()["revision"], 2)
+
+    async def test_conversation_references_reach_model_and_cannot_cross_accounts(self) -> None:
+        from uuid import uuid4
+        from unittest import mock
+        auth = self._auth(await self._register())
+        other = self._auth(await self._register())
+        reference_id = str(uuid4())
+        saved = await self.client.put(f"/conversations/{reference_id}", headers=auth, json={
+            "title": "以前的学习目标", "messages": [{"role": "user", "content": "我的目标是通过英语考试"}],
+        })
+        self.assertEqual(saved.status_code, 200, saved.text)
+        with mock.patch("app.api.plans.plan_turn", new_callable=mock.AsyncMock) as planner:
+            planner.return_value = {"intent": "answer", "reply": "继续学习", "proposal": None}
+            answer = await self.client.post("/plans/chat", headers=auth, json={"message": "接着上次的目标", "reference_ids": [reference_id]})
+            self.assertEqual(answer.status_code, 200, answer.text)
+            self.assertIn("通过英语考试", planner.call_args.args[4])
+            planner.reset_mock()
+            blocked = await self.client.post("/plans/chat", headers=other, json={"message": "读旧会话", "reference_ids": [reference_id]})
+            self.assertEqual(blocked.status_code, 404, blocked.text)
+            planner.assert_not_called()
+
+    async def test_conversation_cannot_attach_another_users_plan(self) -> None:
+        from uuid import uuid4
+        auth = self._auth(await self._register())
+        response = await self.client.put(f"/conversations/{uuid4()}", headers=auth, json={
+            "title": "x", "messages": [], "plan_id": 2_147_483_000,
+        })
+        self.assertEqual(response.status_code, 404, response.text)
+
     async def test_app_version_is_public(self) -> None:
         from unittest import mock
 

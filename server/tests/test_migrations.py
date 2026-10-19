@@ -57,16 +57,17 @@ class MigrationTests(unittest.IsolatedAsyncioTestCase):
         await upgrade_to_head(self.engine)
         await upgrade_to_head(self.engine)  # a second start is a no-op
 
-        # The only schema change on top of production is the recurrence column.
+        # Existing tables only gain recurrence; conversations are an additive table.
         after = await pg.schema_snapshot()
         added = sorted(set(after["columns"]) - set(before["columns"]))
         self.assertEqual(
-            added, [("tasks", "recurrence", "character varying", 16, "YES", None)]
+            [row for row in added if row[0] != "ai_conversations"], [("tasks", "recurrence", "character varying", 16, "YES", None)]
         )
         self.assertEqual(sorted(set(before["columns"]) - set(after["columns"])), [])
-        self.assertEqual(after["indexes"], before["indexes"])
-        self.assertEqual(after["constraints"], before["constraints"])
-        self.assertEqual(await self._version(), "0002_task_recurrence")
+        self.assertTrue(any(row[0] == "ai_conversations" for row in added))
+        self.assertEqual([row for row in after["indexes"] if row[0] != "ai_conversations"], before["indexes"])
+        self.assertEqual([row for row in after["constraints"] if row[0] != "ai_conversations"], before["constraints"])
+        self.assertEqual(await self._version(), "0003_ai_conversations")
         conn = await pg.connect()
         try:
             row = await conn.fetchrow("SELECT title, steps, recurrence FROM public.tasks")
