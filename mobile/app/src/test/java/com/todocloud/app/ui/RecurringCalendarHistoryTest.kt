@@ -30,7 +30,7 @@ class RecurringCalendarHistoryTest {
         assertEquals(finished, calendar.single { it.id == finished.id })
         assertTrue(calendar.single { it.id == finished.id }.completed)
         assertEquals("2026-10-07T07:00:00Z", calendar.single { it.id == finished.id }.completedAt)
-        assertEquals(PastDayFlame.ALL_DONE, pastDayFlame(LocalDate.parse("2026-10-07"),
+        assertEquals(CalendarDayFlame.ALL_DONE, calendarDayFlame(LocalDate.parse("2026-10-07"),
             LocalDate.parse("2026-10-12"), calendar.filter { it.id == finished.id }))
         assertEquals(1, calendar.count { it.completed })
         assertEquals(1, calendar.count { !it.completed })

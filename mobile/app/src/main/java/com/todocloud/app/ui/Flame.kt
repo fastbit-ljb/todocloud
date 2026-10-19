@@ -85,9 +85,9 @@ internal fun flameDepth(count: Int): Float = (count - 1).coerceIn(0, 4) / 4f
  * Calendar flame colour: the more tasks a fully-done day had, the deeper the
  * red; the more tasks a day left open, the deeper the ice blue.
  */
-internal fun pastDayFlameColor(flame: PastDayFlame, count: Int): Color = when (flame) {
-    PastDayFlame.ALL_DONE -> lerp(FlameRedLight, FlameRedDeep, flameDepth(count))
-    PastDayFlame.UNFINISHED -> lerp(FlameBlueLight, FlameBlueDeep, flameDepth(count))
+internal fun calendarDayFlameColor(flame: CalendarDayFlame, count: Int): Color = when (flame) {
+    CalendarDayFlame.ALL_DONE -> lerp(FlameRedLight, FlameRedDeep, flameDepth(count))
+    CalendarDayFlame.UNFINISHED -> lerp(FlameBlueLight, FlameBlueDeep, flameDepth(count))
 }
 
 /**
