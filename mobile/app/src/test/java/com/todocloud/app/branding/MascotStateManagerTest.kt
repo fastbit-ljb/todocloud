@@ -3,6 +3,7 @@ package com.todocloud.app.branding
 import com.todocloud.app.data.TaskItem
 import com.todocloud.app.data.TaskStep
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -81,11 +82,152 @@ class MascotStateManagerTest {
     }
 
     @Test
+    fun nextRecurringOccurrencesDoNotBlockCurrentCompletion() {
+        for ((rule, nextDue) in listOf(
+            "daily" to "2026-10-08T17:00:00Z",
+            "weekdays" to "2026-10-08T17:00:00Z",
+            "weekly" to "2026-10-14T17:00:00Z",
+            "monthly" to "2026-11-07T17:00:00Z",
+        )) {
+            val tasks = listOf(
+                task(id = 1, dueAt = "2026-10-07T17:00:00Z", completed = true),
+                task(id = 2, dueAt = "2026-10-07T16:00:00Z", completed = true),
+                task(id = 3, dueAt = nextDue).copy(recurrence = rule),
+            )
+            assertEquals(MascotState.COMPLETE, resolve(tasks, now), rule)
+            assertEquals(MascotState.COMPLETE, displayState(tasks), "$rule avatar")
+        }
+    }
+
+    @Test
+    fun unfinishedRecurringTaskInCurrentWeekOrMonthStillBlocksCompletion() {
+        for (rule in listOf("weekly", "monthly")) {
+            assertEquals(MascotState.IN_PROGRESS, resolve(listOf(
+                task(id = 1, dueAt = "2026-10-07T17:00:00Z", completed = true),
+                task(id = 2, dueAt = "2026-10-09T17:00:00Z").copy(recurrence = rule),
+            ), now), rule)
+        }
+    }
+
+    @Test
+    fun nextRecurringOccurrenceDoesNotHideUnfinishedOneOffTask() {
+        assertEquals(MascotState.IN_PROGRESS, resolve(listOf(
+            task(id = 1, dueAt = "2026-10-07T17:00:00Z", completed = true),
+            task(id = 2, dueAt = "2026-10-14T17:00:00Z").copy(recurrence = "weekly"),
+            task(id = 3),
+        ), now))
+    }
+
+    @Test
+    fun startedNextOccurrenceStillCountsAsWork() {
+        assertEquals(MascotState.IN_PROGRESS, resolve(listOf(
+            task(id = 1, dueAt = "2026-10-07T17:00:00Z", completed = true),
+            task(id = 2, dueAt = "2026-10-14T17:00:00Z")
+                .copy(recurrence = "weekly", startAt = "2026-10-07T17:00:00Z"),
+        ), now))
+    }
+
+    @Test
+    fun progressOnNextOccurrenceStillCountsAsWork() {
+        assertEquals(MascotState.IN_PROGRESS, resolve(listOf(
+            task(id = 1, dueAt = "2026-10-07T17:00:00Z", completed = true),
+            task(id = 2, dueAt = "2026-10-14T17:00:00Z", steps = listOf(TaskStep("下一轮第一步", true)))
+                .copy(recurrence = "weekly"),
+        ), now))
+    }
+
+    @Test
+    fun nextRecurringReminderWindowStillWinsOverCompletion() {
+        assertEquals(MascotState.DUE_SOON, resolve(listOf(
+            task(id = 1, dueAt = "2026-10-07T17:00:00Z", completed = true),
+            task(id = 2, dueAt = "2026-10-08T00:10:00Z", reminderOffsetMinutes = 720)
+                .copy(recurrence = "daily"),
+        ), now))
+    }
+
+    @Test
+    fun onlyFutureRecurringTasksWithoutCurrentCompletionShowsRest() {
+        assertEquals(MascotState.NO_TASKS, resolve(listOf(
+            task(dueAt = "2026-10-08T17:00:00Z").copy(recurrence = "daily"),
+        ), now))
+    }
+
+    @Test
+    fun weeklyCompletionRemainsCompleteUntilNextCalendarWeek() {
+        val tasks = listOf(
+            task(id = 1, dueAt = "2026-10-05T17:00:00Z", completed = true)
+                .copy(completedAt = "2026-10-05T16:00:00Z", completedRecurrence = "weekly"),
+            task(id = 2, dueAt = "2026-10-12T17:00:00Z").copy(recurrence = "weekly"),
+        )
+        assertEquals(MascotState.COMPLETE, resolve(tasks, now))
+        assertEquals(MascotState.COMPLETE, MascotStateManager.resolve(tasks, now,
+            Instant.parse("2026-10-11T23:59:59Z"), ZoneOffset.UTC))
+        assertEquals(MascotState.DUE_SOON, MascotStateManager.resolve(tasks, now,
+            Instant.parse("2026-10-12T00:00:00Z"), ZoneOffset.UTC))
+    }
+
+    @Test
+    fun monthlyCompletionRemainsCompleteUntilNextCalendarMonth() {
+        val tasks = listOf(
+            task(id = 1, dueAt = "2026-10-02T17:00:00Z", completed = true)
+                .copy(completedAt = "2026-10-02T16:00:00Z", completedRecurrence = "monthly"),
+            task(id = 2, dueAt = "2026-11-02T17:00:00Z").copy(recurrence = "monthly"),
+        )
+        assertEquals(MascotState.COMPLETE, resolve(tasks, now))
+        assertEquals(MascotState.COMPLETE, MascotStateManager.resolve(tasks, now,
+            Instant.parse("2026-10-31T23:59:59Z"), ZoneOffset.UTC))
+        assertEquals(MascotState.IN_PROGRESS, MascotStateManager.resolve(tasks, now,
+            Instant.parse("2026-11-01T00:00:00Z"), ZoneOffset.UTC))
+    }
+
+    @Test
+    fun dailyAndWeekdayCompletionDoesNotCarryIntoAnotherDay() {
+        for (rule in listOf("daily", "weekdays")) {
+            val tasks = listOf(
+                task(id = 1, dueAt = "2026-10-06T17:00:00Z", completed = true)
+                    .copy(completedAt = "2026-10-06T16:00:00Z", completedRecurrence = rule),
+                task(id = 2, dueAt = "2026-10-08T17:00:00Z").copy(recurrence = rule),
+            )
+            assertEquals(MascotState.NO_TASKS, resolve(tasks, now), rule)
+        }
+    }
+
+    @Test
+    fun completionPeriodsUseLocalDateRatherThanUtcDate() {
+        val tasks = listOf(
+            task(id = 1, dueAt = "2026-10-06T16:30:00Z", completed = true)
+                .copy(completedAt = "2026-10-06T16:10:00Z", completedRecurrence = "daily"),
+            task(id = 2, dueAt = "2026-10-07T16:30:00Z").copy(recurrence = "daily"),
+        )
+        assertEquals(MascotState.COMPLETE, MascotStateManager.resolve(tasks, now,
+            Instant.parse("2026-10-06T17:00:00Z"), ZoneId.of("Asia/Shanghai")))
+    }
+
+    @Test
+    fun unknownOrUndatedRecurrenceIsNotSilentlyExcluded() {
+        for ((rule, due) in listOf("hourly" to "2026-10-08T17:00:00Z", "weekly" to null)) {
+            assertEquals(MascotState.IN_PROGRESS, resolve(listOf(
+                task(id = 1, dueAt = "2026-10-07T17:00:00Z", completed = true),
+                task(id = 2, dueAt = due).copy(recurrence = rule),
+            ), now), rule)
+        }
+    }
+
+    @Test
+    fun completingAnUndatedOrPreviouslyOverdueTaskTodayCountsAsWorkDoneToday() {
+        for (due in listOf(null, "2026-10-05T17:00:00Z")) {
+            assertEquals(MascotState.COMPLETE, resolve(listOf(task(dueAt = due, completed = true)), now))
+        }
+    }
+
+    @Test
     fun completedHistoryWithoutTasksTodayShowsNoTasks() {
         val state = resolve(
             tasks = listOf(
-                task(id = 1, dueAt = "2026-10-05T17:00:00Z", completed = true),
-                task(id = 2, dueAt = "2026-10-06T17:00:00Z", completed = true),
+                task(id = 1, dueAt = "2026-10-05T17:00:00Z", completed = true)
+                    .copy(completedAt = "2026-10-05T16:00:00Z"),
+                task(id = 2, dueAt = "2026-10-06T17:00:00Z", completed = true)
+                    .copy(completedAt = "2026-10-06T16:00:00Z"),
             ),
             lastActivity = now.minusSeconds(4 * 24 * 60 * 60L),
         )

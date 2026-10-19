@@ -65,6 +65,8 @@ class Task(Base):
     steps: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'"))
     # Repeat rule (daily / weekdays / weekly / monthly); NULL = one-off task.
     recurrence: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Retain the completed occurrence's period without re-enabling repetition.
+    completed_recurrence: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

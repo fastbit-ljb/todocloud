@@ -8,6 +8,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -17,9 +18,13 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTextReplacement
@@ -34,6 +39,7 @@ import com.todocloud.app.data.PlanItem
 import com.todocloud.app.ui.theme.TodoCloudTheme
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -232,6 +238,72 @@ class ConversationUiTest {
             compose.onNodeWithText("删除（2）").performClick()
             compose.onNodeWithText("删除").performClick()
             compose.runOnIdle { assertEquals(setOf(old.id, other.id), deleted) }
+        }
+    }
+
+    @Test fun selectedLongHistoryEdgeFlingsSettle() =
+        longHistoryEdgeFlingsSettle(selectionMode = true)
+
+    @Test fun browsingLongHistoryEdgeFlingsSettle() =
+        longHistoryEdgeFlingsSettle(selectionMode = false)
+
+    private fun longHistoryEdgeFlingsSettle(selectionMode: Boolean) {
+        val longHistory = (1..22).map { index ->
+            old.copy(
+                id = "long-history-$index",
+                title = "讨论 $index：请结合收件匣和现有任务，生成一份现实可执行的计划",
+                preview = "这里有较长的历史讨论内容，用来覆盖多行标题、复选框和长列表边界滑动。",
+            )
+        }
+        ActivityScenario.launch(ConversationTestActivity::class.java).use { scenario ->
+            scenario.onActivity { activity -> activity.setContent {
+                TodoCloudTheme { Surface {
+                    ConversationPicker(
+                        conversations = longHistory, referenceMode = false, initialQuery = "", loading = false,
+                        excludedIds = emptySet(), onPick = {}, onDismiss = {}, onDelete = {},
+                    )
+                } }
+            } }
+            if (selectionMode) {
+                compose.onNodeWithText("选择").performClick()
+                compose.onNodeWithText("全选").performClick()
+                compose.onNodeWithText("已选择 22 个").assertIsDisplayed()
+            }
+            val list = compose.onNodeWithTag("conversation-history-list")
+            list.performScrollToIndex(longHistory.lastIndex)
+            val panel = compose.onNodeWithTag("conversation-history-panel")
+            val settledTop = panel.fetchSemanticsNode().boundsInWindow.top
+            // Bound the settling time explicitly: waitForIdle alone can hide a
+            // slow rebound, or hang indefinitely when the spring keeps restarting.
+            compose.mainClock.autoAdvance = false
+            repeat(3) {
+                list.performTouchInput { swipeUp(durationMillis = 50) }
+                compose.mainClock.advanceTimeBy(3_000)
+                assertEquals("Upward edge fling must settle", settledTop, panel.fetchSemanticsNode().boundsInWindow.top, 1f)
+            }
+            compose.mainClock.advanceTimeBy(3_000)
+            assertEquals("Panel must stay settled after the rebound", settledTop, panel.fetchSemanticsNode().boundsInWindow.top, 1f)
+            repeat(2) {
+                list.performScrollToIndex(6)
+                list.performTouchInput { swipeDown(durationMillis = 50) }
+                compose.mainClock.advanceTimeBy(3_000)
+                assertEquals("Fast downward fling must settle", settledTop, panel.fetchSemanticsNode().boundsInWindow.top, 1f)
+            }
+            list.performScrollToIndex(0)
+            list.performTouchInput {
+                down(center)
+                moveBy(Offset(0f, 120f), delayMillis = 50)
+            }
+            compose.mainClock.advanceTimeByFrame()
+            assertTrue("Native sheet drag must remain enabled", panel.fetchSemanticsNode().boundsInWindow.top > settledTop + 20f)
+            list.performTouchInput { advanceEventTime(200); up() }
+            compose.mainClock.advanceTimeBy(3_000)
+            assertEquals("Pulled sheet must rebound to its original anchor", settledTop, panel.fetchSemanticsNode().boundsInWindow.top, 1f)
+            compose.mainClock.advanceTimeBy(3_000)
+            assertEquals("Rebound must finish rather than repeat", settledTop, panel.fetchSemanticsNode().boundsInWindow.top, 1f)
+            compose.mainClock.autoAdvance = true
+            if (selectionMode) compose.onNodeWithText("已选择 22 个").assertIsDisplayed()
+            else compose.onNodeWithText("历史会话").assertIsDisplayed()
         }
     }
 

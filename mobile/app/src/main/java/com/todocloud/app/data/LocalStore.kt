@@ -311,9 +311,10 @@ internal class LocalStore private constructor(context: Context) {
                     steps = task.steps.map { it.copy(completed = false) },
                     completed = false,
                     completedAt = null,
+                    completedRecurrence = null,
                 ),
             )
-            return task.copy(completed = true, completedAt = now.toString(), recurrence = null)
+            return task.copy(completed = true, completedAt = now.toString(), recurrence = null, completedRecurrence = rule)
         }
         return task.copy(completed = true, completedAt = now.toString())
     }
@@ -401,6 +402,7 @@ private fun encodeTask(task: TaskItem): JSONObject = JSONObject()
     .put("start_at", task.startAt.orNull())
     .put("duration_minutes", task.durationMinutes.orNull())
     .put("recurrence", task.recurrence.orNull())
+    .put("completed_recurrence", task.completedRecurrence.orNull())
     .put("steps", JSONArray().apply {
         task.steps.forEach { put(JSONObject().put("title", it.title).put("completed", it.completed)) }
     })
@@ -419,6 +421,7 @@ private fun decodeTask(json: JSONObject) = TaskItem(
     startAt = json.optText("start_at"),
     durationMinutes = json.optIntOrNull("duration_minutes"),
     recurrence = json.optText("recurrence"),
+    completedRecurrence = json.optText("completed_recurrence"),
 )
 
 private fun encodeIdea(idea: InboxIdea): JSONObject = JSONObject()

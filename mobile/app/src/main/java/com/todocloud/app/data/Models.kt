@@ -25,6 +25,8 @@ data class TaskItem(
     val durationMinutes: Int? = null,
     /** Repeat rule: daily / weekdays / weekly / monthly; null = one-off. */
     val recurrence: String? = null,
+    /** Original rule of a finished occurrence; does not generate another copy. */
+    val completedRecurrence: String? = null,
 )
 
 /** Everything the task editor can set; times are ISO-8601 instants. */

@@ -57,25 +57,29 @@ class MigrationTests(unittest.IsolatedAsyncioTestCase):
         await upgrade_to_head(self.engine)
         await upgrade_to_head(self.engine)  # a second start is a no-op
 
-        # Existing tables only gain recurrence; conversations are an additive table.
+        # Existing tables only gain nullable repeat metadata; no task is rewritten.
         after = await pg.schema_snapshot()
         added = sorted(set(after["columns"]) - set(before["columns"]))
         self.assertEqual(
-            [row for row in added if row[0] != "ai_conversations"], [("tasks", "recurrence", "character varying", 16, "YES", None)]
+            [row for row in added if row[0] != "ai_conversations"], [
+                ("tasks", "completed_recurrence", "character varying", 16, "YES", None),
+                ("tasks", "recurrence", "character varying", 16, "YES", None),
+            ]
         )
         self.assertEqual(sorted(set(before["columns"]) - set(after["columns"])), [])
         self.assertTrue(any(row[0] == "ai_conversations" for row in added))
         self.assertEqual([row for row in after["indexes"] if row[0] != "ai_conversations"], before["indexes"])
         self.assertEqual([row for row in after["constraints"] if row[0] != "ai_conversations"], before["constraints"])
-        self.assertEqual(await self._version(), "0004_conversation_deletion")
+        self.assertEqual(await self._version(), "0005_completed_recurrence")
         conn = await pg.connect()
         try:
-            row = await conn.fetchrow("SELECT title, steps, recurrence FROM public.tasks")
+            row = await conn.fetchrow("SELECT title, steps, recurrence, completed_recurrence FROM public.tasks")
         finally:
             await conn.close()
         self.assertEqual(row["title"], "keep me")
         self.assertIn('"s"', row["steps"])
         self.assertIsNone(row["recurrence"])
+        self.assertIsNone(row["completed_recurrence"])
 
     async def test_old_database_gets_missing_columns_and_jsonb_steps(self) -> None:
         # A database from before the startup ALTERs, created with steps as JSON

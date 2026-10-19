@@ -55,6 +55,8 @@ DELETE /tasks/{task_id}
 
 Android 客户端会根据任务的截止时间和提醒偏移量设置本地 AlarmManager，并通过系统通知渠道提醒用户；已完成任务或已过期提醒不会重复调度。
 
+重复任务的 `recurrence` 为 `daily`、`weekdays`、`weekly`、`monthly` 或 `null`。完成后，原记录保持 `completed=true` 和原来的日期，规则转移到新建的下一轮；原记录的只读字段 `completed_recurrence` 保留已完成那轮的规则，供客户端按当天、本周（周一开始）、本月判断吉祥物状态。旧记录无法可靠还原的规则保持 `null`。进入新周期只改变当前状态判断，不取消或删除日历里的往期完成记录。
+
 ## 当前已实现：收件匣想法
 
 ```text
