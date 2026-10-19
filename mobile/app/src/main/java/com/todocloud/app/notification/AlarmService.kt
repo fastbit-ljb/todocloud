@@ -9,8 +9,6 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.MediaPlayer
-import android.media.RingtoneManager
-import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -48,6 +46,8 @@ class AlarmService : Service() {
         val title = intent?.getStringExtra(ReminderReceiver.EXTRA_TITLE) ?: "任务提醒"
         val description = intent?.getStringExtra(ReminderReceiver.EXTRA_DESCRIPTION)
         val steps = intent?.getStringExtra(ReminderReceiver.EXTRA_STEPS)
+        val dueAt = intent?.getStringExtra(ReminderReceiver.EXTRA_DUE_AT)
+        val reminderOffset = intent?.getIntExtra(ReminderReceiver.EXTRA_REMINDER_OFFSET, 0) ?: 0
         if (taskId == 0) {
             stopSelf()
             return START_NOT_STICKY
@@ -64,7 +64,7 @@ class AlarmService : Service() {
                 // Swiping the main task away can leave this ringing service
                 // and its separate alarm task alive. A repeated delivery must
                 // restore the page without restarting sound or changing mute.
-                openAlarmWindow(taskId, title, description, steps)
+                openAlarmWindow(taskId, title, description, steps, dueAt, reminderOffset)
                 return START_NOT_STICKY
             }
             AlarmDeliveryAction.START_RINGING -> Unit
@@ -72,19 +72,26 @@ class AlarmService : Service() {
 
         stopRinging()
         ReminderScheduler.createAlarmServiceChannel(this)
-        startForegroundSafely(taskId, title, description, steps)
+        startForegroundSafely(taskId, title, description, steps, dueAt, reminderOffset)
         acquireWakeLock()
         startSound()
         startVibration()
         activeTaskId = taskId
-        openAlarmWindow(taskId, title, description, steps)
+        openAlarmWindow(taskId, title, description, steps, dueAt, reminderOffset)
         return START_NOT_STICKY
     }
 
-    private fun startForegroundSafely(taskId: Int, title: String, description: String?, steps: String?) {
+    private fun startForegroundSafely(
+        taskId: Int,
+        title: String,
+        description: String?,
+        steps: String?,
+        dueAt: String?,
+        reminderOffset: Int,
+    ) {
         val fullScreenIntent = alarmActivityPendingIntent(
             taskId,
-            AlarmActivity.intent(this, taskId, title, description, steps),
+            AlarmActivity.intent(this, taskId, title, description, steps, dueAt, reminderOffset),
         )
         val stopIntent = PendingIntent.getService(
             this,
@@ -119,14 +126,21 @@ class AlarmService : Service() {
         }
     }
 
-    private fun openAlarmWindow(taskId: Int, title: String, description: String?, steps: String?) {
+    private fun openAlarmWindow(
+        taskId: Int,
+        title: String,
+        description: String?,
+        steps: String?,
+        dueAt: String?,
+        reminderOffset: Int,
+    ) {
         Log.i(LOG_TAG, "alarm_page_request task=$taskId overlay=${Settings.canDrawOverlays(this)}")
         runCatching {
             // A self-sent PendingIntent does not create a background-launch
             // exemption. Use the explicit activity route supported by overlay
             // access / the OEM background-popup permission. SystemUI retains
             // the full-screen notification route for lock-screen alarms.
-            startActivity(AlarmActivity.intent(this, taskId, title, description, steps))
+            startActivity(AlarmActivity.intent(this, taskId, title, description, steps, dueAt, reminderOffset))
         }.onFailure {
             Log.w(LOG_TAG, "alarm_page_request_exception task=$taskId", it)
         }
@@ -168,25 +182,27 @@ class AlarmService : Service() {
     }
 
     private fun startSound() {
-        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            ?: return
-        runCatching {
-            player = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build(),
-                )
-                setDataSource(this@AlarmService, Uri.parse(uri.toString()))
-                isLooping = true
-                prepare()
-                start()
+        ReminderScheduler.alarmSoundUris(this).forEach { uri ->
+            val candidate = MediaPlayer()
+            val started = runCatching {
+                candidate.apply {
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build(),
+                    )
+                    setDataSource(this@AlarmService, uri)
+                    isLooping = true
+                    prepare()
+                    start()
+                }
+            }.isSuccess
+            if (started) {
+                player = candidate
+                return
             }
-        }.onFailure {
-            player?.release()
-            player = null
+            runCatching { candidate.release() }
         }
     }
 
