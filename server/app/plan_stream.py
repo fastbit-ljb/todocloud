@@ -9,7 +9,7 @@ from contextlib import aclosing
 import httpx
 
 from app.ai_parser import AiNotConfiguredError, AiParseError, _extract_json, _localize_reference, _prepare_image_for_ai
-from app.core.config import settings
+from app.core.config import ai_request_options, settings
 from app.plan_ai import _build_plan_prompt, _normalize_turn
 
 logger = logging.getLogger("uvicorn.error")
@@ -147,8 +147,7 @@ async def _model_stream(prompt, image_parts):
                         {"role": "user", "content": ([{"type": "text", "text": prompt}, *image_parts] if image_parts else prompt)},
                     ],
                 }
-                if "generativelanguage.googleapis.com" in settings.ai_api_base_url and settings.ai_reasoning_effort:
-                    payload["reasoning_effort"] = settings.ai_reasoning_effort
+                payload.update(ai_request_options(settings))
                 try:
                     async with client.stream(
                         "POST", settings.ai_api_base_url.rstrip("/") + "/chat/completions",

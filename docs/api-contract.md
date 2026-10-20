@@ -95,7 +95,9 @@ POST /ai/parse-screenshot
 
 服务端会先把原图保存到 MinIO，再调用 OpenAI 兼容的视觉模型，返回待确认候选任务。模型提示会要求把“明天、下周一、今晚”等相对时间按照 `reference_at` 和用户时区换算成绝对时间。客户端确认后才调用 `/tasks` 正式创建任务。
 
-服务端默认使用 Google AI Studio 的 Gemini OpenAI 兼容接口和 `gemini-2.5-flash-lite`，只需在 `.env` 配置 `AI_API_KEY` 即可；也可以通过 `AI_API_BASE_URL` 和 `AI_MODEL` 切换到其他兼容平台。密钥只保存在服务器，不提交到 GitHub。
+服务端默认使用智谱 OpenAI 兼容接口 `https://open.bigmodel.cn/api/paas/v4/` 和免费视觉模型 `glm-4.6v-flash`；文字抽取、截图识别、普通计划和流式计划共用这套配置。通过服务器的安全配置提供智谱 `AI_API_KEY`，密钥不得进入客户端、Git 或日志。默认 `AI_THINKING_MODE=disabled` 关闭思考，不设置备用付费模型。
+
+现有部署的环境变量优先于代码默认值。由 Gemini 切换时必须同时更新 `AI_API_BASE_URL`、`AI_MODEL` 和平台对应的 `AI_API_KEY`，并清空旧的 `AI_FALLBACK_MODEL`、`AI_REASONING_EFFORT`；不能把 Gemini 密钥用于智谱地址。只有模型的非敏感配置可用于部署核验，不输出密钥。`AI_THINKING_MODE` 可为 `disabled`、`enabled` 或空字符串（不发送此字段）；此参数只发往智谱官方域名，Gemini 的 `AI_REASONING_EFFORT` 只发往 Google 官方域名。其他兼容平台仍可通过 `AI_API_BASE_URL` 和 `AI_MODEL` 显式覆盖。
 
 返回示例：
 

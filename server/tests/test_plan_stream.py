@@ -78,6 +78,25 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(seen[0]["stream"])
         self.assertTrue(stream.closed)
 
+    async def test_glm_stream_disables_thinking_and_preserves_image_input(self):
+        stream = Chunks([packet('{"intent":"answer","reply":"看到了测试图片"}', finish_reason="stop"), b'data: [DONE]\n\n'])
+        seen = []
+        client = self.model(stream, seen)
+        image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,dGVzdA=="}}
+        with self.config(), mock.patch.multiple(
+            settings, ai_api_base_url="https://open.bigmodel.cn/api/paas/v4/",
+            ai_model="glm-4.6v-flash", ai_thinking_mode="disabled", ai_reasoning_effort="low",
+        ), mock.patch("app.plan_stream.httpx.AsyncClient", return_value=client):
+            from app.plan_stream import _model_stream
+            events = [event async for event in _model_stream("合成测试", [image])]
+        self.assertEqual(events[-1]["raw"]["reply"], "看到了测试图片")
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]["model"], "glm-4.6v-flash")
+        self.assertEqual(seen[0]["thinking"], {"type": "disabled"})
+        self.assertNotIn("reasoning_effort", seen[0])
+        self.assertTrue(seen[0]["stream"])
+        self.assertEqual(seen[0]["messages"][1]["content"][1], image)
+
     async def test_disconnect_after_partial_does_not_retry_or_return_a_plan(self):
         stream = Chunks([packet('{"intent":"answer","reply":"先做')], broken=True)
         seen = []

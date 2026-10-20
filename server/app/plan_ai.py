@@ -14,7 +14,7 @@ from app.ai_parser import (
     _localize_reference,
     _prepare_image_for_ai,
 )
-from app.core.config import settings
+from app.core.config import ai_request_options, settings
 from app.recurrence import RECURRENCE_RULES
 
 
@@ -259,8 +259,7 @@ def _call_plan_model(prompt: str, image_parts: list[dict] | None = None) -> dict
                 {"role": "user", "content": user_content},
             ],
         }
-        if "generativelanguage.googleapis.com" in settings.ai_api_base_url and settings.ai_reasoning_effort:
-            payload["reasoning_effort"] = settings.ai_reasoning_effort
+        payload.update(ai_request_options(settings))
         attempts = PLAN_PRIMARY_ATTEMPTS if model_index == 0 else 1
         for attempt in range(attempts):
             http_request = request.Request(
