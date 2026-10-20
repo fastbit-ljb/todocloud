@@ -99,6 +99,8 @@ POST /ai/parse-screenshot
 
 现有部署的环境变量优先于代码默认值。由 Gemini 切换时必须同时更新 `AI_API_BASE_URL`、`AI_MODEL` 和平台对应的 `AI_API_KEY`，并清空旧的 `AI_FALLBACK_MODEL`、`AI_REASONING_EFFORT`；不能把 Gemini 密钥用于智谱地址。只有模型的非敏感配置可用于部署核验，不输出密钥。`AI_THINKING_MODE` 可为 `disabled`、`enabled` 或空字符串（不发送此字段）；此参数只发往智谱官方域名，Gemini 的 `AI_REASONING_EFFORT` 只发往 Google 官方域名。其他兼容平台仍可通过 `AI_API_BASE_URL` 和 `AI_MODEL` 显式覆盖。
 
+生产 Compose 为 API 服务显式固定上述免费 GLM 配置；从单独的 `secrets/glm-api-key.env`（只含 `AI_API_KEY`，由所有者安全配置、root/600）加载智谱密钥，覆盖旧的 `server/.env` 中模型密钥。不要提交或输出此凭据文件；没有预先配置时不得重建生产 API。worker 不更换配置，不需要重建。后续按标准两个 Compose 文件部署也会保留 GLM 路由。
+
 返回示例：
 
 ```json

@@ -13,6 +13,10 @@ services:
     ports: !reset []
 
   server:
+    # Provision this root-only file separately; never put a model key in Git.
+    # Appended after server/.env so the old Gemini key is not used for GLM.
+    env_file:
+      - ./secrets/glm-api-key.env
     ports: !override
       - "127.0.0.1:18000:8000"
     environment:
@@ -20,6 +24,11 @@ services:
       DATABASE_URL: postgresql+asyncpg://todocloud:${POSTGRES_PASSWORD}@postgres:5432/todocloud
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
+      AI_API_BASE_URL: https://open.bigmodel.cn/api/paas/v4/
+      AI_MODEL: glm-4.6v-flash
+      AI_FALLBACK_MODEL: ""
+      AI_REASONING_EFFORT: ""
+      AI_THINKING_MODE: disabled
 
   worker:
     environment:
