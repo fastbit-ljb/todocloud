@@ -91,9 +91,16 @@ import com.todocloud.app.data.PlanMessage
 import com.todocloud.app.data.ConversationReference
 import com.todocloud.app.data.PlanConversationSummary
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.material3.OutlinedButton
 import com.todocloud.app.data.TaskItem
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import java.util.Locale
 
 @Composable
@@ -122,6 +129,7 @@ internal fun AiPlanScreen(
     cloudHistory: Boolean = true,
     deletedConversationIds: Set<String> = emptySet(),
     greetingScene: PlanGreetingScene? = PlanGreetingScene.GENERAL,
+    streamingReply: String? = null,
 ) {
     var message by rememberSaveable(conversationKey) { mutableStateOf("") }
     var images by remember(conversationKey) { mutableStateOf<List<Uri>>(emptyList()) }
@@ -130,6 +138,12 @@ internal fun AiPlanScreen(
     var picker by remember { mutableStateOf<String?>(null) }
     var typedMention by remember(conversationKey) { mutableStateOf(false) }
     var showPlan by remember(conversationKey) { mutableStateOf(true) }
+    var hadPendingReply by remember(conversationKey) { mutableStateOf(false) }
+    LaunchedEffect(conversationKey, streamingReply != null, loading) {
+        if (streamingReply != null && (loading || !hadPendingReply)) showPlan = false
+        else if (streamingReply == null && hadPendingReply) showPlan = true
+        hadPendingReply = streamingReply != null
+    }
     var previousMessageCount by remember(conversationKey) { mutableIntStateOf(conversation.size) }
     var openingGreeting by rememberSaveable(conversationKey) { mutableStateOf<String?>(null) }
     var openingQuestion by rememberSaveable(conversationKey) { mutableStateOf<String?>(null) }
@@ -218,7 +232,7 @@ internal fun AiPlanScreen(
             Text(it, modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error)
         }
 
-        if (plan == null || !showPlan) {
+        if (plan == null || !showPlan || (streamingReply != null && loading)) {
             val canGenerate = !loading && hasPlanRequestContent(
                 message, selectedIdeaIds.size, images.size, references.size,
             )
@@ -268,6 +282,7 @@ internal fun AiPlanScreen(
                 opening = openingGreeting?.let { greeting ->
                     openingQuestion?.let { question -> PlanOpening(greeting, question) }
                 },
+                streamingReply = streamingReply,
             )
             if (showIdeaPicker) {
                 InboxIdeaPickerDialog(
@@ -490,6 +505,7 @@ internal fun AiPlanLanding(
     onInboxClick: () -> Unit,
     onSubmit: () -> Unit,
     opening: PlanOpening?,
+    streamingReply: String? = null,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         if (conversation.isEmpty()) {
@@ -508,19 +524,21 @@ internal fun AiPlanLanding(
                 deletedConversationIds = deletedConversationIds,
                 historyPlan = historyPlan,
                 modifier = Modifier.weight(1f).padding(top = 16.dp),
+                streamingReply = streamingReply,
+                streaming = loading,
             )
             TextButton(
                 onClick = onPlanFromConversation,
-                enabled = !loading,
+                enabled = !loading && streamingReply == null,
                 modifier = Modifier.align(Alignment.End).padding(vertical = 4.dp),
             ) {
                 Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                 Text("整理成计划", modifier = Modifier.padding(start = 6.dp))
             }
         }
-        if (loading) {
+        if (loading && streamingReply == null) {
             Text(
-                "AI 正在思考…",
+                "正在等待 AI 回复…",
                 Modifier.padding(start = 4.dp, bottom = 8.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
@@ -625,10 +643,23 @@ private fun decodeThumbnail(context: Context, uri: Uri): ImageBitmap? = runCatch
 }.getOrNull()
 
 @Composable
-internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = Modifier, onOpenReference: (String) -> Unit = {}, historyPlan: AiPlan? = null, deletedConversationIds: Set<String> = emptySet()) {
+internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = Modifier, onOpenReference: (String) -> Unit = {}, historyPlan: AiPlan? = null, deletedConversationIds: Set<String> = emptySet(), streamingReply: String? = null, streaming: Boolean = false) {
     val listState = rememberLazyListState()
+    val dragged by listState.interactionSource.collectIsDraggedAsState()
+    var followOutput by remember { mutableStateOf(true) }
+    LaunchedEffect(listState, dragged) {
+        snapshotFlow { Triple(dragged, listState.isScrollInProgress, listState.canScrollForward) }.collect { (dragging, scrolling, forward) ->
+            if (dragging) followOutput = false
+            else if (!scrolling && !forward) followOutput = true
+        }
+    }
     LaunchedEffect(messages.size, messages.lastOrNull(), historyPlan?.id) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+        if (messages.isNotEmpty() && streamingReply == null) listState.animateScrollToItem(messages.lastIndex)
+    }
+    LaunchedEffect(messages.size, streamingReply) {
+        if (streamingReply != null && followOutput && !listState.isScrollInProgress) {
+            listState.scrollToItem(messages.size + 1) // a bottom anchor, not the top of a long reply
+        }
     }
     LazyColumn(state = listState, modifier = modifier.fillMaxWidth()) {
         items(messages) { chat ->
@@ -661,7 +692,11 @@ internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = 
                 }
             }
         }
-        if (historyPlan != null) {
+        if (streamingReply != null) {
+            item(key = "streaming-reply") { StreamingPlanReply(streamingReply, streaming) }
+            item(key = "stream-bottom") { Box(Modifier.height(8.dp)) }
+        }
+        if (historyPlan != null && streamingReply == null) {
             item {
                 Text(if (historyPlan.status == "accepted") "历史计划 · 已采用" else "历史计划 · 草稿", Modifier.padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             }
@@ -676,6 +711,26 @@ internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = 
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun StreamingPlanReply(text: String, loading: Boolean) {
+    Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 12.dp, bottom = 16.dp)) {
+        if (text.isNotEmpty()) Text(text, style = MaterialTheme.typography.bodyLarge.copy(lineBreak = LineBreak.Simple), lineHeight = 26.sp)
+        Text(
+            when {
+                !loading -> "回复未完成，请重试；未保存新计划"
+                text.isEmpty() -> "正在等待 AI 回复…"
+                else -> "正在回复…"
+            },
+            modifier = Modifier.padding(top = if (text.isEmpty()) 0.dp else 8.dp).semantics {
+                liveRegion = LiveRegionMode.Polite
+                if (loading) progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 

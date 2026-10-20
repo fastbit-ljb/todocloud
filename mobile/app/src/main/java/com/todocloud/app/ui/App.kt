@@ -837,7 +837,8 @@ fun TodoCloudApp(
                     if (deleted.isNotEmpty() && planState.error == null) android.widget.Toast.makeText(context, "已删除 ${deleted.size} 个会话", android.widget.Toast.LENGTH_SHORT).show()
                 } },
                 error = planError ?: planState.error,
-                conversation = planState.active?.messages.orEmpty(),
+                conversation = planState.displayedMessages,
+                streamingReply = planState.pendingMessage?.let { planState.streamingText },
                 onOpenInbox = {
                     selectedTab = 0
                     taskSection = "inbox"
