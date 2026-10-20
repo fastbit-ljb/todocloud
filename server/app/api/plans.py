@@ -1,8 +1,11 @@
 import asyncio
+import json
+from contextlib import aclosing, suppress
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +19,7 @@ from app.conversation_context import resolve_references
 from app.db.models import AiPlan, Attachment, Idea, Task, User
 from app.db.session import get_db
 from app.plan_ai import plan_turn
+from app.plan_stream import plan_turn_stream
 from app.storage import store_image
 
 
@@ -281,6 +285,17 @@ async def chat_with_images(
     return await _chat(_parse_form_payload(payload, PlanChatRequest), user, db, files)
 
 
+@router.post("/chat/stream")
+async def chat_stream(payload: PlanChatRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await _chat_stream(payload, user, db)
+
+
+@router.post("/chat/images/stream")
+async def chat_images_stream(payload: str = Form(...), files: list[UploadFile] = File(...),
+                             user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await _chat_stream(_parse_form_payload(payload, PlanChatRequest), user, db, files)
+
+
 MAX_PLAN_IMAGES = 3
 MAX_PLAN_IMAGE_BYTES = 10 * 1024 * 1024
 PLAN_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -367,6 +382,10 @@ async def _chat(
         images=images,
         reference_context=references,
     )
+    return await _save_chat_turn(turn, user, user_text, db)
+
+
+async def _save_chat_turn(turn, user, user_text, db):
     if turn["proposal"] is None:
         await db.commit()  # keeps any stored image attachments
         return PlanChatResponse(kind="answer", reply=turn["reply"])
@@ -387,6 +406,81 @@ async def _chat(
     return PlanChatResponse(
         kind="plan", reply=turn["reply"], plan=PlanResponse.model_validate(plan)
     )
+
+
+def _sse(event, data):
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _stream_response(events, save):
+    async def body():
+        queue = asyncio.Queue(maxsize=16)
+
+        async def produce():
+            try:
+                async with aclosing(events):
+                    async for event in events:
+                        await queue.put(event)
+                await queue.put({"eof": True})
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                await queue.put({"failure": exc})
+
+        producer = asyncio.create_task(produce())
+        try:
+            yield _sse("start", {})
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=10)
+                except TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                if "failure" in event:
+                    raise event["failure"]
+                if "eof" in event:
+                    raise AiParseError("AI 回复中断，请重试")
+                if "text" in event:
+                    yield _sse("text", {"text": event["text"]})
+                else:
+                    # No model output is stored until the complete turn is validated.
+                    result = await save(event["turn"])
+                    yield _sse("result", result.model_dump(mode="json"))
+                    break
+        except (AiNotConfiguredError, AiParseError, ValueError, TypeError) as exc:
+            yield _sse("error", {"detail": str(exc)})
+        except HTTPException as exc:
+            yield _sse("error", {"detail": str(exc.detail)})
+        except Exception:
+            # Never expose provider bodies, credentials or database diagnostics in SSE.
+            yield _sse("error", {"detail": "回复保存状态未确认，请刷新会话后重试"})
+        finally:
+            producer.cancel()
+            with suppress(asyncio.CancelledError):
+                await producer
+    return StreamingResponse(body(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no",
+    })
+
+
+async def _chat_stream(payload, user, db, files=None):
+    # Auth, validation and rate limits remain ordinary HTTP errors (before SSE starts).
+    await enforce_rate_limit("ai-plan-user", str(user.id), settings.ai_rate_limit_per_minute)
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(400, "请先告诉 AI 你想问什么或安排什么")
+    references = await resolve_references(db, user.id, payload.reference_ids)
+    images = await store_plan_images(files or [], user, db)
+    ideas, tasks = await planning_sources(user.id, db, payload.idea_ids)
+    user_text = _user_text(message, len(images))
+    history = [item.model_dump() for item in payload.history] + [{"role": "user", "content": user_text}]
+    events = plan_turn_stream([serialize_idea(i) for i in ideas], [serialize_task(t) for t in tasks],
+                              payload.reference_at, payload.timezone_name, message + references,
+                              conversation=history, force_plan=payload.force_plan, images=images)
+
+    async def save(turn):
+        return await _save_chat_turn(turn, user, user_text, db)
+    return _stream_response(events, save)
 
 
 class ImportedMessage(BaseModel):
@@ -478,6 +572,18 @@ async def revise_plan_with_images(
     return await _revise(plan_id, _parse_form_payload(payload, PlanReviseRequest), user, db, files)
 
 
+@router.post("/{plan_id}/messages/stream")
+async def revise_stream(plan_id: int, payload: PlanReviseRequest,
+                        user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await _revise_stream(plan_id, payload, user, db)
+
+
+@router.post("/{plan_id}/messages/images/stream")
+async def revise_images_stream(plan_id: int, payload: str = Form(...), files: list[UploadFile] = File(...),
+                               user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await _revise_stream(plan_id, _parse_form_payload(payload, PlanReviseRequest), user, db, files)
+
+
 async def _revise(
     plan_id: int,
     payload: PlanReviseRequest,
@@ -506,6 +612,10 @@ async def _revise(
         images=images,
         reference_context=references,
     )
+    return await _save_revision_turn(turn, plan, history, db)
+
+
+async def _save_revision_turn(turn, plan, history, db):
     if turn["proposal"] is None:
         # A question about the plan: answer it and leave the plan untouched.
         history.append({"role": "assistant", "content": turn["reply"]})
@@ -516,6 +626,31 @@ async def _revise(
     await db.commit()
     await db.refresh(plan)
     return plan
+
+
+async def _revise_stream(plan_id, payload, user, db, files=None):
+    await enforce_rate_limit("ai-plan-user", str(user.id), settings.ai_rate_limit_per_minute)
+    plan = await db.scalar(select(AiPlan).where(AiPlan.id == plan_id, AiPlan.user_id == user.id))
+    if plan is None:
+        raise HTTPException(404, "计划不存在")
+    if plan.status != "draft":
+        raise HTTPException(409, "已采用的计划不能继续修改")
+    version = plan.updated_at
+    references = await resolve_references(db, user.id, payload.reference_ids)
+    images = await store_plan_images(files or [], user, db)
+    ideas, tasks = await planning_sources(user.id, db)
+    history = list(plan.messages or []) + [{"role": "user", "content": _user_text(payload.message.strip(), len(images))}]
+    events = plan_turn_stream([serialize_idea(i) for i in ideas], [serialize_task(t) for t in tasks],
+                              payload.reference_at, payload.timezone_name, payload.message.strip() + references,
+                              dict(plan.proposal or {}), history, payload.force_plan, images)
+
+    async def save(turn):
+        await db.refresh(plan)
+        if plan.status != "draft" or plan.updated_at != version:
+            raise HTTPException(409, "计划已更新或采用，请刷新后再调整")
+        updated = await _save_revision_turn(turn, plan, history, db)
+        return PlanResponse.model_validate(updated)
+    return _stream_response(events, save)
 
 
 @router.post("/{plan_id}/accept", response_model=PlanAcceptResponse)

@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PIL import Image
 
-from app.core.config import settings
+from app.core.config import ai_request_options, settings
 
 
 logger = logging.getLogger(__name__)
@@ -290,8 +290,7 @@ def _call_model(content: object, reference_at: datetime, timezone_name: str) -> 
                 },
             ],
         }
-        if "generativelanguage.googleapis.com" in settings.ai_api_base_url and settings.ai_reasoning_effort:
-            request_payload["reasoning_effort"] = settings.ai_reasoning_effort
+        request_payload.update(ai_request_options(settings))
         attempts = AI_PRIMARY_ATTEMPTS if model_index == 0 else 1
         truncated = False
         for attempt in range(attempts):

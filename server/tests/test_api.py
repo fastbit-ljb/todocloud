@@ -792,5 +792,77 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get("/ideas", headers=auth)).json(), [])
 
 
+    async def test_streamed_chat_and_revision_only_save_the_complete_turn(self) -> None:
+        import json
+        from unittest import mock
+
+        auth = self._auth(await self._register())
+        idea = (await self.client.post("/ideas", headers=auth, json={"content": "跑通测试登录"})).json()
+        proposal = {"summary": "先跑通登录", "items": [{
+            "source_type": "idea", "source_id": idea["id"], "title": "测试登录",
+            "start_at": "2026-10-21T09:00:00+08:00", "due_at": "2026-10-21T10:00:00+08:00",
+            "duration_minutes": 60, "steps": [], "recurrence": None,
+        }]}
+
+        async def model(*args, **kwargs):
+            yield {"text": "先跑通"}
+            yield {"turn": {"intent": "plan", "reply": "先跑通登录", "proposal": proposal}}
+
+        with mock.patch("app.api.plans.plan_turn_stream", side_effect=model):
+            response = await self.client.post("/plans/chat/stream", headers=auth, json={"message": "安排这个想法", "idea_ids": [idea["id"]]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("text/event-stream", response.headers["content-type"])
+        self.assertEqual(response.headers["x-accel-buffering"], "no")
+        frames = response.text.split("\n\n")
+        finals = [json.loads(frame.split("data: ", 1)[1]) for frame in frames if frame.startswith("event: result")]
+        self.assertEqual(len(finals), 1)
+        plan = finals[0]["plan"]
+        self.assertEqual(plan["status"], "draft")
+        self.assertEqual(len((await self.client.get("/plans", headers=auth)).json()), 1)
+        self.assertEqual((await self.client.get("/tasks", headers=auth)).json(), [])  # not adopted
+
+        async def answer(*args, **kwargs):
+            yield {"text": "不紧"}
+            yield {"turn": {"intent": "answer", "reply": "不紧，留了余量", "proposal": None}}
+        with mock.patch("app.api.plans.plan_turn_stream", side_effect=answer):
+            revised = await self.client.post(f"/plans/{plan['id']}/messages/stream", headers=auth, json={"message": "这样紧不紧？"})
+        self.assertIn("event: result", revised.text)
+        saved = (await self.client.get(f"/plans/{plan['id']}", headers=auth)).json()
+        self.assertEqual(saved["proposal"], plan["proposal"])
+        self.assertEqual(saved["messages"][-1]["content"], "不紧，留了余量")
+
+    async def test_interrupted_stream_does_not_create_or_overwrite_a_plan(self) -> None:
+        from unittest import mock
+        from app.ai_parser import AiParseError
+
+        auth = self._auth(await self._register())
+        async def broken(*args, **kwargs):
+            yield {"text": "一半回复"}
+            raise AiParseError("模拟断流")
+        with mock.patch("app.api.plans.plan_turn_stream", side_effect=broken):
+            response = await self.client.post("/plans/chat/stream", headers=auth, json={"message": "帮我安排"})
+        self.assertIn("event: error", response.text)
+        self.assertNotIn("event: result", response.text)
+        self.assertEqual((await self.client.get("/plans", headers=auth)).json(), [])
+
+        plan, task, _ = await self._draft_plan(auth)
+        with mock.patch("app.api.plans.plan_turn_stream", side_effect=broken):
+            response = await self.client.post(f"/plans/{plan['id']}/messages/stream", headers=auth, json={"message": "挪到明天"})
+        self.assertIn("event: error", response.text)
+        saved = (await self.client.get(f"/plans/{plan['id']}", headers=auth)).json()
+        self.assertEqual(saved["proposal"], plan["proposal"])
+        self.assertEqual(saved["messages"], plan["messages"])
+
+    async def test_stream_auth_validation_and_plan_ownership_happen_before_sse(self) -> None:
+        from unittest import mock
+        model = mock.Mock()
+        auth = self._auth(await self._register())
+        with mock.patch("app.api.plans.plan_turn_stream", model):
+            self.assertEqual((await self.client.post("/plans/chat/stream", json={"message": "安排"})).status_code, 401)
+            self.assertEqual((await self.client.post("/plans/chat/stream", headers=auth, json={"message": " "})).status_code, 400)
+            self.assertEqual((await self.client.post("/plans/999999/messages/stream", headers=auth, json={"message": "改"})).status_code, 404)
+        model.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
