@@ -42,7 +42,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.text.KeyboardOptions
@@ -76,7 +75,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -722,23 +720,22 @@ internal fun TypewriterPlanPrompt(opening: PlanOpening) {
         lineHeight = 43.sp,
         lineBreak = LineBreak.Heading,
     )
-    Box(Modifier.fillMaxWidth().heightIn(min = 36.dp)) {
-        // Reserve the final text height so typing does not move the whole opening.
-        Text(opening.greeting + "｜", Modifier.alpha(0f).clearAndSetSemantics {}, style = greetingStyle)
-        Text(
-            text = displayedGreeting + if (activeLine == 0 && cursorVisible) "｜" else "",
-            color = MaterialTheme.colorScheme.primary,
-            style = greetingStyle,
-        )
-    }
-    Box(Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 92.dp)) {
-        Text(opening.question + "｜", Modifier.alpha(0f).clearAndSetSemantics {}, style = questionStyle)
-        Text(
-            text = displayedQuestion + if (activeLine == 1 && cursorVisible) "｜" else "",
-            color = MaterialTheme.colorScheme.onSurface,
-            style = questionStyle,
-        )
-    }
+    StableTypewriterLine(
+        text = opening.greeting,
+        visibleCharacters = displayedGreeting.length,
+        showCursor = activeLine == 0 && cursorVisible,
+        color = MaterialTheme.colorScheme.primary,
+        style = greetingStyle,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp),
+    )
+    StableTypewriterLine(
+        text = opening.question,
+        visibleCharacters = displayedQuestion.length,
+        showCursor = activeLine == 1 && cursorVisible,
+        color = MaterialTheme.colorScheme.onSurface,
+        style = questionStyle,
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 92.dp),
+    )
 }
 
 @Composable

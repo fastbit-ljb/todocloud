@@ -76,15 +76,14 @@ internal fun ConversationToolbar(title: String, busy: Boolean, onHistory: () -> 
                 Text(title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        IconButton(onClick = onHistory, enabled = !busy) { Icon(Icons.Outlined.History, "历史会话") }
+        val actionTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (busy) 0.38f else 1f)
+        IconButton(onClick = onHistory, enabled = !busy) { Icon(Icons.Outlined.History, "历史会话", tint = actionTint) }
         IconButton(
             onClick = onNew,
             enabled = !busy,
-            modifier = Modifier.size(48.dp).clip(MaterialTheme.shapes.medium).background(
-                if (busy) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.primaryContainer,
-            ),
+            modifier = Modifier.size(48.dp),
         ) {
-            Icon(Icons.Outlined.Add, "新建会话", tint = if (busy) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onPrimaryContainer)
+            Icon(Icons.Outlined.Add, "新建会话", tint = actionTint)
         }
     }
 }
