@@ -1,6 +1,8 @@
 package com.todocloud.app.ui
 
+import android.animation.ValueAnimator
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,6 +25,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Search
@@ -57,6 +62,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -345,88 +352,89 @@ internal fun TaskHomeScreen(
                 }
             }
 
-            if (section == "inbox") {
-                InboxList(
-                    ideas = shownIdeas,
-                    loading = loading,
-                    noMatchQuery = activeQuery.takeIf { filtering },
-                    onEdit = onEditIdea,
-                    onDelete = onDeleteIdea,
-                    modifier = Modifier.weight(1f),
-                )
-            } else {
-                LazyColumn(
-                state = taskListState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                // Keep the FAB in its easy-to-reach corner while allowing the
-                // final task card (and its delete button) to scroll fully above it.
-                contentPadding = PaddingValues(
-                    start = 20.dp,
-                    top = 4.dp,
-                    end = 20.dp,
-                    bottom = 96.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (filtering && homeTasks.isEmpty()) {
-                    item(key = "no-match") { NoSearchMatch(activeQuery) }
-                }
-                if (!filtering && !loading && (canPlanToday || overdue.isNotEmpty())) {
-                    item(key = "plan-shortcuts") {
-                        PlanShortcutBar(
-                            overdueCount = overdue.size,
-                            canPlanToday = canPlanToday,
-                            onPlanToday = onPlanToday,
-                            onReplanOverdue = { onReplanOverdue(overdue) },
-                        )
+            TaskSectionTransition(section, Modifier.weight(1f)) {
+                if (section == "inbox") {
+                    InboxList(
+                        ideas = shownIdeas,
+                        loading = loading,
+                        noMatchQuery = activeQuery.takeIf { filtering },
+                        onEdit = onEditIdea,
+                        onDelete = onDeleteIdea,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    LazyColumn(
+                    state = taskListState,
+                    modifier = Modifier
+                        .fillMaxSize(),
+                    // Keep the FAB in its easy-to-reach corner while allowing the
+                    // final task card (and its delete button) to scroll fully above it.
+                    contentPadding = PaddingValues(
+                        start = 20.dp,
+                        top = 4.dp,
+                        end = 20.dp,
+                        bottom = 96.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (filtering && homeTasks.isEmpty()) {
+                        item(key = "no-match") { NoSearchMatch(activeQuery) }
                     }
-                }
-                if (!filtering && homeTasks.isEmpty() && !loading) {
-                    item {
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(18.dp)) {
-                                Text("从一个小任务开始", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    "点右下角的 ＋ 新建任务，也可以让 AI 计划或截图识别帮你生成。",
-                                    modifier = Modifier.padding(top = 6.dp),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                    if (!filtering && !loading && (canPlanToday || overdue.isNotEmpty())) {
+                        item(key = "plan-shortcuts") {
+                            PlanShortcutBar(
+                                overdueCount = overdue.size,
+                                canPlanToday = canPlanToday,
+                                onPlanToday = onPlanToday,
+                                onReplanOverdue = { onReplanOverdue(overdue) },
+                            )
+                        }
+                    }
+                    if (!filtering && homeTasks.isEmpty() && !loading) {
+                        item {
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(18.dp)) {
+                                    Text("从一个小任务开始", style = MaterialTheme.typography.titleMedium)
+                                    Text(
+                                        "点右下角的 ＋ 新建任务，也可以让 AI 计划或截图识别帮你生成。",
+                                        modifier = Modifier.padding(top = 6.dp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                itemsIndexed(homeTasks, key = { _, task -> task.id }) { index, task ->
-                    TaskCard(
-                        modifier = Modifier.animateItem(
-                            placementSpec = tween(durationMillis = 560, easing = UiverseEase),
-                        ),
-                        task = task,
-                        deleting = task.id in deletingTaskIds,
-                        entryIndex = index,
-                        onToggle = {
-                            onToggle(task, ::prepareViewportForReorder)
-                        },
-                        onStepToggle = { stepIndex ->
-                            val nextCompleted = task.steps
-                                .mapIndexed { currentIndex, step ->
-                                    if (currentIndex == stepIndex) !step.completed else step.completed
+                    itemsIndexed(homeTasks, key = { _, task -> task.id }) { index, task ->
+                        TaskCard(
+                            modifier = Modifier.animateItem(
+                                placementSpec = tween(durationMillis = 560, easing = UiverseEase),
+                            ),
+                            task = task,
+                            deleting = task.id in deletingTaskIds,
+                            entryIndex = index,
+                            onToggle = {
+                                onToggle(task, ::prepareViewportForReorder)
+                            },
+                            onStepToggle = { stepIndex ->
+                                val nextCompleted = task.steps
+                                    .mapIndexed { currentIndex, step ->
+                                        if (currentIndex == stepIndex) !step.completed else step.completed
+                                    }
+                                    .let { nextSteps -> nextSteps.isNotEmpty() && nextSteps.all { it } }
+                                onStepToggle(task, stepIndex) {
+                                    if (nextCompleted != task.completed) {
+                                        prepareViewportForReorder()
+                                    }
                                 }
-                                .let { nextSteps -> nextSteps.isNotEmpty() && nextSteps.all { it } }
-                            onStepToggle(task, stepIndex) {
-                                if (nextCompleted != task.completed) {
-                                    prepareViewportForReorder()
-                                }
-                            }
-                        },
-                        onReminderChange = { offsetMinutes -> onReminderChange(task, offsetMinutes) },
-                        onDelete = { onDelete(task) },
-                        onEdit = { onEditTask(task) },
-                    )
+                            },
+                            onReminderChange = { offsetMinutes -> onReminderChange(task, offsetMinutes) },
+                            onDelete = { onDelete(task) },
+                            onEdit = { onEditTask(task) },
+                        )
+                    }
                 }
-            }
+                }
             }
         }
     }
@@ -487,34 +495,50 @@ internal fun TaskSectionSwitcher(
     onSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val motionEnabled = ValueAnimator.areAnimatorsEnabled()
+    val indicatorPosition by animateFloatAsState(
+        targetValue = if (selected == "inbox") 1f else 0f,
+        animationSpec = if (motionEnabled) tween(TASK_SECTION_TRANSITION_MILLIS, easing = FastOutSlowInEasing) else snap(),
+        label = "taskSectionIndicator",
+    )
+    val indicatorColor = com.todocloud.app.ui.theme.selectionIndicatorColor()
     Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            listOf(
-                Triple("tasks", "任务", Icons.Outlined.Checklist),
-                Triple("inbox", "收件匣", Icons.Outlined.Inbox),
-            ).forEach { (value, label, icon) ->
-                val active = selected == value
-                val contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(
-                            if (active) com.todocloud.app.ui.theme.selectionIndicatorColor()
-                            else Color.Transparent,
-                        )
-                        .clickable { onSelected(value) }
-                        .padding(vertical = 10.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = contentColor)
-                    Text(label, modifier = Modifier.padding(start = 7.dp), color = contentColor)
+        Box(Modifier.fillMaxWidth().padding(4.dp)) {
+            Canvas(Modifier.matchParentSize()) {
+                val gap = 4.dp.toPx()
+                val tabWidth = (size.width - gap) / 2f
+                drawRoundRect(
+                    color = indicatorColor,
+                    topLeft = Offset((tabWidth + gap) * indicatorPosition, 0f),
+                    size = Size(tabWidth, size.height),
+                    cornerRadius = CornerRadius(14.dp.toPx()),
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                listOf(
+                    Triple("tasks", "任务", Icons.Outlined.Checklist),
+                    Triple("inbox", "收件匣", Icons.Outlined.Inbox),
+                ).forEach { (value, label, icon) ->
+                    val active = selected == value
+                    val contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .selectable(selected = active, role = Role.Tab, onClick = { onSelected(value) })
+                            .padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = contentColor)
+                        Text(label, modifier = Modifier.padding(start = 7.dp), color = contentColor)
+                    }
                 }
             }
         }

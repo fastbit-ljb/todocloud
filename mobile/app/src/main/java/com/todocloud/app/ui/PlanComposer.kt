@@ -2,19 +2,16 @@ package com.todocloud.app.ui
 
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -22,7 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AlternateEmail
-import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material3.Badge
@@ -43,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -79,12 +77,12 @@ internal fun PlanComposer(
         value, selectedIdeaCount, images.size, references.size,
     )
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().testTag("plan-composer"),
         shape = RoundedCornerShape(24.dp),
         color = colors.surfaceContainerLow,
         border = BorderStroke(if (inputFocused) 2.dp else 1.dp, if (inputFocused) colors.primary else colors.outline),
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (references.isNotEmpty()) {
                 ConversationReferenceBar(
                     references = references,
@@ -103,30 +101,6 @@ internal fun PlanComposer(
                     showAddButton = false,
                 )
             }
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                enabled = !loading,
-                interactionSource = inputInteraction,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 4.dp)
-                    .semantics { contentDescription = placeholder },
-                minLines = 2,
-                maxLines = 5,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
-                cursorBrush = SolidColor(colors.primary),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { if (submitEnabled) onSubmit() }),
-                decorationBox = { inner ->
-                    Box {
-                        if (value.isEmpty()) {
-                            Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
-                        }
-                        inner()
-                    }
-                },
-            )
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -171,16 +145,35 @@ internal fun PlanComposer(
                         }
                     }
                 }
-                Spacer(Modifier.weight(1f))
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    enabled = !loading,
+                    interactionSource = inputInteraction,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .padding(horizontal = 4.dp, vertical = 4.dp)
+                        .semantics { contentDescription = placeholder },
+                    minLines = 1,
+                    maxLines = 5,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
+                    cursorBrush = SolidColor(colors.primary),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { if (submitEnabled) onSubmit() }),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (value.isEmpty()) {
+                                Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
+                            }
+                            inner()
+                        }
+                    },
+                )
                 IconButton(
                     onClick = { if (submitEnabled) onSubmit() },
                     enabled = submitEnabled,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            if (submitEnabled) colors.primary else colors.onSurface.copy(alpha = 0.08f),
-                            CircleShape,
-                        ),
+                    modifier = Modifier.size(48.dp),
                 ) {
                     if (loading) {
                         CircularProgressIndicator(
@@ -190,9 +183,9 @@ internal fun PlanComposer(
                         )
                     } else {
                         Icon(
-                            Icons.Outlined.ArrowUpward,
+                            Icons.AutoMirrored.Outlined.Send,
                             contentDescription = submitLabel,
-                            tint = if (submitEnabled) colors.onPrimary else colors.onSurface.copy(alpha = 0.38f),
+                            tint = if (submitEnabled) colors.primary else colors.onSurface.copy(alpha = 0.38f),
                         )
                     }
                 }
