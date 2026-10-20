@@ -11,13 +11,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PIL import Image
 
-from app.core.config import settings
+from app.core.config import ai_request_options, settings
 
 
 logger = logging.getLogger(__name__)
 MAX_AI_IMAGE_EDGE = 2048
 AI_PROVIDER_TIMEOUT_SECONDS = 30
-AI_PRIMARY_ATTEMPTS = 2
 FIXED_OFFSET_ZONE_PATTERN = re.compile(
     r"^(?:GMT|UTC)(?P<sign>[+-])(?P<hours>\d{1,2})(?::?(?P<minutes>\d{2}))?$",
     re.IGNORECASE,
@@ -274,7 +273,7 @@ def _call_model(content: object, reference_at: datetime, timezone_name: str) -> 
     for model_index, model in enumerate(models):
         request_payload = {
             "model": model,
-            "max_tokens": 4096,
+            "max_tokens": min(4096, settings.ai_max_output_tokens),
             "messages": [
                 {"role": "system", "content": "你是可靠的待办事项抽取助手。"},
                 {
@@ -290,13 +289,12 @@ def _call_model(content: object, reference_at: datetime, timezone_name: str) -> 
                 },
             ],
         }
-        if "generativelanguage.googleapis.com" in settings.ai_api_base_url and settings.ai_reasoning_effort:
-            request_payload["reasoning_effort"] = settings.ai_reasoning_effort
-        attempts = AI_PRIMARY_ATTEMPTS if model_index == 0 else 1
+        request_payload.update(ai_request_options(settings))
+        attempts = settings.ai_primary_attempts if model_index == 0 else 1
         truncated = False
         for attempt in range(attempts):
             if truncated:
-                request_payload["max_tokens"] = 8192
+                request_payload["max_tokens"] = settings.ai_max_output_tokens
             payload = json.dumps(request_payload).encode("utf-8")
             http_request = request.Request(
                 endpoint,
@@ -339,6 +337,8 @@ def _call_model(content: object, reference_at: datetime, timezone_name: str) -> 
                 elapsed = time.monotonic() - started_at
                 logger.warning("AI provider returned HTTP %s for %s after %.2fs", exc.code, model, elapsed)
                 last_error = exc
+                if exc.code == 402:
+                    raise AiParseError("内置 AI 额度不足，请联系管理员补充额度") from exc
                 if exc.code in {401, 403}:
                     raise AiParseError("AI 服务鉴权失败，请检查服务端 AI 密钥配置") from exc
                 if exc.code in {400, 404}:
@@ -360,6 +360,8 @@ def _call_model(content: object, reference_at: datetime, timezone_name: str) -> 
             except (AiParseError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
                 logger.warning("AI provider returned invalid content for %s (%s)", model, type(exc).__name__)
                 last_error = exc
+                if truncated and request_payload["max_tokens"] >= settings.ai_max_output_tokens:
+                    break  # Do not pay again for the same already-capped output.
                 if attempt + 1 < attempts:
                     continue
                 break

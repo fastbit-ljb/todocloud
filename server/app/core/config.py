@@ -1,5 +1,8 @@
 from functools import lru_cache
+from typing import Literal
+from urllib.parse import urlsplit
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,10 +19,16 @@ class Settings(BaseSettings):
     minio_secret_key: str = "change-me-in-development"
     minio_bucket: str = "attachments"
     minio_secure: bool = False
-    ai_api_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    ai_api_base_url: str = "https://api.deepseek.com/"
     ai_api_key: str = ""
-    ai_model: str = "gemini-3-flash-preview"
-    ai_fallback_model: str = "gemini-3.6-flash"
+    ai_model: str = "deepseek-flash"
+    # No automatic fallback to another model/provider.
+    ai_fallback_model: str = ""
+    ai_thinking_mode: Literal["", "enabled", "disabled"] = "disabled"
+    # Existing installations retain their limits; production explicitly opts
+    # into 4096 output tokens and one attempt to control the owner's costs.
+    ai_max_output_tokens: int = Field(default=8192, ge=256, le=8192)
+    ai_primary_attempts: int = Field(default=2, ge=1, le=2)
     # Gemini thinking level sent as reasoning_effort. Newer models (3.7/3.8 flash)
     # reject "minimal"; use "low" for them. Empty = do not send the field.
     ai_reasoning_effort: str = "minimal"
@@ -56,6 +65,21 @@ def validate_settings(settings: Settings) -> Settings:
                 "JWT_SECRET must be set to a random value when ENVIRONMENT=production"
             )
     return settings
+
+
+def ai_request_options(config: Settings) -> dict:
+    """Provider-specific options shared by parsing, planning and streaming.
+
+    Match the actual hostname, not a substring of a URL. In particular, never
+    send Gemini's reasoning_effort to GLM/DeepSeek or leak their thinking option
+    to an unknown compatible endpoint.
+    """
+    host = (urlsplit(config.ai_api_base_url).hostname or "").lower()
+    if host in {"open.bigmodel.cn", "api.deepseek.com"} and config.ai_thinking_mode:
+        return {"thinking": {"type": config.ai_thinking_mode}}
+    if host == "generativelanguage.googleapis.com" and config.ai_reasoning_effort:
+        return {"reasoning_effort": config.ai_reasoning_effort}
+    return {}
 
 
 @lru_cache

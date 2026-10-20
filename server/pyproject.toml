@@ -8,7 +8,8 @@ version = "1.0.0"
 description = "TodoCloud FastAPI server"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.115,<1",
+    "fastapi>=0.118,<1",
+    "httpx>=0.28,<1",
     "uvicorn[standard]>=0.34,<1",
     "pydantic-settings>=2.7,<3",
     "sqlalchemy[asyncio]>=2.0,<3",

@@ -14,13 +14,12 @@ from app.ai_parser import (
     _localize_reference,
     _prepare_image_for_ai,
 )
-from app.core.config import settings
+from app.core.config import ai_request_options, settings
 from app.recurrence import RECURRENCE_RULES
 
 
 logger = logging.getLogger(__name__)
 PLAN_TIMEOUT_SECONDS = 90
-PLAN_PRIMARY_ATTEMPTS = 2
 
 
 def _build_plan_prompt(
@@ -253,15 +252,14 @@ def _call_plan_model(prompt: str, image_parts: list[dict] | None = None) -> dict
     for model_index, model in enumerate(models):
         payload = {
             "model": model,
-            "max_tokens": 8192,
+            "max_tokens": settings.ai_max_output_tokens,
             "messages": [
                 {"role": "system", "content": "你是尊重生活节律、善于留白的个人计划助手。"},
                 {"role": "user", "content": user_content},
             ],
         }
-        if "generativelanguage.googleapis.com" in settings.ai_api_base_url and settings.ai_reasoning_effort:
-            payload["reasoning_effort"] = settings.ai_reasoning_effort
-        attempts = PLAN_PRIMARY_ATTEMPTS if model_index == 0 else 1
+        payload.update(ai_request_options(settings))
+        attempts = settings.ai_primary_attempts if model_index == 0 else 1
         for attempt in range(attempts):
             http_request = request.Request(
                 endpoint,
@@ -276,7 +274,10 @@ def _call_plan_model(prompt: str, image_parts: list[dict] | None = None) -> dict
             try:
                 with request.urlopen(http_request, timeout=PLAN_TIMEOUT_SECONDS) as response:
                     result = json.loads(response.read().decode("utf-8"))
-                content = result["choices"][0]["message"]["content"]
+                choice = result["choices"][0]
+                if choice.get("finish_reason") == "length":
+                    raise AiParseError("AI 计划内容过长，请减少本次事项后重试")
+                content = choice["message"]["content"]
                 if isinstance(content, list):
                     content = "".join(
                         part.get("text", "") for part in content if isinstance(part, dict)
@@ -295,6 +296,8 @@ def _call_plan_model(prompt: str, image_parts: list[dict] | None = None) -> dict
                     model,
                     time.monotonic() - started_at,
                 )
+                if exc.code == 402:
+                    raise AiParseError("内置 AI 额度不足，请联系管理员补充额度") from exc
                 if exc.code in {401, 403}:
                     raise AiParseError("AI 服务鉴权失败，请检查服务端配置") from exc
                 if exc.code in {400, 404}:
