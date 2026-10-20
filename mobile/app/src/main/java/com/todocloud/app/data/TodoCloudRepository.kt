@@ -79,6 +79,7 @@ class TodoCloudRepository(context: Context) {
         forcePlan: Boolean,
         images: List<Uri>,
         references: String = "",
+        onText: (suspend (String) -> Unit)? = null,
     ): PlanChatResult {
         val text = message.trim()
         if (text.isEmpty()) throw ApiException("请先告诉 AI 你想问什么或安排什么")
@@ -86,7 +87,7 @@ class TodoCloudRepository(context: Context) {
         val urls = localImageUrls(images)
         val (ideas, tasks) = local.planningSources(ideaIds)
         val userText = if (urls.isEmpty()) text else "$text\n（附图 ${urls.size} 张）"
-        val turn = ai.planTurn(ideas, tasks, text + references, null, history.takeLast(12) + PlanMessage("user", userText), forcePlan, urls)
+        val turn = ai.planTurn(ideas, tasks, text + references, null, history.takeLast(12) + PlanMessage("user", userText), forcePlan, urls, onText)
         val proposal = turn.optJSONObject("proposal") ?: return PlanChatResult.Answer(turn.optString("reply"))
         val plan = local.createPlan(
             proposal,
@@ -95,7 +96,7 @@ class TodoCloudRepository(context: Context) {
         return PlanChatResult.Created(turn.optString("reply"), plan)
     }
 
-    private suspend fun localRevise(planId: Int, message: String, images: List<Uri>, references: String = ""): AiPlan {
+    private suspend fun localRevise(planId: Int, message: String, images: List<Uri>, references: String = "", onText: (suspend (String) -> Unit)? = null): AiPlan {
         val text = message.trim()
         if (text.isEmpty()) throw ApiException("请先告诉 AI 你想怎么调整")
         val ai = localAi()
@@ -103,7 +104,7 @@ class TodoCloudRepository(context: Context) {
         val (proposal, messages) = local.draftForRevision(planId)
         val (ideas, tasks) = local.planningSources(null)
         val history = messages + PlanMessage("user", if (urls.isEmpty()) text else "$text\n（附图 ${urls.size} 张）")
-        val turn = ai.planTurn(ideas, tasks, text + references, proposal, history, forcePlan = false, imageDataUrls = urls)
+        val turn = ai.planTurn(ideas, tasks, text + references, proposal, history, forcePlan = false, imageDataUrls = urls, onText = onText)
         val next = turn.optJSONObject("proposal")
         val reply = next?.optString("summary") ?: turn.optString("reply")
         return local.saveRevision(planId, next, history + PlanMessage("assistant", reply))
@@ -140,6 +141,7 @@ class TodoCloudRepository(context: Context) {
         forcePlan: Boolean,
         images: List<Uri>,
         references: String = "",
+        onText: (suspend (String) -> Unit)? = null,
     ): PlanChatResult {
         val text = message.trim()
         if (text.isEmpty()) throw ApiException("请先告诉 AI 你想问什么或安排什么")
@@ -147,7 +149,7 @@ class TodoCloudRepository(context: Context) {
         // Same selection as the server's /plans/chat: only the ideas the user picked.
         val (ideas, tasks) = cloudPlanningSources(token, ideaIds)
         val userText = if (urls.isEmpty()) text else "$text\n（附图 ${urls.size} 张）"
-        val turn = ai.planTurn(ideas, tasks, text + references, null, history.takeLast(12) + PlanMessage("user", userText), forcePlan, urls)
+        val turn = ai.planTurn(ideas, tasks, text + references, null, history.takeLast(12) + PlanMessage("user", userText), forcePlan, urls, onText)
         val proposal = turn.optJSONObject("proposal") ?: return PlanChatResult.Answer(turn.optString("reply"))
         val body = JSONObject()
             .put("proposal", proposal)
@@ -159,7 +161,7 @@ class TodoCloudRepository(context: Context) {
         return PlanChatResult.Created(turn.optString("reply"), parsePlan(response))
     }
 
-    private suspend fun ownCloudRevise(token: String, ai: LocalAi, planId: Int, message: String, images: List<Uri>, references: String = ""): AiPlan {
+    private suspend fun ownCloudRevise(token: String, ai: LocalAi, planId: Int, message: String, images: List<Uri>, references: String = "", onText: (suspend (String) -> Unit)? = null): AiPlan {
         val text = message.trim()
         if (text.isEmpty()) throw ApiException("请先告诉 AI 你想怎么调整")
         val plan = authorizedRequest(token) { Request.Builder().url("$baseUrl/plans/$planId").authorized(it).get().build() } as JSONObject
@@ -170,7 +172,7 @@ class TodoCloudRepository(context: Context) {
         val history = (0 until stored.length()).map { stored.getJSONObject(it) }
             .map { PlanMessage(it.optString("role"), it.optString("content")) } +
             PlanMessage("user", if (urls.isEmpty()) text else "$text\n（附图 ${urls.size} 张）")
-        val turn = ai.planTurn(ideas, tasks, text + references, plan.getJSONObject("proposal"), history, forcePlan = false, imageDataUrls = urls)
+        val turn = ai.planTurn(ideas, tasks, text + references, plan.getJSONObject("proposal"), history, forcePlan = false, imageDataUrls = urls, onText = onText)
         val next = turn.optJSONObject("proposal")
         val reply = next?.optString("summary") ?: turn.optString("reply")
         val body = JSONObject()
@@ -700,9 +702,10 @@ class TodoCloudRepository(context: Context) {
         forcePlan: Boolean,
         images: List<Uri> = emptyList(),
         referenceIds: List<String> = emptyList(),
+        onText: (suspend (String) -> Unit)? = null,
     ): PlanChatResult {
-        if (token == LOCAL_SESSION_TOKEN) return localChat(message, ideaIds, history, forcePlan, images, referenceContext(token, referenceIds))
-        ownCloudAi(token)?.let { return ownCloudChat(token, it, message, ideaIds, history, forcePlan, images, referenceContext(token, referenceIds)) }
+        if (token == LOCAL_SESSION_TOKEN) return localChat(message, ideaIds, history, forcePlan, images, referenceContext(token, referenceIds), onText)
+        ownCloudAi(token)?.let { return ownCloudChat(token, it, message, ideaIds, history, forcePlan, images, referenceContext(token, referenceIds), onText) }
         val payload = planningPayload(message, ideaIds).apply {
             put("force_plan", forcePlan)
             put("reference_ids", JSONArray(referenceIds.distinct().take(MAX_CONVERSATION_REFERENCES)))
@@ -717,13 +720,7 @@ class TodoCloudRepository(context: Context) {
         }
         val body = planRequestBody(payload, images)
         val path = if (images.isEmpty()) "/plans/chat" else "/plans/chat/images"
-        val response = authorizedRequest(token) { authToken ->
-            Request.Builder()
-                .url(baseUrl + path)
-                .authorized(authToken)
-                .post(body)
-                .build()
-        } as JSONObject
+        val response = planRequest(token, path, body, onText)
         return parsePlanChat(response)
     }
 
@@ -754,20 +751,36 @@ class TodoCloudRepository(context: Context) {
         message: String,
         images: List<Uri> = emptyList(),
         referenceIds: List<String> = emptyList(),
+        onText: (suspend (String) -> Unit)? = null,
     ): AiPlan {
-        if (token == LOCAL_SESSION_TOKEN) return localRevise(planId, message, images, referenceContext(token, referenceIds))
-        ownCloudAi(token)?.let { return ownCloudRevise(token, it, planId, message, images, referenceContext(token, referenceIds)) }
+        if (token == LOCAL_SESSION_TOKEN) return localRevise(planId, message, images, referenceContext(token, referenceIds), onText)
+        ownCloudAi(token)?.let { return ownCloudRevise(token, it, planId, message, images, referenceContext(token, referenceIds), onText) }
         val payload = planningPayload(message).put("reference_ids", JSONArray(referenceIds.distinct().take(MAX_CONVERSATION_REFERENCES)))
         val body = planRequestBody(payload, images)
         val suffix = if (images.isEmpty()) "messages" else "messages/images"
-        val response = authorizedRequest(token) { authToken ->
-            Request.Builder()
-                .url("$baseUrl/plans/$planId/$suffix")
-                .authorized(authToken)
-                .post(body)
-                .build()
+        return parsePlan(planRequest(token, "/plans/$planId/$suffix", body, onText))
+    }
+
+    private suspend fun planRequest(token: String, path: String, body: RequestBody, onText: (suspend (String) -> Unit)?): JSONObject {
+        if (onText != null) {
+            try {
+                return authenticated(token, { request ->
+                    cancellableHttp(client.newCall(request)) { response ->
+                        if (!response.isSuccessful) {
+                            val detail = runCatching { JSONObject(response.body?.string().orEmpty()).optString("detail") }.getOrNull()
+                            throw ApiException(detail?.ifBlank { null } ?: "请求失败（${response.code}）", response.code)
+                        }
+                        if (response.header("Content-Type").orEmpty().contains("text/event-stream", true)) {
+                            readCloudPlanStream(response.body!!.source(), onText)
+                        } else JSONObject(response.body?.string().orEmpty())
+                    }
+                }) { Request.Builder().url("$baseUrl$path/stream").authorized(it).post(body).build() } as JSONObject
+            } catch (error: ApiException) {
+                // Compatibility with older servers only. Never replay after a stream error/EOF.
+                if (error.statusCode != 404 && error.statusCode != 405) throw error
+            }
         }
-        return parsePlan(response as JSONObject)
+        return authorizedRequest(token) { Request.Builder().url("$baseUrl$path").authorized(it).post(body).build() } as JSONObject
     }
 
     /** Adopt a draft plan; [items] = the chosen (possibly edited) items, null = all of them. */
@@ -1018,7 +1031,9 @@ class TodoCloudRepository(context: Context) {
     private suspend fun authorizedRequest(
         token: String,
         requestFactory: (String) -> Request,
-    ): Any {
+    ): Any = authenticated(token, { request(it) }, requestFactory)
+
+    private suspend fun authenticated(token: String, perform: suspend (Request) -> Any, requestFactory: (String) -> Request): Any {
         // The Composable may hold its original access token for hours. Always
         // start with the newest token, then rotate it after a 401. The mutex
         // lets concurrent requests reuse a token refreshed by another call.
@@ -1029,7 +1044,7 @@ class TodoCloudRepository(context: Context) {
         var attemptedToken = checkedToken(sessionStore.get(KEY_TOKEN))
         repeat(MAX_AUTH_ATTEMPTS) { attempt ->
             try {
-                return request(requestFactory(attemptedToken))
+                return perform(requestFactory(attemptedToken))
             } catch (error: ApiException) {
                 if (error.statusCode != 401 || attempt == MAX_AUTH_ATTEMPTS - 1) throw error
                 val failedToken = attemptedToken

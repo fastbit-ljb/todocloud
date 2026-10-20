@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -52,6 +53,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.todocloud.app.data.ConversationReference
 import com.todocloud.app.data.PlanConversationSummary
@@ -63,10 +65,26 @@ internal fun matchingConversations(items: List<PlanConversationSummary>, query: 
 
 @Composable
 internal fun ConversationToolbar(title: String, busy: Boolean, onHistory: () -> Unit, onNew: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        IconButton(onClick = onHistory, enabled = !busy) { Icon(Icons.Outlined.History, "历史会话") }
-        IconButton(onClick = onNew, enabled = !busy) { Icon(Icons.Outlined.Add, "新建会话") }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("AI 计划", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            if (title != "新会话") {
+                Text(title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        val actionTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (busy) 0.38f else 1f)
+        IconButton(onClick = onHistory, enabled = !busy) { Icon(Icons.Outlined.History, "历史会话", tint = actionTint) }
+        IconButton(
+            onClick = onNew,
+            enabled = !busy,
+            modifier = Modifier.size(48.dp),
+        ) {
+            Icon(Icons.Outlined.Add, "新建会话", tint = actionTint)
+        }
     }
 }
 
@@ -208,9 +226,9 @@ internal fun ConversationPicker(
 }
 
 @Composable
-internal fun ConversationReferenceBar(references: List<ConversationReference>, busy: Boolean, onAdd: () -> Unit, onRemove: (String) -> Unit) {
+internal fun ConversationReferenceBar(references: List<ConversationReference>, busy: Boolean, onAdd: () -> Unit, onRemove: (String) -> Unit, showAddButton: Boolean = true) {
     LazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        item {
+        if (showAddButton) item {
             TextButton(onClick = onAdd, enabled = !busy && references.size < 3) {
                 Icon(Icons.Outlined.AlternateEmail, contentDescription = null)
                 Text("引用会话", Modifier.padding(start = 4.dp))

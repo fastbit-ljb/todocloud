@@ -18,6 +18,8 @@ import com.todocloud.app.data.conversationTitle
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 internal data class ConversationDeletionResult(
     val remaining: List<PlanConversationSummary>,
@@ -73,6 +75,19 @@ internal class PlanConversationState(private val repository: TodoCloudRepository
         private set
     var deletedIds by mutableStateOf(emptySet<String>())
         private set
+    var pendingMessage by mutableStateOf<PlanMessage?>(null)
+        private set
+    var streamingText by mutableStateOf("")
+        private set
+
+    val displayedMessages: List<PlanMessage>
+        get() = active?.messages.orEmpty() + listOfNotNull(pendingMessage)
+
+    private fun clearPending() { pendingMessage = null; streamingText = "" }
+
+    private suspend fun showPartial(text: String) = withContext(Dispatchers.Main.immediate) {
+        streamingText = text
+    }
 
     val key: String get() = active?.id ?: draftKey
 
@@ -105,6 +120,7 @@ internal class PlanConversationState(private val repository: TodoCloudRepository
         val result = applyConversationDeletion(conversations, active?.id, deletedIds)
         conversations = result.remaining
         if (result.resetActive) {
+            clearPending()
             active = null
             draftKey = UUID.randomUUID().toString()
         }
@@ -128,12 +144,13 @@ internal class PlanConversationState(private val repository: TodoCloudRepository
 
     fun newConversation() {
         if (loading) return
+        clearPending()
         active = null
         draftKey = UUID.randomUUID().toString()
         error = null
     }
 
-    suspend fun open(id: String) = request { active = repository.getPlanConversation(token, id) }
+    suspend fun open(id: String) = request { clearPending(); active = repository.getPlanConversation(token, id) }
 
     private suspend fun persist(value: PlanConversation) {
         // Keep the completed reply visible even if its subsequent cloud save fails.
@@ -151,11 +168,14 @@ internal class PlanConversationState(private val repository: TodoCloudRepository
         val history = if (current.plan != null) {
             current.messages.takeLast(11) + PlanMessage("assistant", conversationReferenceContext(listOf(current.copy(messages = emptyList()))).take(4000))
         } else current.messages.takeLast(12)
-        val result = repository.chatPlan(token, message, ideaIds, history, forcePlan, images, references.map { it.id })
+        val shown = if (images.isEmpty()) message else "$message\n（附图 ${images.size} 张）"
+        streamingText = ""
+        pendingMessage = PlanMessage("user", shown, references)
+        val result = repository.chatPlan(token, message, ideaIds, history, forcePlan, images, references.map { it.id }, ::showPartial)
         val plan = (result as? PlanChatResult.Created)?.plan ?: current.plan
         if (result is PlanChatResult.Created) onPlan(result.plan)
-        val shown = if (images.isEmpty()) message else "$message\n（附图 ${images.size} 张）"
         val reply = result.reply.ifBlank { plan?.summary.orEmpty() }
+        clearPending()
         persist(current.copy(messages = current.messages + PlanMessage("user", shown, references) + PlanMessage("assistant", reply.ifBlank { "计划已生成" }), plan = plan))
     }
 
@@ -163,9 +183,12 @@ internal class PlanConversationState(private val repository: TodoCloudRepository
         val current = active ?: error("请先打开对应的会话")
         check(current.plan?.id == planId) { "请先打开对应的会话" }
         check(current.messages.size < 998) { "会话较长，请新建会话后用 @ 引用这段讨论" }
-        val revised = repository.revisePlan(token, planId, message, images, references.map { it.id })
-        onPlan(revised)
         val shown = if (images.isEmpty()) message else "$message\n（附图 ${images.size} 张）"
+        streamingText = ""
+        pendingMessage = PlanMessage("user", shown, references)
+        val revised = repository.revisePlan(token, planId, message, images, references.map { it.id }, ::showPartial)
+        onPlan(revised)
+        clearPending()
         persist(current.copy(messages = current.messages + PlanMessage("user", shown, references) + PlanMessage("assistant", revised.messages.lastOrNull()?.content ?: revised.summary), plan = revised))
     }
 

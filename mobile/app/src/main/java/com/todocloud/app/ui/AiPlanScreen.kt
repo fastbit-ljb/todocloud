@@ -1,6 +1,7 @@
 package com.todocloud.app.ui
 
 import android.content.Context
+import android.animation.ValueAnimator
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -24,6 +25,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,8 +41,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.graphicsLayer
@@ -52,12 +53,10 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Inbox
-import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -73,7 +72,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -81,7 +79,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -93,9 +91,16 @@ import com.todocloud.app.data.PlanMessage
 import com.todocloud.app.data.ConversationReference
 import com.todocloud.app.data.PlanConversationSummary
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.material3.OutlinedButton
 import com.todocloud.app.data.TaskItem
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import java.util.Locale
 
 @Composable
@@ -123,6 +128,8 @@ internal fun AiPlanScreen(
     onDeleteConversations: ((Set<String>) -> Unit)? = null,
     cloudHistory: Boolean = true,
     deletedConversationIds: Set<String> = emptySet(),
+    greetingScene: PlanGreetingScene? = PlanGreetingScene.GENERAL,
+    streamingReply: String? = null,
 ) {
     var message by rememberSaveable(conversationKey) { mutableStateOf("") }
     var images by remember(conversationKey) { mutableStateOf<List<Uri>>(emptyList()) }
@@ -131,7 +138,22 @@ internal fun AiPlanScreen(
     var picker by remember { mutableStateOf<String?>(null) }
     var typedMention by remember(conversationKey) { mutableStateOf(false) }
     var showPlan by remember(conversationKey) { mutableStateOf(true) }
+    var hadPendingReply by remember(conversationKey) { mutableStateOf(false) }
+    LaunchedEffect(conversationKey, streamingReply != null, loading) {
+        if (streamingReply != null && (loading || !hadPendingReply)) showPlan = false
+        else if (streamingReply == null && hadPendingReply) showPlan = true
+        hadPendingReply = streamingReply != null
+    }
     var previousMessageCount by remember(conversationKey) { mutableIntStateOf(conversation.size) }
+    var openingGreeting by rememberSaveable(conversationKey) { mutableStateOf<String?>(null) }
+    var openingQuestion by rememberSaveable(conversationKey) { mutableStateOf<String?>(null) }
+    LaunchedEffect(conversationKey, greetingScene, conversation.isEmpty()) {
+        if (conversation.isEmpty() && greetingScene != null && openingGreeting == null) {
+            val opening = choosePlanOpening(greetingScene)
+            openingGreeting = opening.greeting
+            openingQuestion = opening.question
+        }
+    }
     LaunchedEffect(deletedConversationIds) {
         references = references.filterNot { it.id in deletedConversationIds }
     }
@@ -166,7 +188,8 @@ internal fun AiPlanScreen(
             .fillMaxSize()
             .padding(paddingValues)
             .consumeWindowInsets(paddingValues)
-            .padding(horizontal = 16.dp),
+            .imePadding()
+            .padding(horizontal = 20.dp),
     ) {
         ConversationToolbar(conversationTitle, loading, onHistory = {
             picker = "history"
@@ -209,21 +232,19 @@ internal fun AiPlanScreen(
             Text(it, modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error)
         }
 
-        if (plan == null || !showPlan) {
-            val canGenerate = !loading && (
-                message.isNotBlank() || images.isNotEmpty() || selectedIdeaIds.isNotEmpty() || tasks.isNotEmpty() || references.isNotEmpty()
+        if (plan == null || !showPlan || (streamingReply != null && loading)) {
+            val canGenerate = !loading && hasPlanRequestContent(
+                message, selectedIdeaIds.size, images.size, references.size,
             )
             val submitPlan = {
                 val typed = message.trim()
-                // An empty box means "just plan my stuff"; typed text may be a question.
+                // Context alone is not a request: require text or selected material.
                 val request = typed.ifEmpty {
                     when {
                         images.isNotEmpty() ->
                             "请看看这些图片，结合我的收件匣和任务给出建议，需要的话帮我安排。"
                         selectedIdeaIds.isNotEmpty() ->
                             "请结合我这次选中的收件匣想法和现有未完成任务，生成一份现实可执行的计划。"
-                        tasks.isNotEmpty() ->
-                            "请结合现有未完成任务，生成一份现实可执行的计划。"
                         references.isNotEmpty() -> "请结合引用的历史会话，继续帮我规划。"
                         else -> ""
                     }
@@ -258,6 +279,10 @@ internal fun AiPlanScreen(
                     if (ideas.isEmpty()) onOpenInbox() else showIdeaPicker = true
                 },
                 onSubmit = submitPlan,
+                opening = openingGreeting?.let { greeting ->
+                    openingQuestion?.let { question -> PlanOpening(greeting, question) }
+                },
+                streamingReply = streamingReply,
             )
             if (showIdeaPicker) {
                 InboxIdeaPickerDialog(
@@ -283,7 +308,7 @@ internal fun AiPlanScreen(
 
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(top = 32.dp, bottom = 24.dp),
+            contentPadding = PaddingValues(top = 20.dp, bottom = 16.dp),
         ) {
             item {
                 AiPlanResultHeader(plan)
@@ -342,15 +367,19 @@ internal fun AiPlanScreen(
         }
 
         Column(
-            modifier = Modifier.fillMaxWidth().imePadding().padding(bottom = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            ConversationReferenceBar(references, loading, onAdd = { typedMention = false; picker = "reference" }, onRemove = { id -> references = references.filterNot { it.id == id } })
-            PlanImageBar(images = images, loading = loading, onAdd = onAddImages, onRemove = { uri -> images = images - uri })
             AiPlanRevisionField(
                 value = message,
                 onValueChange = changeMessage,
                 loading = loading,
+                references = references,
+                images = images,
+                onReference = { typedMention = false; picker = "reference" },
+                onRemoveReference = { id -> references = references.filterNot { it.id == id } },
+                onAddImages = onAddImages,
+                onRemoveImage = { uri -> images = images - uri },
                 onSubmit = {
                     val request = message.trim()
                     if (request.isNotEmpty()) {
@@ -390,34 +419,32 @@ internal fun AiPlanScreen(
 @Composable
 internal fun AiPlanResultHeader(plan: AiPlan) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, bottom = 30.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 24.dp),
     ) {
         Text(
             "计划准备好了",
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
             "我这样安排，可以吗？",
             modifier = Modifier.padding(top = 8.dp),
-            style = MaterialTheme.typography.headlineLarge.copy(
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = 43.sp,
-            ),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (plan.summary.isNotBlank()) {
             Text(
                 plan.summary,
-                modifier = Modifier.padding(top = 18.dp),
+                modifier = Modifier.padding(top = 16.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyLarge,
-                lineHeight = 25.sp,
+                style = MaterialTheme.typography.bodyMedium,
+                lineHeight = 23.sp,
             )
         }
         Text(
             "${plan.items.size} 项安排",
-            modifier = Modifier.padding(top = 22.dp),
+            modifier = Modifier.padding(top = 16.dp),
             color = MaterialTheme.colorScheme.primary,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
@@ -431,68 +458,28 @@ internal fun AiPlanRevisionField(
     onValueChange: (String) -> Unit,
     loading: Boolean,
     onSubmit: () -> Unit,
+    references: List<ConversationReference> = emptyList(),
+    images: List<Uri> = emptyList(),
+    onReference: (() -> Unit)? = null,
+    onRemoveReference: (String) -> Unit = {},
+    onAddImages: (() -> Unit)? = null,
+    onRemoveImage: (Uri) -> Unit = {},
 ) {
-    val canSubmit = !loading && value.isNotBlank()
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Outlined.AutoAwesome,
-                contentDescription = null,
-                modifier = Modifier.padding(horizontal = 12.dp).size(22.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.weight(1f).padding(vertical = 15.dp),
-                enabled = !loading,
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Send,
-                ),
-                keyboardActions = KeyboardActions(onSend = { if (canSubmit) onSubmit() }),
-                decorationBox = { innerTextField ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (value.isBlank()) {
-                            Text(
-                                "告诉我哪里需要调整…",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
-                        innerTextField()
-                    }
-                },
-            )
-            IconButton(onClick = onSubmit, enabled = canSubmit) {
-                if (loading) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(
-                        Icons.Outlined.Send,
-                        contentDescription = "发送调整要求",
-                        tint = if (canSubmit) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
-                    )
-                }
-            }
-        }
-    }
+    PlanComposer(
+        value = value,
+        onValueChange = onValueChange,
+        loading = loading,
+        canSubmit = !loading && value.isNotBlank(),
+        onSubmit = onSubmit,
+        placeholder = "告诉我哪里需要调整…",
+        submitLabel = "发送调整要求",
+        references = references,
+        images = images,
+        onReference = onReference,
+        onRemoveReference = onRemoveReference,
+        onAddImages = onAddImages,
+        onRemoveImage = onRemoveImage,
+    )
 }
 
 @Composable
@@ -517,71 +504,67 @@ internal fun AiPlanLanding(
     deletedConversationIds: Set<String>,
     onInboxClick: () -> Unit,
     onSubmit: () -> Unit,
+    opening: PlanOpening?,
+    streamingReply: String? = null,
 ) {
-    Box(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth()) {
         if (conversation.isEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(top = 34.dp, start = 6.dp, end = 6.dp),
+            Box(
+                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                contentAlignment = Alignment.TopStart,
             ) {
-                TypewriterPlanPrompt()
+                Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 34.dp, bottom = 24.dp)) {
+                    if (opening != null) TypewriterPlanPrompt(opening)
+                }
+            }
+        } else {
+            PlanConversation(
+                messages = conversation,
+                onOpenReference = onOpenReference,
+                deletedConversationIds = deletedConversationIds,
+                historyPlan = historyPlan,
+                modifier = Modifier.weight(1f).padding(top = 16.dp),
+                streamingReply = streamingReply,
+                streaming = loading,
+            )
+            TextButton(
+                onClick = onPlanFromConversation,
+                enabled = !loading && streamingReply == null,
+                modifier = Modifier.align(Alignment.End).padding(vertical = 4.dp),
+            ) {
+                Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("整理成计划", modifier = Modifier.padding(start = 6.dp))
             }
         }
-
-        Column(
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding(),
-        ) {
-            if (conversation.isNotEmpty()) {
-                PlanConversation(
-                    messages = conversation,
-                    onOpenReference = onOpenReference,
-                    deletedConversationIds = deletedConversationIds,
-                    historyPlan = historyPlan,
-                    modifier = Modifier.weight(1f, fill = false).padding(top = 16.dp),
-                )
-                OutlinedButton(
-                    onClick = onPlanFromConversation,
-                    enabled = !loading,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                    shape = RoundedCornerShape(18.dp),
-                ) {
-                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("直接帮我排成计划", modifier = Modifier.padding(start = 7.dp))
-                }
-            }
-            if (loading) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Text(
-                        "AI 正在思考…",
-                        modifier = Modifier.padding(start = 10.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-
-            ConversationReferenceBar(references, loading, onAdd = onReference, onRemove = onRemoveReference)
-            PlanImageBar(images = images, loading = loading, onAdd = onAddImages, onRemove = onRemoveImage)
-            AiPlanPromptField(
-                modifier = Modifier.padding(bottom = 12.dp),
-                value = message,
-                onValueChange = onMessageChange,
-                ideaCount = ideas.size,
-                selectedIdeaCount = selectedIdeaIds.size,
-                loading = loading,
-                canSubmit = canGenerate,
-                onInboxClick = onInboxClick,
-                onSubmit = onSubmit,
+        if (loading && streamingReply == null) {
+            Text(
+                "正在等待 AI 回复…",
+                Modifier.padding(start = 4.dp, bottom = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
             )
         }
+        AiPlanPromptField(
+            modifier = Modifier.padding(bottom = 12.dp),
+            value = message,
+            onValueChange = onMessageChange,
+            ideaCount = ideas.size,
+            selectedIdeaCount = selectedIdeaIds.size,
+            loading = loading,
+            canSubmit = canGenerate,
+            onInboxClick = onInboxClick,
+            onSubmit = onSubmit,
+            references = references,
+            images = images,
+            onReference = onReference,
+            onRemoveReference = onRemoveReference,
+            onAddImages = onAddImages,
+            onRemoveImage = onRemoveImage,
+        )
     }
 }
 
-private const val MAX_PLAN_IMAGES = 3
+internal const val MAX_PLAN_IMAGES = 3
 
 /** "Add image" button plus removable thumbnails of the images attached to the next message. */
 @Composable
@@ -590,6 +573,7 @@ internal fun PlanImageBar(
     loading: Boolean,
     onAdd: () -> Unit,
     onRemove: (Uri) -> Unit,
+    showAddButton: Boolean = true,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
@@ -597,9 +581,9 @@ internal fun PlanImageBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         images.forEachIndexed { index, uri ->
-            PlanImageThumbnail(uri = uri, index = index, onRemove = { onRemove(uri) })
+            PlanImageThumbnail(uri = uri, index = index, onRemove = { onRemove(uri) }, enabled = !loading)
         }
-        if (images.size < MAX_PLAN_IMAGES) {
+        if (showAddButton && images.size < MAX_PLAN_IMAGES) {
             TextButton(onClick = onAdd, enabled = !loading) {
                 Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(18.dp))
                 Text(
@@ -612,14 +596,14 @@ internal fun PlanImageBar(
 }
 
 @Composable
-private fun PlanImageThumbnail(uri: Uri, index: Int, onRemove: () -> Unit) {
+private fun PlanImageThumbnail(uri: Uri, index: Int, onRemove: () -> Unit, enabled: Boolean = true) {
     val context = LocalContext.current
     val bitmap by produceState<ImageBitmap?>(initialValue = null, uri) {
         value = withContext(Dispatchers.IO) { decodeThumbnail(context, uri) }
     }
     Box(
         modifier = Modifier
-            .size(56.dp)
+            .size(64.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
     ) {
@@ -633,7 +617,8 @@ private fun PlanImageThumbnail(uri: Uri, index: Int, onRemove: () -> Unit) {
         }
         IconButton(
             onClick = onRemove,
-            modifier = Modifier.align(Alignment.TopEnd).size(24.dp),
+            enabled = enabled,
+            modifier = Modifier.align(Alignment.TopEnd).size(48.dp),
         ) {
             Icon(
                 Icons.Outlined.Close,
@@ -658,10 +643,23 @@ private fun decodeThumbnail(context: Context, uri: Uri): ImageBitmap? = runCatch
 }.getOrNull()
 
 @Composable
-internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = Modifier, onOpenReference: (String) -> Unit = {}, historyPlan: AiPlan? = null, deletedConversationIds: Set<String> = emptySet()) {
+internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = Modifier, onOpenReference: (String) -> Unit = {}, historyPlan: AiPlan? = null, deletedConversationIds: Set<String> = emptySet(), streamingReply: String? = null, streaming: Boolean = false) {
     val listState = rememberLazyListState()
+    val dragged by listState.interactionSource.collectIsDraggedAsState()
+    var followOutput by remember { mutableStateOf(true) }
+    LaunchedEffect(listState, dragged) {
+        snapshotFlow { Triple(dragged, listState.isScrollInProgress, listState.canScrollForward) }.collect { (dragging, scrolling, forward) ->
+            if (dragging) followOutput = false
+            else if (!scrolling && !forward) followOutput = true
+        }
+    }
     LaunchedEffect(messages.size, messages.lastOrNull(), historyPlan?.id) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+        if (messages.isNotEmpty() && streamingReply == null) listState.animateScrollToItem(messages.lastIndex)
+    }
+    LaunchedEffect(messages.size, streamingReply) {
+        if (streamingReply != null && followOutput && !listState.isScrollInProgress) {
+            listState.scrollToItem(messages.size + 1) // a bottom anchor, not the top of a long reply
+        }
     }
     LazyColumn(state = listState, modifier = modifier.fillMaxWidth()) {
         items(messages) { chat ->
@@ -673,34 +671,38 @@ internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = 
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = if (fromUser) {
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
-                        } else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else MaterialTheme.colorScheme.surface,
                     ),
                     shape = RoundedCornerShape(18.dp),
                     modifier = Modifier
-                        .fillMaxWidth(0.88f)
-                        .padding(bottom = 8.dp)
+                        .fillMaxWidth(if (fromUser) 0.88f else 1f)
+                        .padding(bottom = 20.dp)
                         .semantics { contentDescription = (if (fromUser) "我：" else "AI：") + chat.content },
                 ) {
-                    Column(Modifier.padding(12.dp)) {
+                    Column(Modifier.padding(horizontal = if (fromUser) 14.dp else 4.dp, vertical = 12.dp)) {
                         chat.references.forEach { reference ->
                             val deleted = reference.id in deletedConversationIds
                             TextButton(onClick = { onOpenReference(reference.id) }, enabled = !deleted) {
                                 Text("@${reference.title}${if (deleted) "（已删除）" else ""}")
                             }
                         }
-                        Text(chat.content)
+                        Text(chat.content, style = MaterialTheme.typography.bodyLarge, lineHeight = 26.sp)
                     }
                 }
             }
         }
-        if (historyPlan != null) {
+        if (streamingReply != null) {
+            item(key = "streaming-reply") { StreamingPlanReply(streamingReply, streaming) }
+            item(key = "stream-bottom") { Box(Modifier.height(8.dp)) }
+        }
+        if (historyPlan != null && streamingReply == null) {
             item {
                 Text(if (historyPlan.status == "accepted") "历史计划 · 已采用" else "历史计划 · 草稿", Modifier.padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             }
             itemsIndexed(historyPlan.items, key = { index, _ -> "history-plan-${historyPlan.id}-$index" }) { index, item ->
-                Card(Modifier.fillMaxWidth().padding(bottom = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                    Column(Modifier.padding(12.dp)) {
+                Card(Modifier.fillMaxWidth().padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("${index + 1}. ${item.title}", style = MaterialTheme.typography.titleSmall)
                         val timing = listOfNotNull(item.startAt?.let { "${formatPlanDateTime(it)} 开始" }, item.dueAt?.let { "${formatPlanDateTime(it)} 前完成" }).joinToString(" · ")
                         if (timing.isNotEmpty()) Text(timing, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -713,40 +715,47 @@ internal fun PlanConversation(messages: List<PlanMessage>, modifier: Modifier = 
 }
 
 @Composable
-internal fun TypewriterPlanPrompt() {
-    val greetings = remember {
-        listOf(
-            "你好！",
-            "嗨！",
-            "欢迎回来！",
-            "见到你真好！",
+internal fun StreamingPlanReply(text: String, loading: Boolean) {
+    Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 12.dp, bottom = 16.dp)) {
+        if (text.isNotEmpty()) Text(text, style = MaterialTheme.typography.bodyLarge.copy(lineBreak = LineBreak.Simple), lineHeight = 26.sp)
+        Text(
+            when {
+                !loading -> "回复未完成，请重试；未保存新计划"
+                text.isEmpty() -> "正在等待 AI 回复…"
+                else -> "正在回复…"
+            },
+            modifier = Modifier.padding(top = if (text.isEmpty()) 0.dp else 8.dp).semantics {
+                liveRegion = LiveRegionMode.Polite
+                if (loading) progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
         )
     }
-    val questions = remember {
-        listOf(
-            "你有什么计划吗？",
-            "今天想完成什么？",
-            "有什么想法想变成计划？",
-            "哪些事情需要我帮你安排？",
-            "接下来想做些什么？",
-        )
-    }
-    val greeting = remember { greetings.random() }
-    val question = remember { questions.random() }
-    var displayedGreeting by remember { mutableStateOf("") }
-    var displayedQuestion by remember { mutableStateOf("") }
-    var activeLine by remember { mutableIntStateOf(0) }
-    var cursorVisible by remember { mutableStateOf(true) }
+}
 
-    LaunchedEffect(Unit) {
+@Composable
+internal fun TypewriterPlanPrompt(opening: PlanOpening) {
+    var displayedGreeting by remember(opening) { mutableStateOf("") }
+    var displayedQuestion by remember(opening) { mutableStateOf("") }
+    var activeLine by remember(opening) { mutableIntStateOf(0) }
+    var cursorVisible by remember(opening) { mutableStateOf(true) }
+
+    LaunchedEffect(opening) {
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            displayedGreeting = opening.greeting
+            displayedQuestion = opening.question
+            cursorVisible = false
+            return@LaunchedEffect
+        }
         delay(120L)
-        greeting.forEach { character ->
+        opening.greeting.forEach { character ->
             delay(if (character == '！') 140L else 88L)
             displayedGreeting += character
         }
         delay(260L)
         activeLine = 1
-        question.forEach { character ->
+        opening.question.forEach { character ->
             delay(if (character == '，' || character == '？') 150L else 82L)
             displayedQuestion += character
         }
@@ -757,20 +766,30 @@ internal fun TypewriterPlanPrompt() {
         cursorVisible = false
     }
 
-    Text(
-        text = displayedGreeting + if (activeLine == 0 && cursorVisible) "｜" else "",
-        modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp),
-        color = MaterialTheme.colorScheme.primary,
-        style = MaterialTheme.typography.titleLarge,
+    val greetingStyle = MaterialTheme.typography.titleLarge.copy(
         fontWeight = FontWeight.SemiBold,
+        lineBreak = LineBreak.Heading,
     )
-    Text(
-        text = displayedQuestion + if (activeLine == 1 && cursorVisible) "｜" else "",
+    val questionStyle = MaterialTheme.typography.headlineLarge.copy(
+        fontWeight = FontWeight.SemiBold,
+        lineHeight = 43.sp,
+        lineBreak = LineBreak.Heading,
+    )
+    StableTypewriterLine(
+        text = opening.greeting,
+        visibleCharacters = displayedGreeting.length,
+        showCursor = activeLine == 0 && cursorVisible,
+        color = MaterialTheme.colorScheme.primary,
+        style = greetingStyle,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp),
+    )
+    StableTypewriterLine(
+        text = opening.question,
+        visibleCharacters = displayedQuestion.length,
+        showCursor = activeLine == 1 && cursorVisible,
+        color = MaterialTheme.colorScheme.onSurface,
+        style = questionStyle,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 92.dp),
-        style = MaterialTheme.typography.headlineLarge.copy(
-            fontWeight = FontWeight.SemiBold,
-            lineHeight = 43.sp,
-        ),
     )
 }
 
@@ -785,92 +804,32 @@ internal fun AiPlanPromptField(
     canSubmit: Boolean,
     onInboxClick: () -> Unit,
     onSubmit: () -> Unit,
+    references: List<ConversationReference> = emptyList(),
+    images: List<Uri> = emptyList(),
+    onReference: (() -> Unit)? = null,
+    onRemoveReference: (String) -> Unit = {},
+    onAddImages: (() -> Unit)? = null,
+    onRemoveImage: (Uri) -> Unit = {},
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(modifier = Modifier.size(46.dp)) {
-                IconButton(onClick = onInboxClick, modifier = Modifier.align(Alignment.Center)) {
-                    Icon(
-                        Icons.Outlined.Inbox,
-                        contentDescription = if (ideaCount == 0) "去收件匣记录想法" else "选择收件匣想法",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                if (ideaCount > 0) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .size(19.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            selectedIdeaCount.toString(),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-            }
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.weight(1f).padding(horizontal = 4.dp, vertical = 15.dp),
-                enabled = !loading,
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Send,
-                ),
-                keyboardActions = KeyboardActions(
-                    onSend = { if (canSubmit) onSubmit() },
-                ),
-                decorationBox = { innerTextField ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (value.isBlank()) {
-                            Text(
-                                "告诉我你的计划…",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
-                        innerTextField()
-                    }
-                },
-            )
-            IconButton(onClick = onSubmit, enabled = canSubmit) {
-                if (loading) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(
-                        Icons.Outlined.Send,
-                        contentDescription = "生成计划",
-                        tint = if (canSubmit) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                        },
-                    )
-                }
-            }
-        }
-    }
+    PlanComposer(
+        modifier = modifier,
+        value = value,
+        onValueChange = onValueChange,
+        loading = loading,
+        canSubmit = canSubmit,
+        onSubmit = onSubmit,
+        placeholder = "告诉我你的计划…",
+        submitLabel = "生成计划",
+        references = references,
+        images = images,
+        onReference = onReference,
+        onRemoveReference = onRemoveReference,
+        onAddImages = onAddImages,
+        onRemoveImage = onRemoveImage,
+        ideaCount = ideaCount,
+        selectedIdeaCount = selectedIdeaCount,
+        onInboxClick = onInboxClick,
+    )
 }
 
 @Composable

@@ -5,6 +5,8 @@ import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -195,13 +197,14 @@ internal class LocalAi(
         conversation: List<PlanMessage>,
         forcePlan: Boolean,
         imageDataUrls: List<String> = emptyList(),
+        onText: (suspend (String) -> Unit)? = null,
     ): JSONObject {
         val zone = ZoneId.systemDefault()
         val now = ZonedDateTime.now(zone).truncatedTo(ChronoUnit.SECONDS)
         val prompt = buildPlanPrompt(
             ideas, tasks, now, zone.id, userMessage, previousProposal, conversation, forcePlan, imageDataUrls.size,
         )
-        val raw = callModel(SYSTEM_PLAN, prompt, imageDataUrls, maxTokens = 8192)
+        val raw = callModel(SYSTEM_PLAN, prompt, imageDataUrls, maxTokens = 8192, onText = onText)
         return normalizeTurn(raw, ideas, tasks, now, forcePlan, allowPromptItems = userMessage.isNotBlank())
     }
 
@@ -230,6 +233,7 @@ internal class LocalAi(
         maxTokens: Int,
         fallback: Boolean = true,
         parseJson: Boolean = true,
+        onText: (suspend (String) -> Unit)? = null,
     ): JSONObject = withContext(Dispatchers.IO) {
         if (imageDataUrls.isNotEmpty() && !provider.supportsImages) {
             throw ApiException("${provider.label} 不能识别图片。请在设置的「AI 模型」里换成通义千问、智谱、Kimi 或 Gemini")
@@ -247,6 +251,7 @@ internal class LocalAi(
         var lastCode: Int? = null
         var lastWasNetwork = false
         var lastError: ApiException? = null
+        var partialShown = false
         for ((modelIndex, model) in models.withIndex()) {
             val attempts = if (modelIndex == 0) 2 else 1
             for (attempt in 0 until attempts) {
@@ -257,24 +262,29 @@ internal class LocalAi(
                         .put(JSONObject().put("role", "system").put("content", system))
                         .put(JSONObject().put("role", "user").put("content", userContent)))
                 provider.extraParams.forEach { (name, value) -> payload.put(name, jsonValue(value)) }
+                if (onText != null) payload.put("stream", true)
                 val request = Request.Builder()
                     .url(provider.baseUrl.trimEnd('/') + "/chat/completions")
                     .header("Authorization", "Bearer $apiKey")
                     .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                     .build()
                 try {
-                    client.newCall(request).execute().use { response ->
-                        val body = response.body?.string().orEmpty()
+                    cancellableHttp(client.newCall(request)) { response ->
                         if (!response.isSuccessful) {
+                            val body = response.body?.string().orEmpty()
                             lastCode = response.code
                             lastWasNetwork = false
                             val keyProblem = response.code == 401 || response.code == 403 ||
                                 (response.code == 400 && body.contains("API key", ignoreCase = true))
                             if (keyProblem) throw ApiException(KEY_INVALID)
-                            return@use null
+                            return@cancellableHttp null
                         }
-                        if (!parseJson) return@use JSONObject()
-                        val message = JSONObject(body).getJSONArray("choices").getJSONObject(0).getJSONObject("message")
+                        if (!parseJson) return@cancellableHttp JSONObject()
+                        if (onText != null) return@cancellableHttp readModelStream(response) { text ->
+                            partialShown = true
+                            onText(text)
+                        }
+                        val message = JSONObject(response.body?.string().orEmpty()).getJSONArray("choices").getJSONObject(0).getJSONObject("message")
                         val content = message.opt("content").let { value ->
                             if (value is JSONArray) {
                                 (0 until value.length()).joinToString("") { value.optJSONObject(it)?.optString("text").orEmpty() }
@@ -286,12 +296,15 @@ internal class LocalAi(
                     }?.let { return@withContext it }
                     if (lastCode?.let { it !in RETRYABLE } == true) break // bad model name etc: try the fallback
                 } catch (exception: ApiException) {
-                    if (exception.message == KEY_INVALID) throw exception
+                    if (exception.message == KEY_INVALID || partialShown) throw exception
                     lastError = exception
                 } catch (_: IOException) {
+                    currentCoroutineContext().ensureActive()
+                    if (partialShown) throw ApiException("AI 回复中断，未保存新计划，请重试")
                     lastWasNetwork = true
                     lastCode = null
                 } catch (_: org.json.JSONException) {
+                    if (partialShown) throw ApiException("AI 回复格式无效，未保存新计划，请重试")
                     lastError = ApiException("AI 返回的结果无法识别，请稍后重试")
                 }
                 if (attempt + 1 < attempts) delay(1000)
