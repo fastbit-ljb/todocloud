@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsOff
@@ -21,6 +22,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.swipeUp
@@ -36,6 +38,8 @@ import com.todocloud.app.data.PlanConversationSummary
 import com.todocloud.app.data.PlanMessage
 import com.todocloud.app.data.AiPlan
 import com.todocloud.app.data.PlanItem
+import com.todocloud.app.data.InboxIdea
+import com.todocloud.app.data.TaskItem
 import com.todocloud.app.ui.theme.TodoCloudTheme
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -106,6 +110,7 @@ class ConversationUiTest {
             compose.onNodeWithText("引用会话").performClick()
             compose.onNodeWithText(old.title).performClick()
             compose.onNodeWithText("@${old.title}").assertIsDisplayed()
+            compose.onNodeWithContentDescription("生成计划").assertIsEnabled()
             compose.onNode(hasSetTextAction()).performTextInput("先整理资料\n再写第一段")
             compose.onNodeWithContentDescription("生成计划").assertIsDisplayed().performClick()
             compose.runOnIdle {
@@ -113,6 +118,49 @@ class ConversationUiTest {
                 assertEquals(listOf(ConversationReference(old.id, old.title)), sentReferences)
             }
             screenshot("ai-plan-redesign-composer-multiline")
+        }
+    }
+
+    @Test fun emptyRequestCannotSendEvenWhenTasksExistAndIdeasUseLightbulbEntry() {
+        var sentCount = 0
+        var inboxOpened = 0
+        val ideas = mutableStateOf(emptyList<InboxIdea>())
+        val task = TaskItem(1, "已有任务只是上下文", null, null, null, false, null)
+        ActivityScenario.launch(ConversationTestActivity::class.java).use { scenario ->
+            scenario.onActivity { activity -> activity.setContent {
+                TodoCloudTheme { Surface {
+                    AiPlanScreen(
+                        paddingValues = PaddingValues(), ideas = ideas.value, tasks = listOf(task), plan = null,
+                        loading = false, error = null, conversation = emptyList(), conversationKey = "empty-request",
+                        conversationTitle = "新会话", conversations = emptyList(), syncPending = false,
+                        greetingScene = null,
+                        onRetrySync = {}, onNewConversation = {}, onOpenConversation = {}, onRefreshHistory = {},
+                        onOpenInbox = { inboxOpened++ }, onGenerate = { _, _, _, _, _ -> sentCount++ },
+                        onRevise = { _, _, _, _ -> }, onAccept = { _, _ -> },
+                    )
+                } }
+            } }
+            val send = compose.onNodeWithContentDescription("生成计划")
+            send.assertIsNotEnabled()
+            compose.onNodeWithContentDescription("记录收件匣想法").assertIsDisplayed().performClick()
+            compose.runOnIdle { assertEquals(1, inboxOpened) }
+            compose.onNode(hasSetTextAction()).performTextReplacement(" \n\t ")
+            send.assertIsNotEnabled()
+            compose.onNode(hasSetTextAction()).performImeAction()
+            compose.runOnIdle { assertEquals(0, sentCount) }
+            compose.onNode(hasSetTextAction()).performTextReplacement("先安排一件小事")
+            send.assertIsEnabled()
+            compose.onNode(hasSetTextAction()).performTextReplacement("")
+            send.assertIsNotEnabled()
+
+            compose.runOnIdle { ideas.value = listOf(InboxIdea(1, "准备演讲材料", null, null, null)) }
+            send.assertIsEnabled()
+            compose.onNodeWithContentDescription("选择收件匣想法，已选 1 个，共 1 个").performClick()
+            compose.onNodeWithText("清空").performClick()
+            compose.onNodeWithText("完成").performClick()
+            send.assertIsNotEnabled()
+            compose.runOnIdle { assertEquals(0, sentCount) }
+            screenshot("ai-plan-empty-request-disabled")
         }
     }
 

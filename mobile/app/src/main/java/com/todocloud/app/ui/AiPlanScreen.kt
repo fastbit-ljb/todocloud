@@ -221,20 +221,18 @@ internal fun AiPlanScreen(
         }
 
         if (plan == null || !showPlan) {
-            val canGenerate = !loading && (
-                message.isNotBlank() || images.isNotEmpty() || selectedIdeaIds.isNotEmpty() || tasks.isNotEmpty() || references.isNotEmpty()
+            val canGenerate = !loading && hasPlanRequestContent(
+                message, selectedIdeaIds.size, images.size, references.size,
             )
             val submitPlan = {
                 val typed = message.trim()
-                // An empty box means "just plan my stuff"; typed text may be a question.
+                // Context alone is not a request: require text or selected material.
                 val request = typed.ifEmpty {
                     when {
                         images.isNotEmpty() ->
                             "请看看这些图片，结合我的收件匣和任务给出建议，需要的话帮我安排。"
                         selectedIdeaIds.isNotEmpty() ->
                             "请结合我这次选中的收件匣想法和现有未完成任务，生成一份现实可执行的计划。"
-                        tasks.isNotEmpty() ->
-                            "请结合现有未完成任务，生成一份现实可执行的计划。"
                         references.isNotEmpty() -> "请结合引用的历史会话，继续帮我规划。"
                         else -> ""
                     }
@@ -499,9 +497,9 @@ internal fun AiPlanLanding(
         if (conversation.isEmpty()) {
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-                contentAlignment = Alignment.CenterStart,
+                contentAlignment = Alignment.TopStart,
             ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 32.dp)) {
+                Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 34.dp, bottom = 24.dp)) {
                     if (opening != null) TypewriterPlanPrompt(opening)
                 }
             }
@@ -715,27 +713,30 @@ internal fun TypewriterPlanPrompt(opening: PlanOpening) {
         cursorVisible = false
     }
 
-    val headlineStyle = MaterialTheme.typography.headlineMedium.copy(
-        fontSize = 26.sp,
-        lineHeight = 38.sp,
+    val greetingStyle = MaterialTheme.typography.titleLarge.copy(
         fontWeight = FontWeight.SemiBold,
         lineBreak = LineBreak.Heading,
     )
-    Box(Modifier.fillMaxWidth()) {
+    val questionStyle = MaterialTheme.typography.headlineLarge.copy(
+        fontWeight = FontWeight.SemiBold,
+        lineHeight = 43.sp,
+        lineBreak = LineBreak.Heading,
+    )
+    Box(Modifier.fillMaxWidth().heightIn(min = 36.dp)) {
         // Reserve the final text height so typing does not move the whole opening.
-        Text(opening.greeting + "｜", Modifier.alpha(0f).clearAndSetSemantics {}, style = headlineStyle)
+        Text(opening.greeting + "｜", Modifier.alpha(0f).clearAndSetSemantics {}, style = greetingStyle)
         Text(
             text = displayedGreeting + if (activeLine == 0 && cursorVisible) "｜" else "",
-            color = MaterialTheme.colorScheme.onSurface,
-            style = headlineStyle,
+            color = MaterialTheme.colorScheme.primary,
+            style = greetingStyle,
         )
     }
-    Box(Modifier.fillMaxWidth().padding(top = 16.dp)) {
-        Text(opening.question + "｜", Modifier.alpha(0f).clearAndSetSemantics {}, style = MaterialTheme.typography.bodyLarge)
+    Box(Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 92.dp)) {
+        Text(opening.question + "｜", Modifier.alpha(0f).clearAndSetSemantics {}, style = questionStyle)
         Text(
             text = displayedQuestion + if (activeLine == 1 && cursorVisible) "｜" else "",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = questionStyle,
         )
     }
 }

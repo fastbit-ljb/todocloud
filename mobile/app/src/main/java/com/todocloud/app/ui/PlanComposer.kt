@@ -24,7 +24,9 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -33,7 +35,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,7 +47,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.todocloud.app.data.ConversationReference
 
@@ -75,6 +75,9 @@ internal fun PlanComposer(
     val inputInteraction = remember { MutableInteractionSource() }
     val inputFocused by inputInteraction.collectIsFocusedAsState()
     val colors = MaterialTheme.colorScheme
+    val submitEnabled = canSubmit && !loading && hasPlanRequestContent(
+        value, selectedIdeaCount, images.size, references.size,
+    )
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -114,7 +117,7 @@ internal fun PlanComposer(
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
                 cursorBrush = SolidColor(colors.primary),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { if (canSubmit) onSubmit() }),
+                keyboardActions = KeyboardActions(onSend = { if (submitEnabled) onSubmit() }),
                 decorationBox = { inner ->
                     Box {
                         if (value.isEmpty()) {
@@ -129,7 +132,7 @@ internal fun PlanComposer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                if (onReference != null || onAddImages != null || onInboxClick != null) {
+                if (onReference != null || onAddImages != null) {
                     Box {
                         IconButton(onClick = { toolsExpanded = true }, enabled = !loading) {
                             Icon(Icons.Outlined.Add, contentDescription = "添加内容", tint = colors.onSurfaceVariant)
@@ -151,36 +154,33 @@ internal fun PlanComposer(
                                     onClick = { toolsExpanded = false; onReference() },
                                 )
                             }
-                            if (onInboxClick != null) {
-                                DropdownMenuItem(
-                                    text = { Text(if (ideaCount == 0) "记录收件匣想法" else "选择收件匣想法") },
-                                    leadingIcon = { Icon(Icons.Outlined.Inbox, null) },
-                                    onClick = { toolsExpanded = false; onInboxClick() },
-                                    enabled = !loading,
-                                )
-                            }
                         }
                     }
                 }
-                if (ideaCount > 0 && onInboxClick != null) {
-                    TextButton(
-                        onClick = onInboxClick,
-                        enabled = !loading,
-                        modifier = Modifier.weight(1f).semantics {
-                            contentDescription = "收件匣已选 $selectedIdeaCount 个想法，共 $ideaCount 个"
-                        },
-                    ) {
-                        Text("想法 · $selectedIdeaCount", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                if (onInboxClick != null) {
+                    IconButton(onClick = onInboxClick, enabled = !loading) {
+                        BadgedBox(badge = {
+                            if (ideaCount > 0) Badge { Text(selectedIdeaCount.toString()) }
+                        }) {
+                            Icon(
+                                Icons.Outlined.Lightbulb,
+                                contentDescription = if (ideaCount == 0) "记录收件匣想法"
+                                else "选择收件匣想法，已选 $selectedIdeaCount 个，共 $ideaCount 个",
+                                tint = colors.onSurfaceVariant,
+                            )
+                        }
                     }
-                } else {
-                    Spacer(Modifier.weight(1f))
                 }
+                Spacer(Modifier.weight(1f))
                 IconButton(
-                    onClick = onSubmit,
-                    enabled = canSubmit,
+                    onClick = { if (submitEnabled) onSubmit() },
+                    enabled = submitEnabled,
                     modifier = Modifier
                         .size(48.dp)
-                        .background(if (canSubmit) colors.primary else colors.surfaceContainerHighest, CircleShape),
+                        .background(
+                            if (submitEnabled) colors.primary else colors.onSurface.copy(alpha = 0.08f),
+                            CircleShape,
+                        ),
                 ) {
                     if (loading) {
                         CircularProgressIndicator(
@@ -192,7 +192,7 @@ internal fun PlanComposer(
                         Icon(
                             Icons.Outlined.ArrowUpward,
                             contentDescription = submitLabel,
-                            tint = if (canSubmit) colors.onPrimary else colors.onSurfaceVariant,
+                            tint = if (submitEnabled) colors.onPrimary else colors.onSurface.copy(alpha = 0.38f),
                         )
                     }
                 }
