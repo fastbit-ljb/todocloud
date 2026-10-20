@@ -138,10 +138,11 @@ async def _model_stream(prompt, image_parts):
     started = time.monotonic()
     async with httpx.AsyncClient(timeout=httpx.Timeout(90, connect=15)) as client:
         for model_index, model in enumerate(models):
-            for attempt in range(2 if model_index == 0 else 1):
+            attempts = settings.ai_primary_attempts if model_index == 0 else 1
+            for attempt in range(attempts):
                 received_content = False
                 payload = {
-                    "model": model, "stream": True, "max_tokens": 8192,
+                    "model": model, "stream": True, "max_tokens": settings.ai_max_output_tokens,
                     "messages": [
                         {"role": "system", "content": "你是尊重生活节律、善于留白的个人计划助手。"},
                         {"role": "user", "content": ([{"type": "text", "text": prompt}, *image_parts] if image_parts else prompt)},
@@ -160,7 +161,10 @@ async def _model_stream(prompt, image_parts):
                             body = await response.aread()
                             if len(body) > MAX_STREAM_CHARS * 4:
                                 raise AiParseError("AI 返回内容过长")
-                            yield {"raw": _extract_json(json.loads(body)["choices"][0]["message"]["content"])}
+                            choice = json.loads(body)["choices"][0]
+                            if choice.get("finish_reason") == "length":
+                                raise AiParseError("AI 计划内容过长，请减少本次事项后重试")
+                            yield {"raw": _extract_json(choice["message"]["content"])}
                             return
                         content = []
                         length = 0
@@ -215,6 +219,8 @@ async def _model_stream(prompt, image_parts):
                 except httpx.HTTPStatusError as exc:
                     last_code = exc.response.status_code
                     logger.warning("AI planning stream HTTP %s model=%s elapsed=%.2fs", last_code, model, time.monotonic() - started)
+                    if last_code == 402:
+                        raise AiParseError("内置 AI 额度不足，请联系管理员补充额度") from exc
                     if last_code in {401, 403}:
                         raise AiParseError("AI 服务鉴权失败，请检查服务端配置") from exc
                     if last_code not in {408, 429, 500, 502, 503, 504}:
@@ -224,7 +230,7 @@ async def _model_stream(prompt, image_parts):
                         # Never silently replay a generation once partial output has been shown.
                         raise AiParseError("AI 回复中断，未保存新计划，请重试") from exc
                     last_error = exc
-                if model_index == 0 and attempt == 0:
+                if attempt + 1 < attempts:
                     await asyncio.sleep(1)
     if last_code == 429:
         raise AiParseError("AI 计划请求较多，请稍后再试")

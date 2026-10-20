@@ -109,6 +109,47 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(seen), 1)
         self.assertTrue(stream.closed)
 
+    async def test_deepseek_stream_uses_cost_cap_and_disables_thinking(self):
+        stream = Chunks([packet('{"intent":"answer","reply":"ok"}', finish_reason="stop"), b'data: [DONE]\n\n'])
+        seen = []
+        client = self.model(stream, seen)
+        with self.config(), mock.patch.multiple(
+            settings, ai_api_base_url="https://api.deepseek.com/", ai_model="deepseek-flash",
+            ai_thinking_mode="disabled", ai_max_output_tokens=4096, ai_primary_attempts=1,
+        ), mock.patch("app.plan_stream.httpx.AsyncClient", return_value=client):
+            events = [event async for event in self.events()]
+        self.assertEqual(events[-1]["turn"]["reply"], "ok")
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]["max_tokens"], 4096)
+        self.assertEqual(seen[0]["thinking"], {"type": "disabled"})
+        self.assertNotIn("reasoning_effort", seen[0])
+
+    async def test_deepseek_payment_error_never_retries_or_uses_fallback(self):
+        seen = []
+        def handle(req):
+            seen.append(req)
+            return httpx.Response(402, json={"error": {"message": "fixture"}})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+        with self.config(), mock.patch.multiple(settings, ai_fallback_model="must-not-call", ai_primary_attempts=2), \
+                mock.patch("app.plan_stream.httpx.AsyncClient", return_value=client):
+            with self.assertRaisesRegex(AiParseError, "额度不足"):
+                _ = [event async for event in self.events()]
+        self.assertEqual(len(seen), 1)
+
+    async def test_one_attempt_stream_does_not_retry_or_sleep(self):
+        seen = []
+        def handle(req):
+            seen.append(req)
+            return httpx.Response(503, json={"error": {"message": "fixture"}})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+        with self.config(), mock.patch.object(settings, "ai_primary_attempts", 1), \
+                mock.patch("app.plan_stream.httpx.AsyncClient", return_value=client), \
+                mock.patch("app.plan_stream.asyncio.sleep", new=mock.AsyncMock()) as sleep:
+            with self.assertRaises(AiParseError):
+                _ = [event async for event in self.events()]
+        self.assertEqual(len(seen), 1)
+        sleep.assert_not_awaited()
+
     async def test_length_finish_is_not_a_valid_plan_even_with_parseable_json(self):
         stream = Chunks([packet('{"intent":"answer","reply":"x"}', finish_reason="length"), b'data: [DONE]\n\n'])
         seen = []
@@ -125,6 +166,19 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
             result = [event async for event in self.events()]
         self.assertNotIn("private reasoning", str(result))
         self.assertEqual(result[-1]["turn"]["reply"], "ok")
+
+    async def test_provider_ignoring_stream_does_not_save_truncated_json(self):
+        seen = []
+        def handle(req):
+            seen.append(req)
+            return httpx.Response(200, json={"choices": [{"finish_reason": "length", "message": {
+                "content": '{"intent":"answer","reply":"incomplete"}'}}]})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+        with self.config(), mock.patch.object(settings, "ai_primary_attempts", 1), \
+                mock.patch("app.plan_stream.httpx.AsyncClient", return_value=client):
+            with self.assertRaises(AiParseError):
+                _ = [event async for event in self.events()]
+        self.assertEqual(len(seen), 1)
 
     async def test_cancel_closes_provider_connection(self):
         stream = Chunks([packet('{"intent":"answer","reply":"先做'), packet('一件事"}')], asyncio.Event())

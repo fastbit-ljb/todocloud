@@ -95,11 +95,13 @@ POST /ai/parse-screenshot
 
 服务端会先把原图保存到 MinIO，再调用 OpenAI 兼容的视觉模型，返回待确认候选任务。模型提示会要求把“明天、下周一、今晚”等相对时间按照 `reference_at` 和用户时区换算成绝对时间。客户端确认后才调用 `/tasks` 正式创建任务。
 
-服务端默认使用智谱 OpenAI 兼容接口 `https://open.bigmodel.cn/api/paas/v4/` 和免费视觉模型 `glm-4.6v-flash`；文字抽取、截图识别、普通计划和流式计划共用这套配置。通过服务器的安全配置提供智谱 `AI_API_KEY`，密钥不得进入客户端、Git 或日志。默认 `AI_THINKING_MODE=disabled` 关闭思考，不设置备用付费模型。
+服务端默认使用 DeepSeek OpenAI 兼容接口 `https://api.deepseek.com/` 和 `deepseek-flash`；文字抽取、截图识别、普通计划和流式计划共用这套配置。官方当前 Flash 模型支持图片输入，服务端沿用标准 image_url 格式。通过服务器的安全配置提供 DeepSeek `AI_API_KEY`，密钥不得进入客户端、Git 或日志。默认 `AI_THINKING_MODE=disabled` 关闭思考，不设置备用模型。
 
-现有部署的环境变量优先于代码默认值。由 Gemini 切换时必须同时更新 `AI_API_BASE_URL`、`AI_MODEL` 和平台对应的 `AI_API_KEY`，并清空旧的 `AI_FALLBACK_MODEL`、`AI_REASONING_EFFORT`；不能把 Gemini 密钥用于智谱地址。只有模型的非敏感配置可用于部署核验，不输出密钥。`AI_THINKING_MODE` 可为 `disabled`、`enabled` 或空字符串（不发送此字段）；此参数只发往智谱官方域名，Gemini 的 `AI_REASONING_EFFORT` 只发往 Google 官方域名。其他兼容平台仍可通过 `AI_API_BASE_URL` 和 `AI_MODEL` 显式覆盖。
+现有部署的环境变量优先于代码默认值。切换平台时必须同时更新 `AI_API_BASE_URL`、`AI_MODEL` 和对应的 `AI_API_KEY`，并清空旧的 `AI_FALLBACK_MODEL`、`AI_REASONING_EFFORT`；不能混用不同平台的密钥。只有模型的非敏感配置可用于部署核验，不输出密钥。`AI_THINKING_MODE` 可为 `disabled`、`enabled` 或空字符串（不发送此字段）；此参数只发往 DeepSeek/智谱官方域名，Gemini 的 `AI_REASONING_EFFORT` 只发往 Google 官方域名。其他兼容平台仍可通过 `AI_API_BASE_URL` 和 `AI_MODEL` 显式覆盖。
 
-生产 Compose 为 API 服务显式固定上述免费 GLM 配置；从单独的 `secrets/glm-api-key.env`（只含 `AI_API_KEY`，由所有者安全配置、root/600）加载智谱密钥，覆盖旧的 `server/.env` 中模型密钥。不要提交或输出此凭据文件；没有预先配置时不得重建生产 API。worker 不更换配置，不需要重建。后续按标准两个 Compose 文件部署也会保留 GLM 路由。
+生产 Compose 为 API 服务固定上述 DeepSeek 配置；从单独的 `secrets/deepseek-api-key.env`（只含 `AI_API_KEY`，由所有者安全配置、root/600）加载密钥，覆盖旧的 `server/.env` 中模型密钥。不要提交或输出此凭据文件；没有预先配置时不得重建生产 API。worker 不更换配置，不需要重建。后续按标准两个 Compose 文件部署也会保留 DeepSeek 路由。
+
+生产设置 `AI_MAX_OUTPUT_TOKENS=4096` 和 `AI_PRIMARY_ATTEMPTS=1`：每次生成最多输出 4096 tokens、不自动重复生成、不自动切换备用模型。文字/图片抽取也不得突破该上限；输出截断不作为完整计划保存。余额不足（HTTP 402）明确提示额度不足，不重试或使用备用模型。这些是单次成本控制，不是账户总金额硬上限；内置 AI 的所有用户共用服务器模型账户余额。其他环境默认仍保留 8192 输出上限、主模型最多两次尝试，可显式配置（输出上限 256–8192，尝试次数 1–2）。
 
 返回示例：
 

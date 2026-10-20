@@ -41,16 +41,16 @@ class AiProviderSettingsTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             return Settings(_env_file=None, **overrides)
 
-    def test_default_is_free_visual_glm_without_paid_fallback(self) -> None:
+    def test_default_is_deepseek_flash_without_fallback(self) -> None:
         config = self.config()
-        self.assertEqual(config.ai_api_base_url, "https://open.bigmodel.cn/api/paas/v4/")
-        self.assertEqual(config.ai_model, "glm-4.6v-flash")
+        self.assertEqual(config.ai_api_base_url, "https://api.deepseek.com/")
+        self.assertEqual(config.ai_model, "deepseek-flash")
         self.assertEqual(config.ai_fallback_model, "")
         self.assertEqual(config.ai_api_key, "")
         self.assertEqual(ai_request_options(config), {"thinking": {"type": "disabled"}})
 
     def test_glm_never_receives_gemini_reasoning_effort(self) -> None:
-        config = self.config(ai_reasoning_effort="low")
+        config = self.config(ai_api_base_url="https://open.bigmodel.cn/api/paas/v4/", ai_reasoning_effort="low")
         self.assertEqual(ai_request_options(config), {"thinking": {"type": "disabled"}})
 
     def test_gemini_override_keeps_existing_reasoning_option(self) -> None:
@@ -67,17 +67,32 @@ class AiProviderSettingsTests(unittest.TestCase):
         for base_url in (
             "https://provider.invalid/v1/",
             "https://open.bigmodel.cn.provider.invalid/v1/",
+            "https://api.deepseek.com.provider.invalid/v1/",
             "https://provider.invalid/generativelanguage.googleapis.com/",
         ):
             with self.subTest(base_url=base_url):
                 self.assertEqual(ai_request_options(self.config(ai_api_base_url=base_url)), {})
 
-    def test_glm_thinking_can_be_explicitly_enabled_or_omitted(self) -> None:
+    def test_deepseek_thinking_can_be_explicitly_enabled_or_omitted(self) -> None:
         self.assertEqual(
             ai_request_options(self.config(ai_thinking_mode="enabled")),
             {"thinking": {"type": "enabled"}},
         )
         self.assertEqual(ai_request_options(self.config(ai_thinking_mode="")), {})
+
+    def test_production_cost_limits_can_be_set_without_changing_other_defaults(self) -> None:
+        config = self.config(ai_max_output_tokens=4096, ai_primary_attempts=1)
+        self.assertEqual(config.ai_max_output_tokens, 4096)
+        self.assertEqual(config.ai_primary_attempts, 1)
+        self.assertEqual(self.config().ai_max_output_tokens, 8192)
+        self.assertEqual(self.config().ai_primary_attempts, 2)
+
+    def test_cost_limit_settings_reject_unsafe_or_invalid_bounds(self) -> None:
+        from pydantic import ValidationError
+        for values in ({"ai_max_output_tokens": 0}, {"ai_max_output_tokens": 8193},
+                       {"ai_primary_attempts": 0}, {"ai_primary_attempts": 3}):
+            with self.subTest(values=values), self.assertRaises(ValidationError):
+                self.config(**values)
 
 
 if __name__ == "__main__":
