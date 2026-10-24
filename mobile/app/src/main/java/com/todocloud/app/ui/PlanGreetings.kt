@@ -47,6 +47,7 @@ internal fun planGreetingScene(
 private enum class PlanGreetingLine(val text: String) {
     SMALL_RESULT("先做成一件小事，让想法落地。"),
     SMALL_START("大目标，也可以从很小的一步开始。"),
+    BUILD_CONFIDENCE("有些底气，是做成一件件小事之后才有的。"),
     SAVE_ENERGY("把力气留给重要的人和事，也留一点给自己。"),
     PREPARE_AS_YOU_GO("不必等一切就绪，边走边准备。"),
     RESTART("重新开始的这一步，什么时候迈出都值得。"),
@@ -87,6 +88,7 @@ internal fun choosePlanOpening(scene: PlanGreetingScene): PlanOpening {
             PlanGreetingLine.FIND_THE_WAY,
         )
         PlanGreetingScene.IN_PROGRESS -> listOf(
+            PlanGreetingLine.BUILD_CONFIDENCE,
             PlanGreetingLine.ITERATE,
             PlanGreetingLine.FIND_THE_WAY,
             PlanGreetingLine.FILL_THE_GAPS,
@@ -94,6 +96,7 @@ internal fun choosePlanOpening(scene: PlanGreetingScene): PlanOpening {
             PlanGreetingLine.MAKE_IT_CONCRETE,
         )
         PlanGreetingScene.GENERAL -> listOf(
+            PlanGreetingLine.BUILD_CONFIDENCE,
             PlanGreetingLine.SMALL_RESULT,
             PlanGreetingLine.SMALL_START,
             PlanGreetingLine.PREPARE_AS_YOU_GO,
