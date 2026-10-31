@@ -36,7 +36,7 @@ android {
         // update the installed app without asking to uninstall it.
         versionCode = 36
         versionName = "1.3.14"
-        buildConfigField("String", "API_BASE_URL", "\"https://dnsgo.xyz/todocloud-api/api/v1\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://api.dnsgo.xyz/todocloud-api/api/v1\"")
     }
 
     buildTypes {
