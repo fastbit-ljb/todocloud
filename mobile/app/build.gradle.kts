@@ -5,6 +5,9 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// A separate installation preserves data in a differently signed existing app.
+val temporaryIpApp = providers.gradleProperty("temporaryIpApp").orNull == "true"
+
 // Release signing is read from mobile/keystore.properties, which is gitignored.
 // Without that file assembleRelease still works and produces an unsigned APK.
 val keystoreProperties = Properties().apply {
@@ -28,7 +31,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.todocloud.app"
+        applicationId = if (temporaryIpApp) "com.todocloud.app.iptemp" else "com.todocloud.app"
         minSdk = 26
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -48,6 +51,11 @@ android {
                 "proguard-rules.pro",
             )
         }
+    }
+
+    if (temporaryIpApp) {
+        sourceSets.getByName("debug").res.srcDir("src/ipTemporary/res")
+        sourceSets.getByName("release").res.srcDir("src/ipTemporary/res")
     }
 
     compileOptions {

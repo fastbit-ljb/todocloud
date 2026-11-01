@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
+import com.todocloud.app.BuildConfig
 import com.todocloud.app.data.TaskItem
 import java.time.Duration
 import java.time.DayOfWeek
@@ -280,7 +281,8 @@ object MascotStateManager {
         val applied = runCatching {
             // Only aliases whose setting differs are touched, so a switch usually changes
             // two of them rather than every alias of every set.
-            val changes = launcherAliasPlan(context.packageName, set, state)
+            // Manifest alias classes use the code namespace, even with a separate application ID.
+            val changes = launcherAliasPlan(BuildConfig::class.java.name.substringBeforeLast('.'), set, state)
                 .map { (alias, enabled) ->
                     ComponentName(context.packageName, alias) to if (enabled) {
                         PackageManager.COMPONENT_ENABLED_STATE_ENABLED
