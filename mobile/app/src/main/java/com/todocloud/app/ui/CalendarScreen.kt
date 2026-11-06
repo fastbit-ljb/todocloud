@@ -122,13 +122,6 @@ internal fun CalendarScreen(
                 )
                 TextButton(onClick = { moveMonth(1) }) { Text("›") }
             }
-            Text(
-                "今天：全部完成显示红色火焰，有未完成显示红色数字。" +
-                    "过去：全部完成是红色火焰，有未完成是冰蓝色火焰；" +
-                    "颜色越深表示对应任务越多。",
-                modifier = Modifier.padding(top = 4.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
         item {
             Row(modifier = Modifier.fillMaxWidth()) {
