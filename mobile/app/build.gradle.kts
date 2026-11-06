@@ -39,7 +39,12 @@ android {
         // update the installed app without asking to uninstall it.
         versionCode = 36
         versionName = "1.3.14"
-        buildConfigField("String", "API_BASE_URL", "\"https://39.101.68.104/api/v1\"")
+        val apiBaseUrl = if (temporaryIpApp) {
+            "https://39.101.68.104/api/v1"
+        } else {
+            "https://jiabocloud.xyz:18443/api/v1"
+        }
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
     buildTypes {
